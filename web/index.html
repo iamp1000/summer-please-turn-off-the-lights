@@ -237,7 +237,11 @@
           <span class="card-tag" id="effectsHeader">DYNAMIC EFFECTS</span>
           <span class="card-hint" id="effectsCount">8 available</span>
         </div>
-        <div class="effects-grid" id="effectsGrid">
+        <label class="effect-search-wrap" for="effectSearch">
+           <span aria-hidden="true">⌕</span>
+           <input id="effectSearch" class="effect-search" type="search" placeholder="Search effects by name or behavior…" autocomplete="off" aria-label="Search effects">
+         </label>
+         <div class="effects-grid" id="effectsGrid">
           <!-- Populated by JS according to selected device (L900 or L930) -->
         </div>
       </section>
