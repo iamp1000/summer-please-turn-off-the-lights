@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#09090d">
+  <title>Tapo Light Hub</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<body>
+  <!-- Dynamic Atmospheric Background (Glassmorphism Engine) -->
+  <div class="dynamic-bg-container" id="dynamicBg">
+    <div class="bg-gradient-layer" id="bgGradientLayer"></div>
+    <canvas class="bg-fx-canvas" id="bgFxCanvas"></canvas>
+    <div class="bg-vignette"></div>
+  </div>
+
+  <div class="app-shell">
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-icon">⚡</span>
+        <div>
+          <h1>Tapo Light Hub</h1>
+          <div class="conn-status" id="connStatus">
+            <span class="status-dot online"></span>
+            <span id="connText">Connecting...</span>
+          </div>
+        </div>
+      </div>
+      <button class="master-power-btn" id="btnMasterPower" title="Toggle Power">
+        <span class="icon">⏻</span>
+      </button>
+    </header>
+
+    <!-- Device Selector Tabs -->
+    <nav class="device-tabs" id="deviceTabs">
+      <!-- Injected dynamically via JS: Desk Strip (L900), Bias Strip (L930), Both Sync -->
+    </nav>
+
+    <!-- Main Content Grid -->
+    <main class="content-body">
+      <!-- Device Overview / Power Card -->
+      <section class="card status-card">
+        <div class="status-meta">
+          <div class="dev-badge" id="devBadge">L900 STRIP</div>
+          <h2 id="activeDevName">Desk Strip (L900-5)</h2>
+          <div class="now-playing-pill">
+            <span class="pulse-indicator"></span>
+            <span id="nowPlayingText">Idle</span>
+          </div>
+        </div>
+        <button class="power-toggle-large" id="btnDevicePower">
+          <span class="pwr-sym">⏻</span>
+          <span id="pwrLabel">ON</span>
+        </button>
+      </section>
+
+      <!-- 50-Zone Addressable Hardware Preview Card -->
+      <section class="card zone-preview-card" id="zonePreviewCard" style="padding: 12px 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <span class="card-tag" style="margin: 0; font-size: 10px;">50-ZONE HARDWARE PREVIEW</span>
+          <span id="zonePreviewModel" style="font-size: 11px; font-weight: 700; color: #7c6ef5;">Live Addressable ICs</span>
+        </div>
+        <canvas id="zonePreviewCanvas" width="450" height="20" style="width: 100%; height: 20px; border-radius: 6px; background: #08080c; border: 1px solid #232332; display: block;"></canvas>
+      </section>
+
+      <!-- Brightness Card -->
+      <section class="card bright-card">
+        <div class="card-title-row">
+          <span class="card-tag">BRIGHTNESS</span>
+          <span class="card-val" id="brightVal">50%</span>
+        </div>
+        <div class="slider-wrapper">
+          <span class="slider-icon">🔅</span>
+          <input type="range" min="1" max="100" value="50" class="range-slider" id="brightSlider">
+          <span class="slider-icon">🔆</span>
+        </div>
+        <div class="quick-levels">
+          <button data-level="15">15%</button>
+          <button data-level="40">40%</button>
+          <button data-level="70">70%</button>
+          <button data-level="100">100%</button>
+        </div>
+      </section>
+
+      <!-- Reactive Modes Card -->
+      <section class="card sync-card">
+        <span class="card-tag">LIVE SYNC & REACTIVE</span>
+        <div class="sync-grid">
+          <button class="sync-tile" id="btnMusicSync">
+            <span class="tile-icon">🎵</span>
+            <div class="tile-info">
+              <span class="tile-title" id="musicSyncTitle">Audio Reactive</span>
+              <span class="tile-desc" id="musicSyncDesc">Bass & frequency visualizer</span>
+            </div>
+            <span class="tile-status-dot"></span>
+          </button>
+          <button class="sync-tile" id="btnScreenSync">
+            <span class="tile-icon">📺</span>
+            <div class="tile-info">
+              <span class="tile-title">Screen Sync</span>
+              <span class="tile-desc">Ambilight display tracking</span>
+            </div>
+            <span class="tile-status-dot"></span>
+          </button>
+        </div>
+
+        <!-- Dual-Strip Composite Synergy -->
+        <div class="composite-synergy-row" style="margin-top: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span class="card-tag" style="margin: 0; font-size: 10px;">DUAL-STRIP COMPOSITE SYNERGY</span>
+            <button id="btnCircadianToggle" style="background: #1c1c28; border: 1px solid #2d2d40; color: #f5a623; border-radius: 6px; padding: 2px 8px; font-size: 11px; font-weight: 700; cursor: pointer;">☀️ Circadian: OFF</button>
+          </div>
+          <div class="quick-levels" id="compositeButtons" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;">
+            <button class="active" data-cmode="off">Off</button>
+            <button data-cmode="average">Ambient Fill</button>
+            <button data-cmode="complementary">Complement 180°</button>
+            <button data-cmode="contrast">Soft Contrast</button>
+          </div>
+        </div>
+
+        <div class="audio-device-row" style="margin-top: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span class="card-tag" style="margin: 0; font-size: 10px;">AUDIO INPUT SOURCE</span>
+            <span id="activeAudioDeviceBadge" class="card-hint" style="color: #7c6ef5; font-size: 11px;">Auto-Detect</span>
+          </div>
+          <select id="audioDeviceSelect" class="device-select-dropdown" style="width: 100%; padding: 10px 14px; background: #1a1a24; border: 1px solid #2a2a38; border-radius: 10px; color: #eeeef5; font-size: 13px; font-weight: 600; outline: none; cursor: pointer;">
+            <option value="auto">Auto-Detect Active Audio</option>
+          </select>
+        </div>
+        <div class="visualizer-modes" id="visualizerModes" style="display: none;">
+          <!-- Two-Axis Visual Styles (Genre-Agnostic) -->
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; margin-bottom: 8px;">
+            <span class="card-tag" style="margin: 0; font-size: 10px;">VISUAL STYLES (GENRE-AGNOSTIC)</span>
+            <span class="card-hint" style="font-size: 10px; color: #a8a8ba;">Style stays · Music adapts</span>
+          </div>
+          <div class="quick-levels" id="vstyleButtons" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;">
+            <button data-vstyle="movie">🎬 Movie</button>
+            <button class="active" data-vstyle="pulse">⚡ Pulse</button>
+            <button data-vstyle="spectrum">📊 Spectrum</button>
+            <button data-vstyle="flow">🌊 Flow</button>
+          </div>
+
+          <!-- Live Music Understanding Engine Telemetry -->
+          <div style="margin-top: 14px; background: rgba(0,0,0,0.32); padding: 14px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.08); display: flex; flex-direction: column; gap: 10px;">
+            <!-- Section & Key Row -->
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="card-tag" style="margin: 0; font-size: 10px;">SECTION</span>
+                <span id="musicSectionBadge" style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 800; color: #3dd68c; background: rgba(61, 214, 140, 0.15); border: 1px solid rgba(61, 214, 140, 0.35); padding: 2px 8px; border-radius: 6px; text-transform: uppercase;">VERSE</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span id="musicKeyPill" style="font-size: 11px; font-weight: 700; color: #c084fc; background: rgba(168, 85, 247, 0.15); padding: 2px 8px; border-radius: 6px; border: 1px solid rgba(168, 85, 247, 0.3);">🎼 Key: A min</span>
+                <span id="audioBpmPill" style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: #3dd68c; background: rgba(61, 214, 140, 0.15); padding: 2px 8px; border-radius: 6px;">⚡ 120 BPM</span>
+              </div>
+            </div>
+
+            <!-- Rhythm Beat Phase & Song Palette Row -->
+            <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 4px; border-top: 1px solid rgba(255,255,255,0.06);">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span class="card-tag" style="margin: 0; font-size: 9px;">BAR PHASE</span>
+                <div id="musicBeatDots" style="display: flex; gap: 4px; font-size: 10px; color: var(--theme-accent);">
+                  <span class="beat-dot active">●</span>
+                  <span class="beat-dot">○</span>
+                  <span class="beat-dot">○</span>
+                  <span class="beat-dot">○</span>
+                </div>
+              </div>
+              <!-- Song Palette Swatches -->
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span class="card-tag" style="margin: 0; font-size: 9px;">SONG PALETTE</span>
+                <div id="musicPaletteChips" style="display: flex; gap: 4px;">
+                  <span style="width: 12px; height: 12px; border-radius: 50%; background: #7c6ef5; display: inline-block;"></span>
+                  <span style="width: 12px; height: 12px; border-radius: 50%; background: #06b6d4; display: inline-block;"></span>
+                  <span style="width: 12px; height: 12px; border-radius: 50%; background: #f43f5e; display: inline-block;"></span>
+                  <span style="width: 12px; height: 12px; border-radius: 50%; background: #fbbf24; display: inline-block;"></span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 50-Zone Visualizer Canvas -->
+            <canvas id="audioSpectrumCanvas" width="320" height="42" style="width: 100%; height: 42px; display: block; border-radius: 8px; background: rgba(0,0,0,0.5);"></canvas>
+
+            <!-- Sensitivity & Lookahead Sliders -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px;">
+              <div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                  <span class="card-tag" style="margin: 0; font-size: 9px;">SENSITIVITY & AGC</span>
+                  <span id="audioSensVal" style="font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; color: var(--theme-accent);">1.0x</span>
+                </div>
+                <input type="range" min="0.2" max="3.0" step="0.1" value="1.0" class="range-slider" id="audioSensSlider">
+              </div>
+              <div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                  <span class="card-tag" style="margin: 0; font-size: 9px;">LATENCY LOOKAHEAD</span>
+                  <div style="display: flex; align-items: center; gap: 5px;">
+                    <span id="audioLookaheadVal" style="font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; color: #3dd68c;">40ms</span>
+                    <button id="btnTapSync" type="button" title="Tap 4 times to calibrate audio delay" style="background: rgba(61, 214, 140, 0.15); border: 1px solid rgba(61, 214, 140, 0.35); border-radius: 4px; color: #3dd68c; font-size: 9px; font-weight: 700; padding: 1px 6px; cursor: pointer; transition: all 0.2s;">🎯 Tap</button>
+                    <button id="btnAudioDelayHelp" type="button" title="Voicemeeter & Zero-Lag Audio Setup Guide" style="background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 4px; color: #a1a1aa; font-size: 9px; font-weight: 700; padding: 1px 5px; cursor: pointer;">ℹ️</button>
+                  </div>
+                </div>
+                <input type="range" min="0" max="150" step="5" value="40" class="range-slider" id="audioLookaheadSlider">
+              </div>
+            </div>
+
+            <!-- Interactive Tap Calibration Prompt / Audio Delay Guide -->
+            <div id="tapSyncStatus" style="display: none; padding: 6px 10px; border-radius: 8px; font-size: 10px; background: rgba(61, 214, 140, 0.12); border: 1px solid rgba(61, 214, 140, 0.3); color: #3dd68c; text-align: center; font-weight: 600;">
+              👆 Tap the "🎯 Tap" button on 4 consecutive beats...
+            </div>
+            <div id="audioDelayGuide" style="display: none; padding: 10px; border-radius: 10px; font-size: 11px; line-height: 1.5; background: rgba(18, 18, 28, 0.85); border: 1px solid rgba(255, 255, 255, 0.12); color: #e4e4e7;">
+              <div style="font-weight: 700; color: #3dd68c; margin-bottom: 4px;">⚡ Zero-Lag Audio Setup Guide</div>
+              <p style="margin: 0 0 6px 0; color: #a1a1aa;">To achieve 100% frame-perfect acoustic sync over Wi-Fi:</p>
+              <ul style="margin: 0; padding-left: 16px; color: #cbd5e1;">
+                <li><strong>Lookahead Compensation:</strong> Tapo Wi-Fi round-trip transit is typically 30–60ms. Setting lookahead to ~40–50ms enables our predictive beat tracker to transmit packets ahead of the downbeat.</li>
+                <li><strong>Voicemeeter / VAC:</strong> Set loopback buffer to 256 or 512 samples for minimal OS audio queuing.</li>
+                <li><strong>Media Player Offset:</strong> In VLC or MPV, add a +50ms audio delay so light pulses hit at the exact instant sound reaches your ears.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Dynamic Effects Card -->
+      <section class="card effects-card">
+        <div class="card-title-row">
+          <span class="card-tag" id="effectsHeader">DYNAMIC EFFECTS</span>
+          <span class="card-hint" id="effectsCount">8 available</span>
+        </div>
+        <div class="effects-grid" id="effectsGrid">
+          <!-- Populated by JS according to selected device (L900 or L930) -->
+        </div>
+      </section>
+
+      <!-- Static Presets Card -->
+      <section class="card presets-card">
+        <div class="card-title-row">
+          <span class="card-tag">STATIC PRESETS</span>
+          <span class="card-hint">Crossfade 0.8s</span>
+        </div>
+        <div class="presets-grid" id="presetsGrid">
+          <!-- Populated by JS -->
+        </div>
+      </section>
+
+      <!-- Color Lab Card -->
+      <section class="card color-card">
+        <span class="card-tag">COLOR WHEEL LAB</span>
+        <div class="swatches-grid">
+          <button style="--c: #ff3b30;" data-h="0" data-s="100" title="Crimson"></button>
+          <button style="--c: #ff9500;" data-h="35" data-s="100" title="Amber"></button>
+          <button style="--c: #ffcc00;" data-h="50" data-s="100" title="Warm Gold"></button>
+          <button style="--c: #34c759;" data-h="130" data-s="100" title="Emerald"></button>
+          <button style="--c: #00c7be;" data-h="175" data-s="100" title="Cyan"></button>
+          <button style="--c: #007aff;" data-h="215" data-s="100" title="Electric Blue"></button>
+          <button style="--c: #5856d6;" data-h="245" data-s="90" title="Indigo"></button>
+          <button style="--c: #af52de;" data-h="280" data-s="100" title="Purple"></button>
+          <button style="--c: #ff2d55;" data-h="345" data-s="100" title="Neon Pink"></button>
+          <button style="--c: #ffffff;" data-h="0" data-s="0" title="Pure White"></button>
+        </div>
+        <div class="color-picker-row">
+          <input type="color" id="nativeColorPicker" value="#7c6ef5">
+          <label for="nativeColorPicker" class="custom-color-btn">🎨 Choose Custom Hue</label>
+        </div>
+      </section>
+
+      <!-- Diagnostics & Network Telemetry Card -->
+      <section class="card diag-card" id="diagCard">
+        <div class="card-title-row">
+          <span class="card-tag">DEVICE TELEMETRY & DIAGNOSTICS</span>
+          <span class="card-hint" id="diagRefreshHint">● 1s live</span>
+        </div>
+        <div class="diag-metrics-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 10px;">
+          <div class="diag-metric-box" style="background: #14141d; padding: 10px 12px; border-radius: 10px; border: 1px solid #232332;">
+            <div style="font-size: 10px; color: #888899; font-weight: 700; text-transform: uppercase;">Real Send Rate</div>
+            <div id="diagSendFps" style="font-size: 18px; font-weight: 800; color: #3dd68c; font-family: 'JetBrains Mono', monospace; margin-top: 2px;">-- FPS</div>
+            <div id="diagRenderFps" style="font-size: 10px; color: #9999aa; margin-top: 2px;">Render: -- FPS</div>
+          </div>
+          <div class="diag-metric-box" style="background: #14141d; padding: 10px 12px; border-radius: 10px; border: 1px solid #232332;">
+            <div style="font-size: 10px; color: #888899; font-weight: 700; text-transform: uppercase;">Round-Trip Latency</div>
+            <div id="diagRtt" style="font-size: 18px; font-weight: 800; color: #7c6ef5; font-family: 'JetBrains Mono', monospace; margin-top: 2px;">-- ms</div>
+            <div id="diagPacing" style="font-size: 10px; color: #9999aa; margin-top: 2px;">Pacing: -- ms</div>
+          </div>
+          <div class="diag-metric-box" style="background: #14141d; padding: 10px 12px; border-radius: 10px; border: 1px solid #232332;">
+            <div style="font-size: 10px; color: #888899; font-weight: 700; text-transform: uppercase;">Dropped Frames</div>
+            <div id="diagDrops" style="font-size: 18px; font-weight: 800; color: #f5a623; font-family: 'JetBrains Mono', monospace; margin-top: 2px;">--%</div>
+            <div style="font-size: 10px; color: #9999aa; margin-top: 2px;">Latest Frame Wins</div>
+          </div>
+          <div class="diag-metric-box" style="background: #14141d; padding: 10px 12px; border-radius: 10px; border: 1px solid #232332;">
+            <div style="font-size: 10px; color: #888899; font-weight: 700; text-transform: uppercase;">Session Health</div>
+            <div id="diagStatus" style="font-size: 14px; font-weight: 800; color: #3dd68c; margin-top: 4px; text-transform: capitalize;">Connected</div>
+            <div id="diagErrors" style="font-size: 10px; color: #9999aa; margin-top: 2px;">0 errors · 0 reconnects</div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Token Auth Modal (Shown only if authentication is required) -->
+    <div id="authModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); z-index: 9999; align-items: center; justify-content: center; padding: 20px;">
+      <div style="background: #14141e; border: 1px solid #2e2e42; border-radius: 16px; padding: 24px; max-width: 360px; width: 100%; box-shadow: 0 20px 40px rgba(0,0,0,0.6); text-align: center;">
+        <span style="font-size: 32px;">🔐</span>
+        <h3 style="color: #eeeef5; margin: 12px 0 6px; font-size: 18px;">Access Token Required</h3>
+        <p style="color: #9898a8; font-size: 12px; margin-bottom: 16px;">This Tapo Controller dashboard is secured with token authentication.</p>
+        <input type="password" id="authTokenInput" placeholder="Enter dashboard token..." style="width: 100%; padding: 12px 14px; background: #0c0c12; border: 1px solid #2e2e42; border-radius: 10px; color: #eeeef5; font-size: 14px; outline: none; margin-bottom: 14px; box-sizing: border-box;">
+        <button id="btnSubmitAuth" style="width: 100%; padding: 12px; background: #7c6ef5; color: white; border: none; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer;">Unlock Dashboard</button>
+      </div>
+    </div>
+
+    <footer class="app-footer">
+      <span>Tapo Multi-Strip Controller · Fast LAN Sync</span>
+    </footer>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

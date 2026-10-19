@@ -1,0 +1,30 @@
+# Tapo device control (supports L530/L900 color strips/bulbs)
+plugp100>=4.0.0
+
+# System tray icon
+pystray>=0.19.5
+Pillow>=10.0.0
+
+# Global keyboard hotkeys
+keyboard>=0.13.5
+
+# Config file parsing
+PyYAML>=6.0
+
+# Music-reactive mode (audio capture + FFT)
+soundcard>=0.4.6
+numpy>=1.26.0
+
+# Screen Sync mode
+mss>=9.0.0
+dxcam>=0.3.0
+
+# V3 Upgrades
+pydantic>=2.5.0
+plyer>=2.1.0
+python-dotenv>=1.0.0
+
+# Multi-Device Phone Web App
+fastapi>=0.110.0
+uvicorn>=0.28.0
+websockets>=12.0
