@@ -90,6 +90,9 @@ def test_curated_palettes_presence_and_no_neon():
 def test_effects_catalog_classification():
     """Verify every effect is classified into firmware, streamed_slow, or live."""
     assert len(EFFECT_CATALOG) >= 15
+    for name in ("drift", "starfield", "embers", "confetti", "deep_ocean", "fireflies", "prism_sparks"):
+        assert EFFECT_CATALOG[name]["kind"] == "firmware", f"{name} should run as firmware"
+    assert EFFECT_CATALOG["meteor_shower"]["kind"] == "streamed_slow"
     for name, meta in EFFECT_CATALOG.items():
         assert meta["kind"] in ("firmware", "streamed_slow", "live"), f"{name} has invalid kind: {meta['kind']}"
         assert meta["group"] in ("Ambient", "Motion", "Seasonal & Novelty"), f"{name} has invalid group: {meta['group']}"
@@ -119,7 +122,11 @@ def test_lava_lamp_smoothness_and_continuity():
     for h, s, v in frame1:
         assert 0 <= h <= 360
         assert 0 <= s <= 100
-        assert 15 <= v <= 100
+        assert 2 <= v <= 100
+
+    assert min(c[2] for c in frame1) <= 5, "Lava Lamp should leave dark space between blobs"
+    assert max(c[2] for c in frame1) >= 35, "Lava Lamp cores should remain luminous"
+    assert len({c[2] for c in frame1}) >= 4, "Lava Lamp should not be a near-uniform glow"
 
     # 2. Continuous time stepping: small dt must yield small smooth delta, not abrupt threshold jumps
     frame2 = engine._render_lava_lamp(t=1.05)
@@ -131,6 +138,8 @@ def test_lava_lamp_smoothness_and_continuity():
         # Hue delta should also be smooth
         diff_h = (abs(h2 - h1) + 180) % 360 - 180
         assert abs(diff_h) < 15, f"Zone {i} has abrupt hue jump: {h1} -> {h2}"
+
+    assert engine._render_lava_lamp(t=4.0) != frame1, "Lava Lamp should move spatially over time"
 
 
 def test_flicker_speed_scaling_and_palette_preservation():
@@ -166,6 +175,10 @@ def test_fastled_ported_effects_juggle_sinelon_confetti():
     assert "juggle" in EFFECT_CATALOG
     assert "sinelon" in EFFECT_CATALOG
     assert "confetti" in EFFECT_CATALOG
+    assert engine._build_effect_payload("drift").type == "random"
+    assert engine._build_effect_payload("deep_ocean").type == "random"
+    assert engine._build_effect_payload("fireflies").type == "random"
+    assert engine._build_effect_payload("prism_sparks").type == "random"
 
     # 1. Juggle (8 harmonic orbs across 50 zones)
     f_juggle = engine._compute("juggle", t=1.0)
@@ -194,6 +207,30 @@ def test_fastled_ported_effects_juggle_sinelon_confetti():
         assert 0 <= s <= 100
         assert 0 <= v <= 100
     assert max(c[2] for c in f_confetti) >= 20
+
+
+def test_meteor_shower_renderer_is_bounded_and_moves():
+    engine = L930EffectsEngine(controller=None, loop_runner=None, app_state={})
+    engine.set_parameters(speed=1.0, palette_name="tide")
+    frame_a = engine._render_meteor_shower(t=0.8)
+    frame_b = engine._render_meteor_shower(t=1.7)
+    assert len(frame_a) == len(frame_b) == 50
+    for frame in (frame_a, frame_b):
+        for h, sat, val in frame:
+            assert 0 <= h <= 360
+            assert 0 <= sat <= 100
+            assert 0 <= val <= 100
+    assert frame_a != frame_b
+    assert max(v for _, _, v in frame_a) > 40
+
+
+def test_firmware_effect_previews_are_bounded_and_not_uniform():
+    engine = L930EffectsEngine(controller=None, loop_runner=None, app_state={})
+    for effect in ("drift", "deep_ocean", "tide", "fireflies", "prism_sparks", "flicker", "breathe"):
+        frame = engine._compute(effect, t=1.23)
+        assert len(frame) == 50, effect
+        assert all(0 <= h <= 360 and 0 <= sat <= 100 and 0 <= val <= 100 for h, sat, val in frame), effect
+        assert len({(h, sat, val) for h, sat, val in frame}) > 1, effect
 
 
 def test_2d_geometric_effects():

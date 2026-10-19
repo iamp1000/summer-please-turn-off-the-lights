@@ -71,8 +71,8 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
     "drift": {
         "kind": "firmware",
         "group": "Ambient",
-        "desc": "Muted 16-color glide across the strip with 6s transition",
-        "default_palette": "sunset",
+        "desc": "Quiet, independent IC glows drifting through a restrained palette",
+        "default_palette": "dusk",
     },
     "dusk": {
         "kind": "streamed_slow",
@@ -87,16 +87,28 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         "default_palette": "warm_mono",
     },
     "starfield": {
-        "kind": "streamed_slow",
+        "kind": "firmware",
         "group": "Ambient",
         "desc": "50 autonomous IC agents with independent sine oscillators and prime phase offsets",
         "default_palette": "tide",
     },
     "embers": {
-        "kind": "streamed_slow",
+        "kind": "firmware",
         "group": "Ambient",
-        "desc": "50 autonomous warm glowing embers with independent random micro-fluctuations",
+        "desc": "Slow independent amber glows with long fading tails",
         "default_palette": "ember",
+    },
+    "fireflies": {
+        "kind": "firmware",
+        "group": "Ambient",
+        "desc": "Green-gold bioluminescent points blinking independently against a dark field",
+        "default_palette": "forest",
+    },
+    "prism_sparks": {
+        "kind": "firmware",
+        "group": "Motion",
+        "desc": "Short-lived, saturated rainbow sparkles with independent IC timing",
+        "default_palette": "dusk",
     },
     "lava_lamp": {
         "kind": "streamed_slow",
@@ -139,6 +151,12 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         "desc": "Multi-pod bouncing comets with cooling chromatic tails",
         "default_palette": "sunset",
     },
+    "meteor_shower": {
+        "kind": "streamed_slow",
+        "group": "Motion",
+        "desc": "Three narrow meteor heads with cool-white cores and long blue tails",
+        "default_palette": "tide",
+    },
     "cyber_chase": {
         "kind": "streamed_slow",
         "group": "Motion",
@@ -158,7 +176,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         "default_palette": "dusk",
     },
     "confetti": {
-        "kind": "streamed_slow",
+        "kind": "firmware",
         "group": "Motion",
         "desc": "FastLED classic: Multi-colored shimmering speckles popping and fading smoothly",
         "default_palette": "sunset",
@@ -527,12 +545,25 @@ class L930EffectsEngine:
             )
 
         elif name == "drift":
-            # Muted 16-color glide across the strip with 6s transition
-            seq16 = self._expand_palette_to_16(pal)
-            trans = int(min(6000, 6000 * sp_factor))
-            return build_firmware_sequence_effect(
-                name="Drift", sequence=seq16, spread=12, direction=1, transition=trans, brightness=b
+            # Slow, independent per-IC fades make Drift ambient and stochastic, unlike
+            # Tide's deliberate strip-wide traveling wave.
+            angles = [math.radians(c[0]) for c in pal]
+            hue_center = int(round(math.degrees(math.atan2(
+                sum(math.sin(a) for a in angles),
+                sum(math.cos(a) for a in angles),
+            )) % 360))
+            h0, h1 = max(0, hue_center - 26), min(359, hue_center + 26)
+            t0 = max(200, min(6000, int(round(900 * sp_factor))))
+            t1 = max(t0, min(6000, int(round(2400 * sp_factor))))
+            fx = build_firmware_random_effect(
+                name="Drift", hue_range=(h0, h1),
+                saturation_range=(max(12, min(c[1] for c in pal) - 8), min(100, max(c[1] for c in pal) + 5)),
+                brightness_range=(12, 68), transition_range=(t0, t1),
+                random_seed=173, fadeoff=max(200, int(round(1500 * sp_factor))),
+                backgrounds=[[pal[0][0], pal[0][1], 2]], brightness=b,
             )
+            fx.id = make_effect_id(f"drift_{self._palette_name}_s{int(round(self._speed * 100))}_b{b}")
+            return fx
 
         elif name == "breathe":
             # Slow 6-8s whole-strip breathing cycle
@@ -610,17 +641,17 @@ class L930EffectsEngine:
             )
 
         elif name == "confetti":
-            return build_firmware_random_effect(
-                name="Confetti",
-                hue_range=(0, 360),
-                saturation_range=(70, 100),
-                brightness_range=(20, 100),
-                transition_range=(300, 1000),
-                random_seed=77,
-                fadeoff=600,
-                backgrounds=[[240, 60, 10]],
-                brightness=b,
+            t0 = max(80, min(6000, int(round(300 * sp_factor))))
+            t1 = max(t0, min(6000, int(round(1000 * sp_factor))))
+            fx = build_firmware_random_effect(
+                name="Confetti", hue_range=(0, 359),
+                saturation_range=(70, 100), brightness_range=(20, 100),
+                transition_range=(t0, t1), random_seed=77,
+                fadeoff=max(120, int(round(600 * sp_factor))),
+                backgrounds=[[pal[0][0], pal[0][1], 2]], brightness=b,
             )
+            fx.id = make_effect_id(f"confetti_s{int(round(self._speed * 100))}_b{b}_{self._palette_name}")
+            return fx
 
         elif name == "radial_ripple":
             seq = [
@@ -716,17 +747,24 @@ class L930EffectsEngine:
             )
 
         elif name == "deep_ocean":
-            # Firmware Pacifica-style ocean waves
-            seq = [
-                [198, 84, 30],
-                [198, 70, 45],
-                [215, 80, 50],
-                [180, 90, 40],
-            ]
-            trans = int(min(6000, 2500 * sp_factor))
-            return build_firmware_sequence_effect(
-                name="DeepOcean", sequence=seq, spread=14, direction=3, transition=trans, brightness=b
+            # Quiet deep-water shimmer: low values and slow independent fades,
+            # intentionally different from Tide's layered traveling sequence.
+            angles = [math.radians(c[0]) for c in pal]
+            center = int(round(math.degrees(math.atan2(
+                sum(math.sin(a) for a in angles),
+                sum(math.cos(a) for a in angles),
+            )) % 360))
+            t0 = max(300, min(6000, int(round(1100 * sp_factor))))
+            t1 = max(t0, min(6000, int(round(3000 * sp_factor))))
+            fx = build_firmware_random_effect(
+                name="DeepOcean", hue_range=(max(0, center - 22), min(359, center + 22)),
+                saturation_range=(55, 95), brightness_range=(5, 46),
+                transition_range=(t0, t1), random_seed=287,
+                fadeoff=max(350, int(round(1800 * sp_factor))),
+                backgrounds=[[195, 92, 3]], brightness=b,
             )
+            fx.id = make_effect_id(f"deep_ocean_{self._palette_name}_s{int(round(self._speed * 100))}_b{b}")
+            return fx
 
         elif name == "police":
             # Split red / blue sequence
@@ -860,6 +898,10 @@ class L930EffectsEngine:
                     segs = self._render_confetti_burst(t)
                     interval = 0.35
                     trans_ms = 350
+                elif eff == "meteor_shower":
+                    segs = self._render_meteor_shower(t)
+                    interval = 0.28
+                    trans_ms = 260
                 elif eff == "radial_ripple":
                     segs = self._render_radial_ripple(t)
                     interval = 0.35
@@ -946,16 +988,16 @@ class L930EffectsEngine:
 
         sp = self._speed
         # 4 continuous, harmonic buoyant convection cells with non-integer phase ratios
-        b1_pos = 18.0 + 12.0 * math.sin(0.24 * t * sp + 0.5) + 3.0 * math.cos(0.55 * t * sp)
+        b1_pos = 18.0 + 12.0 * math.sin(0.30 * t * sp + 0.5) + 3.0 * math.cos(0.68 * t * sp)
         b1_rad = 7.5 + 1.2 * math.sin(0.18 * t * sp)
 
-        b2_pos = 32.0 + 13.0 * math.cos(0.21 * t * sp + 1.2) + 2.5 * math.sin(0.48 * t * sp)
+        b2_pos = 32.0 + 13.0 * math.cos(0.27 * t * sp + 1.2) + 2.5 * math.sin(0.57 * t * sp)
         b2_rad = 8.0 + 1.0 * math.cos(0.15 * t * sp)
 
-        b3_pos = 24.5 + 18.0 * math.sin(0.31 * t * sp + 2.8)
+        b3_pos = 24.5 + 18.0 * math.sin(0.36 * t * sp + 2.8)
         b3_rad = 5.5 + 0.8 * math.sin(0.35 * t * sp)
 
-        b4_pos = 24.5 + 21.0 * math.cos(0.17 * t * sp + 4.1)
+        b4_pos = 24.5 + 21.0 * math.cos(0.22 * t * sp + 4.1)
         b4_rad = 6.5 + 1.0 * math.sin(0.22 * t * sp)
 
         blobs = [
@@ -980,35 +1022,36 @@ class L930EffectsEngine:
             sample_palette_oklab(pal, 0.95, cyclic=True),
         ]
 
+        # Different thermal densities make individual blobs distinct rather than
+        # sharing one uniform field-to-brightness curve.
+        heat_weights = [0.76, 1.0, 0.66, 0.88]
         segs = []
         for i in range(NUM_SEGMENTS):
             field = 0.0
-            sum_r, sum_g, sum_b = 0.0, 0.0, 0.0
+            sum_r = sum_g = sum_b = 0.0
             for b_idx, (pos, rad) in enumerate(blobs):
                 dist = abs(i - pos)
                 if dist < rad:
                     r = dist / rad
-                    w = 1.0 - r * r
-                    w2 = w * w
-                    field += w2
+                    edge = 1.0 - r * r
+                    weight = edge * edge * heat_weights[b_idx % len(heat_weights)]
+                    field += weight
                     bc_hsv = blob_colors[b_idx % len(blob_colors)]
                     b_rgb = tapo_hsv_to_rgb(bc_hsv[0], bc_hsv[1], 100)
-                    sum_r += b_rgb[0] * w2
-                    sum_g += b_rgb[1] * w2
-                    sum_b += b_rgb[2] * w2
+                    sum_r += b_rgb[0] * weight
+                    sum_g += b_rgb[1] * weight
+                    sum_b += b_rgb[2] * weight
 
             norm_field = min(1.0, 1.0 - math.exp(-1.4 * field))
-            if field > 0.01:
-                norm_r = sum_r / field
-                norm_g = sum_g / field
-                norm_b = sum_b / field
-                h, s, _ = rgb_to_tapo_hsv(norm_r, norm_g, norm_b)
+            if field > 1e-6:
+                h, sat, _ = rgb_to_tapo_hsv(sum_r / field, sum_g / field, sum_b / field)
             else:
                 bg_c = sample_palette_oklab(pal, 0.0, cyclic=True)
-                h, s = bg_c[0], bg_c[1]
+                h, sat = bg_c[0], bg_c[1]
 
-            bright = int(max(15, min(100, 16.0 + 84.0 * (norm_field ** 1.3))))
-            segs.append([h, s, bright])
+            # Dark glass between blobs; only cores approach full brightness.
+            bright = int(max(2, min(100, 2.0 + 98.0 * (norm_field ** 1.3))))
+            segs.append([h, sat, bright])
 
         return segs
 
@@ -1418,6 +1461,40 @@ class L930EffectsEngine:
 
         return segs
 
+    def _render_meteor_shower(self, t: float) -> List[List[int]]:
+        """Three staggered meteor heads cross the strip with asymmetric cool-white tails."""
+        from src.visual_styles import sample_palette_oklab
+        pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "tide")
+        sp = max(0.2, self._speed)
+        meteors = [
+            ((t * 13.0 * sp + 3.0) % (NUM_SEGMENTS + 16.0) - 8.0, 1.0, 7.0),
+            ((t * 9.0 * sp + 27.0) % (NUM_SEGMENTS + 20.0) - 10.0, 0.72, 10.0),
+            ((t * 16.0 * sp + 41.0) % (NUM_SEGMENTS + 12.0) - 6.0, 0.48, 5.0),
+        ]
+        segs: List[List[int]] = []
+        for i in range(NUM_SEGMENTS):
+            peak, tail_pos = 0.0, 0.0
+            for head, gain, tail_len in meteors:
+                behind = head - i
+                if 0.0 <= behind <= tail_len:
+                    glow = math.exp(-behind / max(1.2, tail_len * 0.38)) * gain
+                    if glow > peak:
+                        peak, tail_pos = glow, behind / tail_len
+                if abs(i - head) <= 1.15:
+                    head_glow = gain * (1.0 - abs(i - head) / 1.15)
+                    if head_glow > peak:
+                        peak, tail_pos = head_glow, 0.0
+            if peak <= 0.015:
+                segs.append([pal[0][0], pal[0][1], 2])
+                continue
+            hue, sat, _ = sample_palette_oklab(pal, min(1.0, 0.08 + tail_pos * 0.92), cyclic=False)
+            white_mix = max(0.0, 1.0 - tail_pos * 2.8)
+            hue = int((hue * (1.0 - white_mix) + 195 * white_mix) % 360)
+            sat = int(sat * (1.0 - white_mix) + 22 * white_mix)
+            value = int(max(2, min(100, 2 + 98 * peak)))
+            segs.append([hue, max(0, min(100, sat)), value])
+        return segs
+
     def _render_radial_ripple(self, t: float) -> List[List[int]]:
         """
         2D Geometric Radial Ripple:
@@ -1471,7 +1548,7 @@ class L930EffectsEngine:
             return self._render_lava_lamp(t)
         elif eff == "dusk":
             return self._render_standing_wave_dusk(t)
-        elif eff in ("golden_hour", "ambient_drift", "sakura", "deep_ocean", "northern_lights"):
+        elif eff in ("golden_hour", "ambient_drift", "sakura", "northern_lights"):
             return self._render_standing_wave_golden_hour(t)
         elif eff in ("hearth", "fireplace", "fire_crawl"):
             return self._render_non_linear_hearth(t)
@@ -1493,6 +1570,44 @@ class L930EffectsEngine:
             return self._render_multi_pod_comet(t)
         elif eff == "sonar_sweep":
             return self._render_multi_pod_sonar(t)
+        elif eff == "meteor_shower":
+            return self._render_meteor_shower(t)
+        elif eff in ("drift", "deep_ocean", "tide", "fireflies", "prism_sparks", "flicker", "breathe"):
+            from src.visual_styles import sample_palette_oklab
+            pal_name = self._palette_name if self._palette_name in PALETTES else "tide"
+            pal = get_palette_hsv("tide" if eff == "deep_ocean" else ("forest" if eff == "fireflies" else ("fire" if eff == "flicker" else pal_name)))
+            segs = []
+            for i in range(NUM_SEGMENTS):
+                x = i / float(NUM_SEGMENTS - 1)
+                phase = t * max(0.2, self._speed)
+                if eff == "drift":
+                    hue_pos = (x * 0.63 + 0.13 * math.sin(phase * 0.25 + i * 1.73)) % 1.0
+                    h, sat, _ = sample_palette_oklab(pal, hue_pos, cyclic=True)
+                    val = int(12 + 42 * (0.5 + 0.5 * math.sin(phase * 0.42 + i * 2.39)))
+                elif eff == "deep_ocean":
+                    h = int(188 + 22 * (0.5 + 0.5 * math.sin(phase * 0.16 + i * 1.91)))
+                    sat = 72 + int(20 * (0.5 + 0.5 * math.sin(phase * 0.11 + i * 0.77)))
+                    val = int(4 + 28 * (0.5 + 0.5 * math.sin(phase * 0.3 + i * 2.11)))
+                elif eff == "fireflies":
+                    pulse = (math.sin(phase * 1.1 + i * 17.31) + 1.0) * 0.5
+                    h, sat = int(78 + 52 * (0.5 + 0.5 * math.sin(i * 2.03))), 88
+                    val = int(2 + 90 * max(0.0, (pulse - 0.68) / 0.32) ** 1.8)
+                elif eff == "prism_sparks":
+                    pulse = (math.sin(phase * (1.2 + (i % 7) * 0.13) + i * 19.73) + 1.0) * 0.5
+                    h, sat = int((i * 67 + phase * 38) % 360), 100
+                    val = int(2 + 98 * max(0.0, (pulse - 0.78) / 0.22) ** 1.4)
+                elif eff == "flicker":
+                    h, sat = 29, 92
+                    val = int(28 + 55 * (0.5 + 0.5 * math.sin(phase * 2.4 + i * 11.7)))
+                elif eff == "breathe":
+                    h, sat = pal[0][0], pal[0][1]
+                    val = int(18 + 64 * (0.5 + 0.5 * math.sin(phase * 0.65)))
+                else:
+                    pos = (x + phase * 0.035) % 1.0
+                    h, sat, _ = sample_palette_oklab(get_palette_hsv("tide"), pos, cyclic=True)
+                    val = int(22 + 65 * (0.5 + 0.5 * math.sin(2 * math.pi * (x * 2.4 - phase * 0.17))))
+                segs.append([int(h) % 360, max(0, min(100, int(sat))), max(2, min(100, val))])
+            return segs
         elif eff == "starfield":
             return self._render_autonomous_starfield(t)
         elif eff == "embers":

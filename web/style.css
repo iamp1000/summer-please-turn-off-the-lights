@@ -678,6 +678,42 @@ body {
   box-shadow: 0 0 8px var(--success-glow);
 }
 
+/* ── EFFECT SEARCH & METADATA ───────────────────────────────────────────── */
+.effect-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 42px;
+  margin: 10px 0 12px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.22);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.effect-search-wrap:focus-within {
+  border-color: var(--theme-accent);
+  box-shadow: 0 0 0 3px rgba(var(--theme-accent-rgb), 0.12);
+}
+.effect-search-icon { color: var(--theme-accent); font-size: 22px; line-height: 1; }
+.effect-search {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  color: var(--text-primary);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+}
+.effect-search::placeholder { color: var(--text-muted); opacity: 0.9; }
+.effect-item-copy { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.effect-item-copy small { color: var(--text-muted); font-size: 9px; font-weight: 700; letter-spacing: 0.04em; }
+.item-btn.effect-item { min-width: 0; }
+.item-btn.effect-item .effect-item-copy > span { overflow: hidden; text-overflow: ellipsis; }
+.effects-empty { margin: 12px 2px 4px; color: var(--text-muted); font-size: 12px; }
+.effects-empty[hidden] { display: none; }
+
 /* ── DYNAMIC EFFECTS & PRESETS GRIDS ─────────────────────────────────────── */
 .effects-grid, .presets-grid {
   display: grid;

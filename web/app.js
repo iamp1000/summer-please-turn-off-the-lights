@@ -57,6 +57,9 @@ const EFFECT_COLORS = {
   matrix_rain: "#22c55e",
   strobe_party: "#ffff00",
   lava_lamp: "#f97316",
+  fireflies: "#a3e635",
+  prism_sparks: "#e879f9",
+  meteor_shower: "#38bdf8",
   glitch_wave: "#00ffff",
   neon_heartbeat: "#f43f5e",
   twinkle_stars: "#70a1ff",
@@ -1153,8 +1156,11 @@ function renderUI() {
   const fxCount = document.getElementById("effectsCount");
 
   const effectsList = isL930 ? state.effects_l930 : state.effects_l900;
+  const effectSearchQuery = (document.getElementById("effectSearch")?.value || "").trim().toLowerCase();
+  const totalEffects = isL930 && state.effects_catalog
+    ? Object.keys(state.effects_catalog).length : effectsList.length;
+  let visibleEffectCount = 0;
   fxHeader.textContent = isL930 ? "L930 50-ZONE WRGBIC EFFECTS" : "L900 SLOW AMBIENT EFFECTS";
-  fxCount.textContent = `${effectsList.length} modes`;
 
   let fxHtml = `
     <div style="grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; background: rgba(0,0,0,0.25); padding: 8px 10px; border-radius: 8px;">
@@ -1200,30 +1206,51 @@ function renderUI() {
           ${isNovelty ? '▶ ' + gName + ' (COLLAPSED)' : '▼ ' + gName}
         </div>
       `;
-      items.forEach(eff => {
+      const visibleItems = items.filter(eff => {
+        const meta = catalog[eff] || {};
+        return `${eff} ${formatName(eff)} ${meta.desc || ""} ${meta.group || ""}`.toLowerCase().includes(effectSearchQuery);
+      });
+      if (!visibleItems.length) return;
+      visibleEffectCount += visibleItems.length;
+      visibleItems.forEach(eff => {
         const isAct = (activeDev.active_label === eff) ? "active" : "";
         const color = EFFECT_COLORS[eff] || "#7c6ef5";
+        const meta = catalog[eff] || {};
+        const kindLabel = meta.kind === "firmware" ? "ON-DEVICE" : "PROCEDURAL";
+        const groupClass = gName.replace(/[^a-zA-Z0-9_-]/g, "");
         fxHtml += `
-          <button class="item-btn ${isAct} grp-${gName.replace(/\s+/g, '')}" style="${isNovelty ? 'display: none;' : ''}" onclick="applyEffect('${eff}')">
+          <button class="item-btn effect-item ${isAct} grp-${groupClass}"
+                  style="${isNovelty && !effectSearchQuery ? 'display: none;' : ''}"
+                  title="${meta.desc || formatName(eff)} · ${kindLabel}"
+                  onclick="applyEffect('${eff}')">
             <span class="item-dot" style="background: ${color};"></span>
-            <span>${formatName(eff)}</span>
+            <span class="effect-item-copy"><span>${formatName(eff)}</span><small>${kindLabel}</small></span>
           </button>
         `;
       });
     });
   } else {
-    effectsList.forEach(eff => {
+    const visibleItems = effectsList.filter(eff =>
+      `${eff} ${formatName(eff)}`.toLowerCase().includes(effectSearchQuery)
+    );
+    visibleEffectCount += visibleItems.length;
+    visibleItems.forEach(eff => {
       const isAct = (activeDev.active_label === eff) ? "active" : "";
       const color = EFFECT_COLORS[eff] || "#7c6ef5";
       fxHtml += `
-        <button class="item-btn ${isAct}" onclick="applyEffect('${eff}')">
+        <button class="item-btn effect-item ${isAct}" title="${formatName(eff)}" onclick="applyEffect('${eff}')">
           <span class="item-dot" style="background: ${color};"></span>
-          <span>${formatName(eff)}</span>
+          <span class="effect-item-copy"><span>${formatName(eff)}</span></span>
         </button>
       `;
     });
   }
   fxGrid.innerHTML = fxHtml;
+  fxCount.textContent = effectSearchQuery
+    ? `${visibleEffectCount} / ${totalEffects} modes`
+    : `${totalEffects} modes`;
+  const emptyState = document.getElementById("effectsEmptyState");
+  if (emptyState) emptyState.hidden = visibleEffectCount > 0;
 
   // 5. Static Presets
   const presetsGrid = document.getElementById("presetsGrid");
@@ -1262,7 +1289,7 @@ function applyEffect(name) {
 }
 
 function toggleGroup(gName) {
-  const cls = `grp-${gName.replace(/\s+/g, '')}`;
+  const cls = `grp-${gName.replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const btns = document.querySelectorAll(`.${cls}`);
   btns.forEach(b => {
     b.style.display = (b.style.display === 'none') ? 'flex' : 'none';
@@ -1276,6 +1303,8 @@ function updateFxSpeed(val) {
 function updateFxPalette(val) {
   apiPost(`/api/device/${currentDevId}/effect_params`, { palette_name: val });
 }
+
+document.getElementById("effectSearch")?.addEventListener("input", () => renderUI());
 
 // Power Toggle
 document.getElementById("btnDevicePower").addEventListener("click", () => {

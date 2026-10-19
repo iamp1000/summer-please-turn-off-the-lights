@@ -1109,6 +1109,23 @@ class TapoGUI:
         self.opt_fx_pal.set("sunset")
         self.opt_fx_pal.pack(fill="x", pady=(4, 0))
 
+        # Search remains outside the generated buttons and is restored after rebuilds.
+        search_wrap = ctk.CTkFrame(self.fx_grid_frame, fg_color="transparent")
+        search_wrap.pack(fill="x", pady=(0, 8))
+        self.effect_search_entry = ctk.CTkEntry(
+            search_wrap, placeholder_text="Search effects by name or behavior…",
+            height=30, corner_radius=8, border_color=t["border"],
+            fg_color=t["surface_raised"], text_color=t["text_primary"],
+            placeholder_text_color=t["text_muted"],
+        )
+        self.effect_search_entry.pack(fill="x")
+        saved_query = getattr(self, "_effect_search_text", "")
+        if saved_query:
+            self.effect_search_entry.insert(0, saved_query)
+        self.effect_search_entry.bind("<KeyRelease>", self._filter_effect_buttons)
+        self._effect_group_grids = {}
+        self._effect_group_labels = {}
+
         if is_l930:
             self.fx_header_label.configure(text="L930 50-ZONE WRGBIC EFFECTS")
             full_st = self.hub.get_full_state()
@@ -1140,6 +1157,8 @@ class TapoGUI:
                 grid = ctk.CTkFrame(self.fx_grid_frame, fg_color="transparent")
                 grid.pack(fill="x", pady=(0, 6))
                 grid.columnconfigure((0, 1), weight=1, uniform="fx")
+                self._effect_group_grids[grp_name] = grid
+                self._effect_group_labels[grp_name] = grp_lbl
 
                 if is_novelty:
                     # Initially collapse novelty group
@@ -1180,6 +1199,41 @@ class TapoGUI:
 
         # Re-bind mousewheel on newly generated effect controls & cards
         self._bind_mousewheel_recursive(self.fx_grid_frame)
+
+    def _filter_effect_buttons(self, event=None):
+        """Filter effect buttons using labels, groups and catalog descriptions."""
+        try:
+            query = self.effect_search_entry.get().strip().lower()
+            self._effect_search_text = query
+            catalog = self.hub.get_full_state().get("effects_catalog", {})
+            matching_groups = set()
+            for key, button in list(self.buttons.items()):
+                if not key.startswith("eff_"):
+                    continue
+                name = key[4:]
+                meta = catalog.get(name, {})
+                haystack = f"{name} {meta.get('desc', '')} {meta.get('group', '')}".lower()
+                if query in haystack:
+                    button.grid()
+                    if meta.get("group"):
+                        matching_groups.add(meta["group"])
+                else:
+                    button.grid_remove()
+
+            # Reveal a collapsed group when search matches one of its effects.
+            for group_name, group_grid in getattr(self, "_effect_group_grids", {}).items():
+                group_label = self._effect_group_labels.get(group_name)
+                if query and group_name in matching_groups:
+                    if not group_grid.winfo_ismapped():
+                        group_grid.pack(fill="x", pady=(0, 6))
+                    if group_label:
+                        group_label.configure(text=f"▼  {group_name.upper()}")
+                elif group_name == "Seasonal & Novelty":
+                    group_grid.pack_forget()
+                    if group_label:
+                        group_label.configure(text="▶  SEASONAL & NOVELTY (COLLAPSED)")
+        except Exception:
+            pass
 
     def _on_fx_speed_slide(self, val: float):
         v = round(float(val), 2)
