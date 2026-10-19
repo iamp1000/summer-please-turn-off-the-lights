@@ -1153,8 +1153,9 @@ function renderUI() {
   const fxCount = document.getElementById("effectsCount");
 
   const effectsList = isL930 ? state.effects_l930 : state.effects_l900;
+  const effectQuery = (document.getElementById("effectSearch")?.value || "").trim().toLowerCase();
+  let visibleEffectCount = 0;
   fxHeader.textContent = isL930 ? "L930 50-ZONE WRGBIC EFFECTS" : "L900 SLOW AMBIENT EFFECTS";
-  fxCount.textContent = `${effectsList.length} modes`;
 
   let fxHtml = `
     <div style="grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; background: rgba(0,0,0,0.25); padding: 8px 10px; border-radius: 8px;">
@@ -1200,30 +1201,52 @@ function renderUI() {
           ${isNovelty ? '▶ ' + gName + ' (COLLAPSED)' : '▼ ' + gName}
         </div>
       `;
-      items.forEach(eff => {
+      const visibleItems = items.filter(eff => {
+        const meta = catalog[eff] || {};
+        return `${eff} ${formatName(eff)} ${meta.desc || ""} ${meta.group || ""}`.toLowerCase().includes(effectQuery);
+      });
+      if (!visibleItems.length) return;
+      visibleEffectCount += visibleItems.length;
+      visibleItems.forEach(eff => {
         const isAct = (activeDev.active_label === eff) ? "active" : "";
         const color = EFFECT_COLORS[eff] || "#7c6ef5";
+        const meta = catalog[eff] || {};
+        const kind = meta.kind === "firmware" ? "On-device" : "Procedural";
         fxHtml += `
-          <button class="item-btn ${isAct} grp-${gName.replace(/\s+/g, '')}" style="${isNovelty ? 'display: none;' : ''}" onclick="applyEffect('${eff}')">
+          <button class="item-btn effect-item ${isAct} grp-${gName.replace(/\s+/g, '')}" title="${meta.desc || formatName(eff)} · ${kind}" onclick="applyEffect('${eff}')">
             <span class="item-dot" style="background: ${color};"></span>
-            <span>${formatName(eff)}</span>
+            <span class="effect-item-copy"><span>${formatName(eff)}</span><small>${kind}</small></span>
           </button>
         `;
       });
     });
   } else {
-    effectsList.forEach(eff => {
+    const visibleItems = effectsList.filter(eff => `${eff} ${formatName(eff)}`.toLowerCase().includes(effectQuery));
+    visibleEffectCount += visibleItems.length;
+    visibleItems.forEach(eff => {
       const isAct = (activeDev.active_label === eff) ? "active" : "";
       const color = EFFECT_COLORS[eff] || "#7c6ef5";
       fxHtml += `
-        <button class="item-btn ${isAct}" onclick="applyEffect('${eff}')">
+        <button class="item-btn effect-item ${isAct}" onclick="applyEffect('${eff}')">
           <span class="item-dot" style="background: ${color};"></span>
-          <span>${formatName(eff)}</span>
+          <span class="effect-item-copy"><span>${formatName(eff)}</span></span>
         </button>
       `;
     });
   }
   fxGrid.innerHTML = fxHtml;
+  fxCount.textContent = effectQuery
+    ? `${visibleEffectCount} / ${effectsList.length} modes`
+    : `${effectsList.length} modes`;
+  let emptySearch = document.getElementById("effectsEmptyState");
+  if (!emptySearch) {
+    emptySearch = document.createElement("p");
+    emptySearch.id = "effectsEmptyState";
+    emptySearch.className = "effects-empty";
+    fxGrid.parentNode.insertBefore(emptySearch, fxGrid.nextSibling);
+  }
+  emptySearch.hidden = visibleEffectCount > 0;
+  emptySearch.textContent = effectQuery ? `No effects match “${effectQuery}”. Try another name or behavior.` : "";
 
   // 5. Static Presets
   const presetsGrid = document.getElementById("presetsGrid");
@@ -1276,6 +1299,8 @@ function updateFxSpeed(val) {
 function updateFxPalette(val) {
   apiPost(`/api/device/${currentDevId}/effect_params`, { palette_name: val });
 }
+
+document.getElementById("effectSearch")?.addEventListener("input", () => renderUI());
 
 // Power Toggle
 document.getElementById("btnDevicePower").addEventListener("click", () => {
