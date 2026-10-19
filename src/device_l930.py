@@ -104,7 +104,7 @@ def make_50_zone_effect(
         display_colors=seq[:4],
         enable=1,
         brightness=100,
-        custom=0,
+        custom=1,
         direction=None,
         duration=0,
         expansion_strategy=1,
@@ -115,7 +115,7 @@ def make_50_zone_effect(
         repeat_times=0,
         saturation_range=None,
         segment_length=None,
-        segments=[0],
+        segments=list(range(NUM_SEGMENTS)),
         sequence=seq,
         spread=None,
         transition=int(transition),
@@ -162,7 +162,7 @@ class L930Controller:
         min_b = calib.get("min_brightness", 0) if isinstance(calib, dict) else getattr(calib, "min_brightness", 0)
         trans_ms = calib.get("transition_ms", 0) if isinstance(calib, dict) else getattr(calib, "transition_ms", 0)
         self.default_transition_ms = trans_ms
-        self.music_transition_ms = calib.get("music_transition_ms", 0) if isinstance(calib, dict) else 0
+        self.music_transition_ms = calib.get("music_transition_ms", 120) if isinstance(calib, dict) else 120
         self.movie_transition_ms = calib.get("movie_transition_ms", 800) if isinstance(calib, dict) else 800
         self._max_updates_per_s = float(calib.get("max_updates_per_s", 8.0) if isinstance(calib, dict) else 8.0)
         self._movie_max_updates_per_s = float(calib.get("movie_max_updates_per_s", 2.0) if isinstance(calib, dict) else 2.0)

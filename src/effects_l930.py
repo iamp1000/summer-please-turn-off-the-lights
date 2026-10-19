@@ -1244,6 +1244,57 @@ class L930EffectsEngine:
                     segs = self._render_rainbow(t)
                     interval = 0.35
                     trans_ms = 350
+                elif eff == "bioluminescent_abyss":
+                    # Deep navy field with intermittent cyan/emerald blooms
+                    segs = []
+                    for i in range(NUM_SEGMENTS):
+                        flt = math.sin(t * 1.5 + i * 0.4)
+                        if flt > 0.75:
+                            h = 175 if (i % 2 == 0) else 190
+                            v = int(20 + 70 * ((flt - 0.75) / 0.25))
+                        else:
+                            h, v = 230, 4
+                        segs.append([h, 95, v])
+                    interval = 0.35
+                    trans_ms = 350
+                elif eff == "campfire_hearth":
+                    # Multi-zone warm orange, deep crimson, and flickering gold
+                    segs = []
+                    for i in range(NUM_SEGMENTS):
+                        flt = math.sin(t * 3.0 + i * 0.8) + math.cos(t * 5.2 - i * 0.5)
+                        norm_flt = max(0.0, min(1.0, (flt + 2.0) / 4.0))
+                        h = int(12 + norm_flt * 28)
+                        v = int(25 + norm_flt * 70)
+                        segs.append([h, 95, v])
+                    interval = 0.25
+                    trans_ms = 250
+                elif eff == "dual_wipe":
+                    # Bi-directional dual wipe meeting in center
+                    pos = (t * 25.0 * max(0.2, self._speed)) % 25.0
+                    segs = []
+                    pal_dw = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "dusk")
+                    c1_h = pal_dw[0][0] if pal_dw else 280
+                    c2_h = pal_dw[1][0] if len(pal_dw) > 1 else 180
+                    for i in range(NUM_SEGMENTS):
+                        if i < 25:
+                            d = abs(i - pos)
+                            v = int(max(10, 100 - d * 18))
+                            segs.append([c1_h, 85, v])
+                        else:
+                            d = abs((49 - i) - pos)
+                            v = int(max(10, 100 - d * 18))
+                            segs.append([c2_h, 90, v])
+                    interval = 0.25
+                    trans_ms = 250
+                elif eff == "infinite_prism":
+                    # Circulating 8-step saturated rainbow prism
+                    segs = []
+                    sp_eff = max(0.2, self._speed)
+                    for i in range(NUM_SEGMENTS):
+                        h = int((i * (360.0 / 8.0) + t * 60.0 * sp_eff) % 360)
+                        segs.append([h, 100, 100])
+                    interval = 0.30
+                    trans_ms = 300
                 else:
                     segs = [[30, 60, 50]] * NUM_SEGMENTS
 

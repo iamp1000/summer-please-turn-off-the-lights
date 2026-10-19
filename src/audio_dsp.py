@@ -46,10 +46,14 @@ class MusicState:
     """
     # ── Micro (10–50 ms) ──
     bands: np.ndarray = field(default_factory=lambda: np.zeros(50, dtype=np.float32))
-    onset: float = 0.0          # 0.0 - 1.0 continuous scale-invariant onset strength
+    onset: float = 0.0          # 0.0 - 1.0 continuous scale-invariant normalized onset strength
+    raw_flux: float = 0.0       # Raw spectral flux for tempo tracking
     kick: float = 0.0           # 0.0 - 1.0 low-frequency transient punch (20-100 Hz)
     snare: float = 0.0          # 0.0 - 1.0 mid-frequency transient snap (200-2000 Hz)
     hat: float = 0.0            # 0.0 - 1.0 high-frequency transient sizzle (4-14 kHz)
+    bass: float = 0.0           # 0.0 - 1.0 calibrated bass energy (AcousticString, HydroAcoustic, LofiVinyl)
+    mid: float = 0.0            # 0.0 - 1.0 calibrated mid energy (AcousticString)
+    transient: float = 0.0      # 0.0 - 1.0 composite transient event strength
 
     # ── Meso (1–8 s) ──
     bpm: float = 120.0          # Estimated tempo
@@ -938,6 +942,20 @@ class MusicAnalyzer:
 
         norm_kick = float(getattr(self.calibrator, "norm_kick", kick_e))
 
+        # Calibrated sub-band energies & composite transient for styles
+        bass_slice = norm_bands[:8]  # ~20 to 180 Hz
+        mid_slice = norm_bands[8:28]  # ~180 to 1500 Hz
+        raw_bass_e = float(np.mean(bass_slice)) if len(bass_slice) > 0 else 0.0
+        raw_mid_e = float(np.mean(mid_slice)) if len(mid_slice) > 0 else 0.0
+        norm_bass = float(max(0.0, min(1.0, math.sqrt(raw_bass_e) * 0.7 + norm_kick * 0.3)))
+        norm_mid = float(max(0.0, min(1.0, math.sqrt(raw_mid_e) * (energy * 0.6 + 0.4))))
+
+        # Normalized onset strength in range [0.0, 1.0]
+        std_flux = math.sqrt(max(1e-5, getattr(self.onset_detector, "flux_var", 0.25)))
+        mean_flux = getattr(self.onset_detector, "flux_mean", 0.5)
+        norm_onset = float(max(0.0, min(1.0, (flux - mean_flux) / max(0.05, std_flux * 3.0)))) if not is_silent else 0.0
+        composite_transient = float(max(0.0, min(1.0, norm_snare * 0.5 + norm_onset * 0.3 + norm_hat * 0.2))) if not is_silent else 0.0
+
         intensity = float(max(0.0, min(1.0, energy * 0.50 + norm_kick * 0.30 + (1.0 - flatness) * 0.20)))
         tension = float(max(0.0, min(1.0, max(0.0, energy_trend * 3.5) + centroid_norm * 0.35)))
         impact = 1.0 if (is_onset and drop_str > 0.85) else (drop_str * 0.7 if is_onset else 0.0)
@@ -962,10 +980,14 @@ class MusicAnalyzer:
         # Construct Immutable MusicState Snapshot
         state = MusicState(
             bands=norm_bands,
-            onset=flux,
+            onset=norm_onset,
+            raw_flux=flux,
             kick=norm_kick,
             snare=norm_snare,
             hat=norm_hat,
+            bass=norm_bass,
+            mid=norm_mid,
+            transient=composite_transient,
             bpm=bpm,
             bpm_confidence=self.tempo_tracker.bpm_confidence,
             beat_phase=predictive_phase,

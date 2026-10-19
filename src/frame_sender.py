@@ -261,13 +261,18 @@ class LatestFrameSender:
             else:
                 self._pacing_delay = min(0.100, self._pacing_delay * 1.5)
 
-            # Enforce pacing delay and optional send budget
-            if self._pending_frame is not None:
-                wait_time = self._pacing_delay
-            elif self.max_updates_per_s > 0:
+            # ── Enforce True Frame-Rate Cap based on elapsed time ──
+            if self.max_updates_per_s > 0:
                 target_interval = 1.0 / max(0.5, self._aimd_rate_cap)
-                wait_time = max(self._pacing_delay, min(target_interval - dt, 0.050))
+                # If a new frame is already waiting, we only need to wait the remaining interval since previous send
+                # or the pacing delay, whichever is larger, without sleeping unnecessarily
+                remaining = target_interval - dt
+                if self._pending_frame is not None:
+                    wait_time = max(self._pacing_delay, min(remaining, 0.100))
+                else:
+                    wait_time = max(self._pacing_delay, remaining)
             else:
                 wait_time = self._pacing_delay
+
             if wait_time > 0:
                 await asyncio.sleep(wait_time)
