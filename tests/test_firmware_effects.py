@@ -69,6 +69,8 @@ def test_firmware_random_builder_limits():
     assert fx_rnd.transition_range[0] == 0
     assert fx_rnd.transition_range[1] == 6000
     assert fx_rnd.type == "random"
+    full_hue = build_firmware_random_effect(name="FullHue", hue_range=(0, 360))
+    assert full_hue.hue_range == [0, 360], "full hue range should preserve the 360 endpoint"
 
 
 def test_curated_palettes_presence_and_no_neon():
@@ -90,6 +92,9 @@ def test_curated_palettes_presence_and_no_neon():
 def test_effects_catalog_classification():
     """Verify every effect is classified into firmware, streamed_slow, or live."""
     assert len(EFFECT_CATALOG) >= 15
+    for name in ("drift", "starfield", "embers", "confetti", "fireflies", "prism_sparks"):
+        assert EFFECT_CATALOG[name]["kind"] == "firmware", f"{name} should use on-device IC randomness"
+    assert EFFECT_CATALOG["meteor_shower"]["kind"] == "streamed_slow"
     for name, meta in EFFECT_CATALOG.items():
         assert meta["kind"] in ("firmware", "streamed_slow", "live"), f"{name} has invalid kind: {meta['kind']}"
         assert meta["group"] in ("Ambient", "Motion", "Seasonal & Novelty"), f"{name} has invalid group: {meta['group']}"
@@ -189,6 +194,11 @@ def test_fastled_ported_effects_juggle_sinelon_confetti():
     # 3. Confetti (shimmering speckles)
     f_confetti = engine._compute("confetti", t=2.0)
     assert len(f_confetti) == 50
+    for name in ("drift", "starfield", "embers", "confetti", "fireflies", "prism_sparks"):
+        assert engine._build_effect_payload(name).type == "random", f"{name} should produce a random IC payload"
+    meteor_frame = engine._compute("meteor_shower", t=1.25)
+    assert len(meteor_frame) == 50
+    assert len({tuple(zone) for zone in meteor_frame}) > 3
     for h, s, v in f_confetti:
         assert 0 <= h <= 360
         assert 0 <= s <= 100
