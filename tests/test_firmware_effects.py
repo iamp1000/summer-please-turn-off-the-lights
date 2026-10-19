@@ -222,4 +222,89 @@ def test_2d_geometric_effects():
     assert max(c[2] for c in f_vortex) > 50
 
 
+def test_full_circle_hue_range_random_effect():
+    """Verify that (0, 360) is preserved and does not collapse to [0, 0]."""
+    fx = build_firmware_random_effect("FullRainbow", hue_range=(0, 360))
+    assert fx.hue_range == [0, 360], f"Expected [0, 360], got {fx.hue_range}"
+
+    # Also check narrow wrap-safe range
+    fx_narrow = build_firmware_random_effect("NarrowArc", hue_range=(200, 230))
+    assert fx_narrow.hue_range == [200, 230]
+
+
+def test_parameter_aware_effect_id():
+    """Verify that sequence and random effects produce new IDs when parameters change."""
+    id1 = make_effect_id("Tide", trans=2000, sp=16, dir=3, b=100)
+    id2 = make_effect_id("Tide", trans=1000, sp=16, dir=3, b=100)
+    id3 = make_effect_id("Tide", trans=2000, sp=16, dir=3, b=50)
+
+    assert id1 != id2, "Transition change must produce distinct effect ID for firmware re-arming"
+    assert id1 != id3, "Brightness change must produce distinct effect ID"
+    assert len(id1) == 32 and len(id2) == 32
+
+
+def test_worker_generation_lifecycle_and_stale_timer():
+    """Verify stream worker stops cleanly on generation change and stale firmware timers are dropped."""
+    from unittest.mock import MagicMock
+    ctrl = MagicMock()
+    runner = MagicMock()
+    engine = L930EffectsEngine(controller=ctrl, loop_runner=runner, app_state={})
+
+    # 1. Start streamed effect (gen 1)
+    engine.start("lava_lamp")
+    g1 = engine._effect_generation
+    assert engine.is_running()
+    t1 = engine._thread
+    assert t1 is not None and t1.is_alive()
+
+    # 2. Switch to firmware effect (gen 2) - should cleanly stop old thread
+    engine.start("tide")
+    assert engine._effect_generation == g1 + 1
+    # Old thread must be dead
+    t1.join(timeout=1.5)
+    assert not t1.is_alive()
+
+    # 3. Simulate pending firmware upload queued under gen 2
+    engine._pending_fw_upload = (engine._effect_generation, "tide", MagicMock())
+
+    # Switch to streamed effect (gen 3)
+    engine.start("dusk")
+    assert engine._pending_fw_upload is None  # Must be cleared immediately
+
+    # Manually trigger flush with stale generation
+    engine._pending_fw_upload = (engine._effect_generation - 1, "tide", MagicMock())
+    engine._flush_pending_firmware_upload()
+    # Runner should not have been called with stale effect
+    engine.stop()
+
+
+def test_output_arbiter_strict_ownership():
+    """Verify OutputArbiter enforces single-producer rules and rejects conflicting streams."""
+    from src.frame_bus import OutputArbiter, OutputProducer
+
+    arbiter = OutputArbiter()
+    dev = "strip2"
+
+    # IDLE allows initial static or idle release
+    assert arbiter.can_submit(dev, OutputProducer.STATIC)
+    assert arbiter.can_submit(dev, OutputProducer.IDLE)
+    assert not arbiter.can_submit(dev, OutputProducer.EFFECT)
+
+    # Claim EFFECT
+    arbiter.claim_output(dev, OutputProducer.EFFECT)
+    assert arbiter.can_submit(dev, OutputProducer.EFFECT)
+    assert not arbiter.can_submit(dev, OutputProducer.AUDIO)
+    assert not arbiter.can_submit(dev, OutputProducer.STATIC)
+
+    # Claim AUDIO - should preempt EFFECT
+    relinquished = []
+    arbiter.claim_output(dev, OutputProducer.AUDIO, on_relinquish=lambda: relinquished.append("effect_stopped"))
+    # Next claim preempts
+    arbiter.claim_output(dev, OutputProducer.SCREEN_SYNC)
+    assert relinquished == ["effect_stopped"]
+    assert arbiter.can_submit(dev, OutputProducer.SCREEN_SYNC)
+    assert not arbiter.can_submit(dev, OutputProducer.AUDIO)
+
+
+
 

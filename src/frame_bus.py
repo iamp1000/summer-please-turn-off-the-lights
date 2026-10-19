@@ -142,7 +142,12 @@ class OutputArbiter:
         """Checks if producer is authorized to submit frames to dev_id."""
         with self._lock:
             owner = self._owners.get(dev_id, OutputProducer.IDLE)
-            return owner == producer or owner == OutputProducer.IDLE
+            if owner == producer:
+                return True
+            # When IDLE, only permit static scenes or idle release packets, never competing stream loops
+            if owner == OutputProducer.IDLE and producer in (OutputProducer.STATIC, OutputProducer.IDLE):
+                return True
+            return False
 
     def get_owner(self, dev_id: str) -> str:
         """Returns the name of the active producer for dev_id."""

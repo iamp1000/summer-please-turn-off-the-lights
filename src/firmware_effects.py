@@ -97,9 +97,12 @@ def get_palette_hsv(palette_name: str) -> List[Tuple[int, int, int]]:
     return PALETTES.get(key, PALETTES["sunset"])
 
 
-def make_effect_id(name: str) -> str:
-    """Generates a stable 32-hex character ID required by L930 firmware."""
-    return hashlib.md5(f"tapo_l930_fw_{name}".encode("utf-8")).hexdigest()
+def make_effect_id(name: str, **kwargs) -> str:
+    """Generates a stable 32-hex character ID derived from name and parameters."""
+    if not kwargs:
+        return hashlib.md5(f"tapo_l930_fw_{name}".encode("utf-8")).hexdigest()
+    param_str = "_".join(f"{k}={kwargs[k]}" for k in sorted(kwargs.keys()))
+    return hashlib.md5(f"tapo_l930_fw_{name}_{param_str}".encode("utf-8")).hexdigest()
 
 
 def build_firmware_sequence_effect(
@@ -134,7 +137,7 @@ def build_firmware_sequence_effect(
     # Display colors for Tapo app card icon (up to 4 colors)
     disp_colors = seq_clamped[:4]
 
-    fx_id = make_effect_id(name)
+    fx_id = make_effect_id(name, trans=trans_clamped, sp=spread, dir=dir_clamped, b=brightness)
 
     return LightEffect(
         id=fx_id,
@@ -173,7 +176,15 @@ def build_firmware_random_effect(
     - 0 <= transition <= 6000 ms
     """
     seed_clamped = max(1, min(600, int(random_seed)))
-    h_range = [int(hue_range[0]) % 360, int(hue_range[1]) % 360]
+    h0 = int(hue_range[0])
+    h1 = int(hue_range[1])
+    if h0 == 0 and h1 == 360:
+        h_range = [0, 360]
+    elif h0 == h1:
+        h_range = [h0 % 360, h1 % 360]
+    else:
+        h_range = [h0 % 360, 360 if h1 == 360 else (h1 % 360)]
+
     s_range = [max(0, min(100, int(saturation_range[0]))), max(0, min(100, int(saturation_range[1])))]
     b_range = [max(0, min(100, int(brightness_range[0]))), max(0, min(100, int(brightness_range[1])))]
     t_range = [max(0, min(6000, int(transition_range[0]))), max(0, min(6000, int(transition_range[1])))]
@@ -182,7 +193,7 @@ def build_firmware_random_effect(
     bg_list = backgrounds or []
     disp_colors = [[h_range[0], s_range[1], b_range[1]]]
 
-    fx_id = make_effect_id(name)
+    fx_id = make_effect_id(name, seed=seed_clamped, trans=t_range[0], b=brightness)
 
     return LightEffect(
         id=fx_id,

@@ -8,11 +8,14 @@ Rule:
 """
 from __future__ import annotations
 
+import logging
 import math
 import random
 import threading
 import time
 from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger("tapo")
 
 from src.frame_bus import FramePacket, OutputProducer
 from src.pipeline import lerp_oklab, rgb_to_tapo_hsv, tapo_hsv_to_rgb
@@ -39,6 +42,10 @@ class AnimationEngine:
 
         self._running = False
         self._thread: Optional[threading.Thread] = None
+        self._stop_event: Optional[threading.Event] = None
+        self._effect_generation: int = 0
+        self._last_error: Optional[str] = None
+
         self._current_effect: Optional[Dict[str, Any]] = None
         self._effect_name: Optional[str] = None
         self._start_time = 0.0
@@ -63,6 +70,8 @@ class AnimationEngine:
         return self._running
 
     def start(self, effect_config_or_name: Any):
+        self.stop()
+
         if isinstance(effect_config_or_name, str):
             self._effect_name = effect_config_or_name
             self._current_effect = {"name": effect_config_or_name}
@@ -72,34 +81,52 @@ class AnimationEngine:
         else:
             return
 
-        self._start_time = time.time()
+        self._effect_generation += 1
+        self._start_time = time.monotonic()
         self._start_b = getattr(self._controller, "last_b", 50)
         self._start_h = getattr(self._controller, "last_h", 0)
         self._start_s = getattr(self._controller, "last_s", 0)
 
-        if self._running:
-            return
         self._running = True
-        self._thread = threading.Thread(target=self._run, daemon=True, name="L900AnimationWorker")
+        stop_event = threading.Event()
+        self._stop_event = stop_event
+        gen = self._effect_generation
+
+        self._thread = threading.Thread(
+            target=self._run,
+            args=(stop_event, gen),
+            daemon=True,
+            name=f"L900Anim-{self._effect_name}"
+        )
         self._thread.start()
 
     def stop(self):
+        self._effect_generation += 1
         self._running = False
+        event = self._stop_event
+        if event is not None:
+            event.set()
+        thread = self._thread
+        if thread and thread.is_alive() and thread != threading.current_thread():
+            thread.join(timeout=1.0)
+        self._thread = None
+        self._stop_event = None
         self._current_effect = None
         self._effect_name = None
         if hasattr(self._controller, "clear_frames"):
             self._controller.clear_frames()
 
-    def _run(self):
-        while self._running:
+    def _run(self, stop_event: threading.Event, generation: int):
+        while not stop_event.is_set() and generation == self._effect_generation:
             try:
                 if not self._current_effect:
-                    time.sleep(0.1)
+                    if stop_event.wait(0.1):
+                        break
                     continue
 
                 eff_name = (self._effect_name or "ambient_drift").lower()
                 cfg = self._current_effect
-                t = time.time() - self._start_time
+                t = time.monotonic() - self._start_time
 
                 # Determine send interval & transition (scaled by speed multiplier)
                 if eff_name == "candle_flicker":
@@ -141,13 +168,17 @@ class AnimationEngine:
                 }
 
                 if self._frame_bus:
-                    self._frame_bus.publish(FramePacket(
+                    published = self._frame_bus.publish(FramePacket(
                         dev_id=self._dev_id,
                         producer=OutputProducer.EFFECT,
                         hsv=(frame_data["h"], frame_data["s"], frame_data["b"]),
                         brightness=frame_data["b"],
                         transition=trans_ms,
                     ))
+                    if not published:
+                        if stop_event.wait(0.1):
+                            break
+                        continue
 
                 if hasattr(self._controller, "submit_frame"):
                     self._controller.submit_frame(frame_data)
@@ -156,10 +187,14 @@ class AnimationEngine:
                         frame_data["h"], frame_data["s"], frame_data["b"], priority=1
                     ))
 
-                time.sleep(interval)
+                if stop_event.wait(interval):
+                    break
 
             except Exception as e:
-                time.sleep(1.0)
+                logger.exception(f"[AnimationEngine] Exception in L900 worker: {e}")
+                self._last_error = str(e)
+                if stop_event.wait(1.0):
+                    break
 
     def _compute_hsv(self, eff_name: str, cfg: dict, t: float) -> Tuple[int, int, int]:
         """Computes target HSV using OKLab palette interpolation."""

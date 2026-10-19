@@ -21,11 +21,14 @@ Architecture:
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
 import random
 import threading
 import time
 from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger("tapo")
 
 from plugp100.api.light_effect import LightEffect
 from plugp100.api.light_effect_preset import LightEffectPreset
@@ -267,18 +270,23 @@ class L930EffectsEngine:
 
         self._running = False
         self._thread: Optional[threading.Thread] = None
+        self._stop_event: Optional[threading.Event] = None
+        self._effect_generation: int = 0
+        self._last_error: Optional[str] = None
+        self._last_successful_frame: float = 0.0
+
         self._active_effect_name: Optional[str] = None
         self._active_kind: Optional[str] = None
         self._start_time: float = 0.0
 
         # Current user parameters
         self._speed: float = 1.0         # 0.2x to 3.0x
-        self._brightness: int = 100      # 1 to 100
+        self._brightness: int = 50       # 1 to 100, synced with device context
         self._palette_name: str = "sunset"
 
         # Rate-limiting parameter updates to firmware (at most once per 2s)
         self._last_firmware_upload: float = 0.0
-        self._pending_fw_upload: Optional[LightEffect] = None
+        self._pending_fw_upload: Optional[Tuple[int, str, LightEffect]] = None
         self._pending_fw_timer: Optional[threading.Timer] = None
         self._fw_lock = threading.Lock()
 
@@ -320,7 +328,7 @@ class L930EffectsEngine:
         if changed and self._active_kind == "firmware" and self._active_effect_name:
             self._redeploy_current_firmware_effect()
 
-    def start(self, effect_name: str, palette_name: Optional[str] = None, speed: Optional[float] = None):
+    def start(self, effect_name: str, palette_name: Optional[str] = None, speed: Optional[float] = None, brightness: Optional[int] = None):
         key = effect_name.strip().lower()
         if key not in EFFECT_CATALOG:
             # Check native aliases
@@ -329,6 +337,19 @@ class L930EffectsEngine:
             else:
                 return
 
+        # Increment effect generation immediately
+        self._effect_generation += 1
+
+        # Invalidate any pending firmware timers from previous effects immediately
+        with self._fw_lock:
+            if self._pending_fw_timer is not None:
+                try:
+                    self._pending_fw_timer.cancel()
+                except Exception:
+                    pass
+                self._pending_fw_timer = None
+            self._pending_fw_upload = None
+
         if palette_name and palette_name.strip().lower() in PALETTES:
             self._palette_name = palette_name.strip().lower()
         elif "default_palette" in EFFECT_CATALOG[key]:
@@ -336,15 +357,17 @@ class L930EffectsEngine:
 
         if speed is not None:
             self._speed = max(0.2, min(3.0, float(speed)))
+        if brightness is not None:
+            self._brightness = max(1, min(100, int(brightness)))
 
         meta = EFFECT_CATALOG[key]
         kind = meta["kind"]
         self._active_effect_name = key
         self._active_kind = kind
-        self._start_time = time.time()
+        self._start_time = time.monotonic()
 
         if kind == "firmware":
-            # Stop streaming worker: streaming sender is completely idle while firmware effect runs
+            # Stop streaming worker cleanly
             self._stop_stream_worker()
             self._deploy_firmware_effect(key)
         elif kind == "streamed_slow":
@@ -352,6 +375,7 @@ class L930EffectsEngine:
             self._start_stream_worker()
 
     def stop(self):
+        self._effect_generation += 1
         self._stop_stream_worker()
         with self._fw_lock:
             if self._pending_fw_timer is not None:
@@ -373,11 +397,12 @@ class L930EffectsEngine:
         if fx is None:
             return
 
+        gen = self._effect_generation
         with self._fw_lock:
-            now = time.time()
+            now = time.monotonic()
             # Throttle firmware uploads to at most once per 2s
             if now - self._last_firmware_upload < 2.0:
-                self._pending_fw_upload = fx
+                self._pending_fw_upload = (gen, name, fx)
                 # Debounce: cancel any existing pending timer before scheduling a new one
                 if self._pending_fw_timer is not None:
                     try:
@@ -402,12 +427,17 @@ class L930EffectsEngine:
 
     def _flush_pending_firmware_upload(self):
         with self._fw_lock:
-            fx = self._pending_fw_upload
+            pending = self._pending_fw_upload
             self._pending_fw_upload = None
             self._pending_fw_timer = None
-            if fx is None:
+            if pending is None:
                 return
-            self._last_firmware_upload = time.time()
+            gen, name, fx = pending
+            # Validate that the effect generation and active effect are still current
+            if gen != self._effect_generation or self._active_kind != "firmware" or self._active_effect_name != name:
+                logger.debug(f"[L930EffectsEngine] Dropping stale firmware upload for '{name}' (gen {gen} != {self._effect_generation})")
+                return
+            self._last_firmware_upload = time.monotonic()
         self._loop_runner.run(self._ctrl.set_native_effect(fx, priority=0))
 
     def _redeploy_current_firmware_effect(self):
@@ -757,16 +787,29 @@ class L930EffectsEngine:
     def _start_stream_worker(self):
         self._stop_stream_worker()
         self._running = True
-        self._thread = threading.Thread(target=self._stream_run, daemon=True, name="L930SlowStreamWorker")
+        stop_event = threading.Event()
+        self._stop_event = stop_event
+        gen = self._effect_generation
+        self._thread = threading.Thread(
+            target=self._stream_run,
+            args=(stop_event, gen),
+            daemon=True,
+            name=f"L930Stream-{self._active_effect_name}"
+        )
         self._thread.start()
 
     def _stop_stream_worker(self):
         self._running = False
-        if self._thread and self._thread.is_alive() and self._thread != threading.current_thread():
-            self._thread.join(timeout=0.2)
+        event = self._stop_event
+        if event is not None:
+            event.set()
+        thread = self._thread
+        if thread and thread.is_alive() and thread != threading.current_thread():
+            thread.join(timeout=1.0)
         self._thread = None
+        self._stop_event = None
 
-    def _stream_run(self):
+    def _stream_run(self, stop_event: threading.Event, generation: int):
         """
         Slow streamed loop (1 to 2 updates/s).
         Transition_ms matches update interval so the device hardware does the smooth crossfading.
@@ -774,14 +817,15 @@ class L930EffectsEngine:
         interval = 0.8  # ~1.25 updates per second
         trans_ms = int(interval * 1000)
 
-        while self._running:
+        while not stop_event.is_set() and generation == self._effect_generation:
             try:
                 eff = self._active_effect_name
                 if not eff or self._active_kind != "streamed_slow":
-                    time.sleep(0.1)
+                    if stop_event.wait(0.1):
+                        break
                     continue
 
-                now = time.time()
+                now = time.monotonic()
                 t = now - self._start_time
 
                 if eff == "lava_lamp":
@@ -797,7 +841,7 @@ class L930EffectsEngine:
                     interval = 0.5
                     trans_ms = 500
                 elif eff in ("hearth", "hearth_streamed"):
-                    segs = self._render_non_linear_hearth(t)
+                    segs = self._render_hearth_fire2012(t)
                     interval = 0.35
                     trans_ms = 350
                 elif eff == "cyber_chase":
@@ -853,13 +897,18 @@ class L930EffectsEngine:
                 corrected = self._pipeline.correct_hsv_sequence(segs, master_ceiling=master_ceiling)
 
                 if self._frame_bus:
-                    self._frame_bus.publish(FramePacket(
+                    published = self._frame_bus.publish(FramePacket(
                         dev_id=self._dev_id,
                         producer=OutputProducer.EFFECT,
                         segments=corrected,
                         brightness=b,
                         transition=trans_ms,
                     ))
+                    if not published:
+                        # Another producer has output ownership; yield gracefully
+                        if stop_event.wait(0.1):
+                            break
+                        continue
 
                 if hasattr(self._ctrl, "submit_frame"):
                     self._ctrl.submit_frame({
@@ -869,9 +918,14 @@ class L930EffectsEngine:
                         "_pre_corrected": True,
                     })
 
-                time.sleep(interval)
+                self._last_successful_frame = time.time()
+                if stop_event.wait(interval):
+                    break
             except Exception as e:
-                time.sleep(1.0)
+                logger.exception(f"[L930EffectsEngine] Exception in stream worker ({eff}): {e}")
+                self._last_error = str(e)
+                if stop_event.wait(1.0):
+                    break
 
     # ── Procedural Streamed Models ───────────────────────────────────────────
 
@@ -888,6 +942,7 @@ class L930EffectsEngine:
             pal = [pal[0], pal[0]]
 
         from src.visual_styles import sample_palette_oklab
+        from src.pipeline import tapo_hsv_to_rgb, rgb_to_tapo_hsv
 
         sp = self._speed
         # 4 continuous, harmonic buoyant convection cells with non-integer phase ratios
@@ -918,25 +973,41 @@ class L930EffectsEngine:
             {"pos": b4_pos, "vel": -0.17 * sp, "radius": b4_rad},
         ]
 
+        blob_colors = [
+            sample_palette_oklab(pal, 0.15, cyclic=True),
+            sample_palette_oklab(pal, 0.45, cyclic=True),
+            sample_palette_oklab(pal, 0.75, cyclic=True),
+            sample_palette_oklab(pal, 0.95, cyclic=True),
+        ]
+
         segs = []
         for i in range(NUM_SEGMENTS):
             field = 0.0
-            for pos, rad in blobs:
+            sum_r, sum_g, sum_b = 0.0, 0.0, 0.0
+            for b_idx, (pos, rad) in enumerate(blobs):
                 dist = abs(i - pos)
                 if dist < rad:
-                    # Smooth C1 polynomial falloff: (1 - (dist/rad)^2)^2 with zero slope at boundary
                     r = dist / rad
                     w = 1.0 - r * r
-                    field += w * w
+                    w2 = w * w
+                    field += w2
+                    bc_hsv = blob_colors[b_idx % len(blob_colors)]
+                    b_rgb = tapo_hsv_to_rgb(bc_hsv[0], bc_hsv[1], 100)
+                    sum_r += b_rgb[0] * w2
+                    sum_g += b_rgb[1] * w2
+                    sum_b += b_rgb[2] * w2
 
-            # Continuous non-linear saturation curve: smoothly maps field into [0.0, 1.0]
-            norm_field = 1.0 - math.exp(-1.4 * field)
+            norm_field = min(1.0, 1.0 - math.exp(-1.4 * field))
+            if field > 0.01:
+                norm_r = sum_r / field
+                norm_g = sum_g / field
+                norm_b = sum_b / field
+                h, s, _ = rgb_to_tapo_hsv(norm_r, norm_g, norm_b)
+            else:
+                bg_c = sample_palette_oklab(pal, 0.0, cyclic=True)
+                h, s = bg_c[0], bg_c[1]
 
-            # Continuous OKLab palette interpolation across full spectrum (no hard color jumps)
-            h, s, _ = sample_palette_oklab(pal, norm_field, cyclic=False)
-
-            # Continuous brightness curve: 18% ambient fluid floor to 100% molten core
-            bright = int(max(15, min(100, 18.0 + 82.0 * (norm_field ** 1.3))))
+            bright = int(max(15, min(100, 16.0 + 84.0 * (norm_field ** 1.3))))
             segs.append([h, s, bright])
 
         return segs

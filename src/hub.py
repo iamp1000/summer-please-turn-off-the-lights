@@ -213,15 +213,18 @@ class LightHub:
         for ctx in target_devs:
             did = ctx.dev_id
             if ctx.model == "L930":
-                if hasattr(self, "frame_bus") and self.frame_bus:
+                is_fw = hasattr(ctx, "fx_engine") and getattr(ctx.fx_engine, "_active_kind", None) == "firmware"
+                if not is_fw and hasattr(self, "frame_bus") and self.frame_bus:
                     packet = self.frame_bus.get_latest_frame(did)
                     if packet and packet.segments:
                         return packet.segments
+                if hasattr(ctx, "fx_engine") and hasattr(ctx.fx_engine, "_active_effect_name") and ctx.fx_engine._active_effect_name:
+                    t = time.monotonic() - getattr(ctx.fx_engine, "_start_time", 0.0)
+                    sim = ctx.fx_engine._compute(ctx.fx_engine._active_effect_name, t)
+                    if sim:
+                        return sim
                 if hasattr(ctx.controller, "last_segments") and ctx.controller.last_segments:
                     return ctx.controller.last_segments
-                if hasattr(ctx, "fx_engine") and hasattr(ctx.fx_engine, "_active_effect_name") and ctx.fx_engine._active_effect_name:
-                    t = time.time() - getattr(ctx.fx_engine, "_start_time", 0.0)
-                    return ctx.fx_engine._compute(ctx.fx_engine._active_effect_name, t)
             else:
                 if hasattr(self, "frame_bus") and self.frame_bus:
                     packet = self.frame_bus.get_latest_frame(did)
@@ -361,6 +364,8 @@ class LightHub:
         targets = self._resolve_targets(dev_id)
         for ctx in targets:
             ctx.state["brightness"] = val
+            if hasattr(ctx, "fx_engine") and hasattr(ctx.fx_engine, "set_parameters"):
+                ctx.fx_engine.set_parameters(brightness=val)
             if ctx.state["active_label"] not in ["Screen Reactive", "Audio Reactive", "Audio Spectrum (IC)"]:
                 self.loop_runner.run(ctx.controller.set_brightness(val, priority=1))
         self.notify_change()
@@ -403,8 +408,11 @@ class LightHub:
             ctx.screen_sync.stop()
             ctx.state["power"] = True
             ctx.state["active_label"] = effect_name
+            cur_b = ctx.state.get("brightness", 50)
+            if hasattr(ctx, "fx_engine") and hasattr(ctx.fx_engine, "set_parameters"):
+                ctx.fx_engine.set_parameters(brightness=cur_b)
             if ctx.model == "L930":
-                ctx.fx_engine.start(effect_name)
+                ctx.fx_engine.start(effect_name, brightness=cur_b)
             else:
                 eff_cfg = dict(self.config.get("effects", {}).get(effect_name, {}))
                 eff_cfg["name"] = effect_name
