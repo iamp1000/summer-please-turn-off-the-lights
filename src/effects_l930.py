@@ -216,6 +216,8 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
     },
 }
 
+CUSTOM_EFFECTS = list(EFFECT_CATALOG.keys())
+
 
 class L930EffectsEngine:
     """
