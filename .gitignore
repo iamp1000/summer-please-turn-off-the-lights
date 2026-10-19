@@ -10,6 +10,9 @@ env/
 # Configuration & Secrets
 config.yaml
 config*.yaml
+*.local.yaml
+*.local.yml
+local_config.*
 .env
 .env*
 *.env

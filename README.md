@@ -1,174 +1,236 @@
 <div align="center">
 
-# ✨ Tapo Control Hub 
+<img src="assets/banner.svg" alt="Summer, please turn off the lights" width="100%">
 
-**A blazing-fast, local-first desktop controller for TP-Link Tapo RGB strips.**
+<br/>
 
-[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
-[![CustomTkinter](https://img.shields.io/badge/UI-CustomTkinter-2c2c33.svg?style=for-the-badge)](https://github.com/TomSchimansky/CustomTkinter)
-[![License: MIT](https://img.shields.io/badge/License-MIT-success.svg?style=for-the-badge)](#)
+[![Python 3.13](https://img.shields.io/badge/Python-3.13-3776ab.svg?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![Platform: Windows 10 / 11](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011-0078d4.svg?style=flat-square&logo=windows&logoColor=white)](#limitations)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 
-Ditch the phone app and control your lighting directly from your desktop. Built for speed and aesthetics, this hub bypasses cloud latency by communicating directly with your local network API.
+<br/>
+
+**A local-first desktop controller & audio-reactive lighting engine for TP-Link Tapo smart light strips.**  
+Controls strips directly over your local area network (LAN) with zero cloud round-trips for real-time updates.
+
+[Key Features](#-key-features) • [Quick Start](#-quick-start) • [Limitations](#-limitations) • [Security](#-security) • [Effects Catalog](#-complete-effects-catalog) • [Credits](#-credits--disclaimer)
+
+<br/>
+
+<img src="assets/pulse.gif" alt="Pulse Mode - Simulated 50-Zone Strip" width="100%" style="border-radius: 8px;">
+<p align="center"><em>Real effect engine simulation of the Tapo L930 50-zone addressable strip in Pulse mode.</em></p>
 
 </div>
 
 ---
 
-## 🚀 Features
+## 💡 What Is This?
 
-* **Sleek Modern GUI:** A beautiful, dark-mode launcher interface built with `customtkinter`, featuring smooth color pickers and organized libraries for modes and effects.
-* **Zero Cloud Latency:** Uses local network communication via `plugp100`. Immediate response times and completely functional offline.
-* **Global Hotkeys:** Never break your flow. Control power, brightness, and modes using system-wide keyboard shortcuts—perfect for when you're typing away at 125 WPM and don't want to touch the mouse.
-* **Premium Animation Engine:** 
-  * Custom effects with customizable color palettes and sine-wave brightness phasing.
-  * Smooth 600ms crossfading between static modes for a high-end feel.
-  * Gamma-corrected dimming curves so low-light transitions are buttery smooth.
-* **Resilient Connectivity:** Automatic background reconnection with exponential backoff and desktop toast notifications if your Wi-Fi drops.
-* **System Tray Integration:** Runs quietly in the background with a minimalist tray app.
+Controlling lights through a mobile app introduces cloud latency and breaks your desktop workflow. **Summer, Please Turn Off The Lights** communicates with your TP-Link Tapo light strips (tested with **L900** and **L930**) directly over your LAN using local KLAP/TPAP protocol handshakes.
 
-## 🔌 Supported Hardware
-Optimized and tested for Tapo RGB LED strips, specifically:
-* **Tapo L900** series
-* **Tapo L930** series
-
-## 💻 OS Compatibility
-Works flawlessly across different environments:
-* **Windows**
-* **Arch Linux** (Note: `keyboard` hotkeys may require `sudo` or `uinput` group configuration depending on your display server).
+Initial device discovery and pairing require your TP-Link account credentials, but all runtime lighting updates, animations, and sound-reactive commands are sent directly from your PC to the strip's local IP address.
 
 ---
 
-## 🛠️ Installation & Setup
+## ⚡ Key Features
 
-### 1. Clone the repository
+1. **Local LAN Streaming & Firmware Looping Hybrid**
+   - Live music and movie reactive modes stream dynamically over your LAN at safe, measured rates (4–8 updates/sec).
+   - Complex ambient animations (Tide, Drift, Breathe, Starfield, Embers) execute directly inside the L930 microcontroller firmware at 60+ FPS with **zero network traffic**.
+   - Single-zone strips (L900) update Hue, Saturation, and Brightness in a single combined network call rather than three separate requests.
+
+2. **Perceptual Audio-Reactive Engine (OKLab)**
+   - Desktop audio loopback capture with sub-5ms FFT analysis, transient kick detection, and tempo tracking.
+   - All color interpolation is calculated in **perceptual OKLab color space**, eliminating muddy brown/grey transitions between contrasting hues.
+
+3. **Unified Dual-Strip Orchestration & Dashboard**
+   - Concurrently coordinates two light strips: a single-zone monitor bias light (L900) and an addressable 50-zone bed backboard (L930).
+   - Includes a dark-mode desktop tray application and a responsive web dashboard accessible across your LAN.
+
+---
+
+## 🎬 Live Modes Showcase
+
+| Mode | Simulated 50-Zone Hardware Output |
+| :--- | :--- |
+| **Pulse**<br>*Rhythm & Kick Drum Swell* | <img src="assets/pulse.gif" alt="Pulse Mode" width="100%"> |
+| **Spectrum**<br>*Mirrored 50-Band Equalizer* | <img src="assets/spectrum.gif" alt="Spectrum Mode" width="100%"> |
+| **Flow**<br>*Dual-Octave Noise Curtains* | <img src="assets/flow.gif" alt="Flow Mode" width="100%"> |
+| **Movie**<br>*Cinematic Ambilight Sync* | <img src="assets/movie.gif" alt="Movie Mode" width="100%"> |
+
+<details>
+<summary><strong>📸 View Web Dashboard Screenshots</strong></summary>
+
+<br/>
+
+| Mode | Dashboard Interface (1280x800) |
+| :--- | :--- |
+| **Pulse** | <img src="assets/dashboard_pulse.png" alt="Pulse Dashboard" width="100%"> |
+| **Spectrum** | <img src="assets/dashboard_spectrum.png" alt="Spectrum Dashboard" width="100%"> |
+| **Flow** | <img src="assets/dashboard_flow.png" alt="Flow Dashboard" width="100%"> |
+| **Movie** | <img src="assets/dashboard_movie.png" alt="Movie Dashboard" width="100%"> |
+
+</details>
+
+---
+
+## 🚀 Quick Start
+
+> **Note:** This project is **Windows 10 / 11 only** (tested on Python 3.13).
+
+### 1. Clone & Install Dependencies
 ```bash
-git clone https://github.com/iamp1000/tapo-control-hub.git
-cd tapo-control-hub
-```
+git clone https://github.com/iamp1000/summer-please-turn-off-the-lights.git
+cd summer-please-turn-off-the-lights
 
-### 2. Set Up a Virtual Environment & Install Dependencies
-It is highly recommended to use a virtual environment to isolate your packages.
-
-```bash
-# Create environment
+# Create and activate virtual environment
 python -m venv venv
-
-# Activate environment
-# On Windows:
 venv\Scripts\activate
-# On Linux:
-source venv/bin/activate
 
 # Install requirements
 pip install -r requirements.txt
 ```
-*(Ensure your requirements.txt includes: customtkinter, plugp100, keyboard, pystray, pyyaml, python-dotenv, plyer, pydantic, and Pillow)*
 
-### 3. Configure Authentication Environment Variables
-Create a `.env` file in the root directory of the project to securely pass your TP-Link cloud account details (used strictly for local token exchange validation):
-
+### 2. Configure Credentials (`.env`)
+Create a `.env` file in the project root with your TP-Link Tapo account credentials (used locally for the KLAP token handshake):
 ```env
 TAPO_EMAIL=your_tapo_email@example.com
-TAPO_PASSWORD=your_secure_password
+TAPO_PASSWORD=your_tapo_password
+
+# Optional: Token protection for web dashboard (leave empty for open LAN access)
+TAPO_WEB_TOKEN=
 ```
 
-### 4. Create Your Configuration (config.yaml)
-Create a `config.yaml` file in the root folder. The application automatically validates this file on startup using strict pydantic schemas.
-
+### 3. Configure Devices (`config.yaml`)
+Create or edit `config.yaml` to specify your light strips' static local IP addresses:
 ```yaml
 tapo:
   devices:
     strip1:
-      ip: "192.168.1.145" # Replace with your light strip's static local IP
-      name: "Desk Setup"
-
-modes:
-  work:
-    brightness: 85
-    color_temp: 4200      # Supports kelvin values between 1800 and 7000
-  coding_night:
-    brightness: 25
-    hue: 265              # 0-360 degrees
-    saturation: 85        # 0-100%
-  chill:
-    brightness: 40
-    hue: 25
-    saturation: 75
-
-effects:
-  synthwave:
-    brightness_min: 20
-    brightness_max: 90
-    color_speed: 1.2
-    brightness_speed: 0.8
-    palette: [[280, 100], [320, 100], [200, 90]] # List of [hue, saturation] pairs
-  aurora:
-    brightness_min: 40
-    brightness_max: 70
-    color_speed: 0.5
-    brightness_speed: 0.3
-    palette: [[140, 90], [190, 100], [240, 85]]
-
-hotkeys:
-  toggle_power: "ctrl+shift+p"
-  mode_coding_night: "ctrl+shift+["
-  mode_work: "ctrl+shift+]"
+      ip: "192.168.1.145" # Replace with your L900 static IP
+      name: "Desk Monitor"
+    strip2:
+      ip: "192.168.1.146" # Replace with your L930 static IP
+      name: "Bed Backboard"
 ```
 
-## 🎮 Usage
-Launch the background application thread and the control dashboard surface by running:
-
+### 4. Launch
+Run via the included batch script or python module:
 ```bash
+run_lights.bat
+# or
 python -m src.main
 ```
+The web dashboard will be available at `http://localhost:8765`.
 
-**Desktop Operations:**
-* **The Dashboard Launcher:** Toggle hardware settings on the fly, adjust precise custom brightness sliders, or click individual mode tiles to crossfade gracefully.
-* **The System Tray:** Clicking the X button on the window smoothly minimizes the hub to your OS system tray (pystray), running quietly in the background without stealing your workflow resources. Right-click the icon to quickly swap presets or cleanly terminate the app.
+---
 
-## 🧠 Architectural Deep-Dive
-This project avoids monolithic blocks by utilizing an asynchronous service engine driving a highly decoupled, stateful GUI layer.
+## ⚠️ Limitations
 
-```text
-                  ┌────────────────────────┐
-                  │    Global Hotkeys      │
-                  │   & System Tray UI     │ (Synchronous OS Threads)
-                  └───────────┬────────────┘
-                              │ Schedules Coroutine
-                              ▼
- ┌─────────────┐  ┌────────────────────────┐  Requests  ┌───────────────────┐
- │ CustomTkinter│─►│     BackgroundLoop     │───────────►│  StateDispatcher  │
- │ UI Surface  │  │ (Dedicated Async Thread)│           │ (LIFO Input Queue)│
- └─────────────┘  └────────────────────────┘            └─────────┬─────────┘
-                              ▲                                   │
-                              │ Executes Next Valid State         │ Atomically
-                              │                                   ▼ Drops Floods
-                  ┌───────────┴────────────┐            ┌───────────────────┐
-                  │    AnimationEngine     │◄───────────│  LightController  │
-                  │ (Sine/Palette Blends)  │            │ (Local plugp100)  │
-                  └────────────────────────┘            └───────────────────┘
-```
+We believe in complete technical transparency about hardware constraints:
 
-### 1. The Sync-to-Async Bridge (`src/event_loop.py`)
-The underlying `plugp100` API is entirely asynchronous, while desktop interface modules like `pystray` and `keyboard` are blocking/synchronous. To prevent locking the main GUI event loop, `BackgroundLoop` spawns a dedicated, persistent background thread managing an isolated `asyncio` event loop. Sync triggers safely route execution packages using `asyncio.run_coroutine_threadsafe`.
+* **Windows Only:** Audio loopback uses Windows WASAPI (`soundcard`), screen synchronization uses Windows Desktop Duplication via DirectX (`dxcam`), and global hotkeys hook into Windows APIs (`ctypes.windll.user32`). There is currently no Linux or macOS support.
+* **Microcontroller Rate Limits:** The Tapo L930 onboard microcontroller has limited network buffer capacity. Pushing more than ~8 state updates per second can overwhelm its TCP stack and cause the device to temporarily drop off the network. The pipeline enforces an update budget (typically 4–8 updates/sec for live streaming), while ambient animations run as native firmware loops.
+* **Tapo Mobile App Sync Quirks:** When streaming frequent local frames over LAN, the official Tapo mobile app may occasionally report the strip as offline or delay updating its state in the cloud UI. The strip remains fully responsive to local LAN commands.
+* **Initial Cloud Pairing:** While frame transmission operates purely over LAN, initial device pairing, Wi-Fi onboarding, and account credential validation are managed by the TP-Link Tapo cloud and app ecosystem.
 
-### 2. High-Frequency Anti-Choke Queue (`src/main.py`)
-To keep up with rapid hotkey mashing or swift slider manipulation, the `StateDispatcher` functions as a single-item Last-In-First-Out (LIFO) queue execution worker. If multiple state mutations are queued within milliseconds, it intelligently flushes out older outdated network payloads, dispatching only the newest target state to avoid throttling the Tapo device interface.
+---
 
-### 3. Kinematic Animations & Crossfades (`src/modes.py` & `src/effects.py`)
-* **Kinematic Crossfading:** Rather than abrupt updates, changing profiles triggers a 600ms linear interpolator tracking short-path vector angles across the 360-degree color wheel, preventing ugly flashes.
-* **Dynamic Palette Shifting:** The `AnimationEngine` continuously interpolates distance matrices between arrays of custom HSL pairs, feeding synchronized, phase-shifted sine waves into the brightness channels.
+## 🔒 Security
 
-## 🔧 Troubleshooting
-**Linux (Arch / Ubuntu) Hotkey Permissions**
-Because the `keyboard` module monitors hardware device layers globally to catch background shortcuts, it reads directly from `/dev/input/`.
+* **Local LAN Access by Default:** The web dashboard (`http://localhost:8765`) allows unauthenticated control by default across your local Wi-Fi. If running on a shared network or binding to `0.0.0.0`, configure `TAPO_WEB_TOKEN` in `.env` to require a bearer token before unlocking control.
+* **Secrets Management:** `.env`, `config.yaml`, and local logs are strictly excluded in `.gitignore`. A full secret scan has been performed across the git history to guarantee no credentials or private IPs are tracked.
+* **Local Handshake:** Your Tapo password is used solely to derive session keys for the local KLAP/TPAP protocol handshakes and is never transmitted outside your network.
 
-**Fix 1:** Run the app using sudo:
-```bash
-sudo venv/bin/python -m src.main
-```
-**Fix 2 (Recommended):** Setup a `uinput` rule or add your active shell user to your system's `input` group to execute without escalating your permissions boundaries permanently.
+---
 
-**Connection Timeout and Dropouts**
-If your environment drops connection logs frequently due to aggressive router lease-times:
-The core layer incorporates exponential backoff configurations. It will attempt re-authentication sequentially (1s, 2s, 4s, up to 60s) while leveraging `plyer` to push an OS notification banner directly to your desktop action center when the device recovers.
+## 📖 Complete Effects Catalog
+
+<details>
+<summary><strong>Click to expand the full Effects & Lighting Modes Catalog</strong></summary>
+
+<br/>
+
+### 1. Primary Sound & Media Reactive Modes
+
+Both strips operate concurrently with real-time audio synchronization:
+
+| Mode | L900 (Single-Zone Monitor Bias) | L930 (50-Zone Addressable WRGBIC) |
+| :--- | :--- | :--- |
+| **Movie** | **Direct Ambilight + Flare:** Tracks the luminance-weighted average of screen content (smoothing tau = 0.6s). Floor at 18%. Low-frequency impacts trigger brightness flare; dialogue frequencies suppress audio reactivity. | **Room Fill Glow + Flare:** Warm base (2700K) drifting toward screen dominant color (tau = 3-5s). Low-band impacts send warm flare spreading outward from center (60ms attack, 800ms decay). |
+| **Pulse** | **Beat-Synced Swell:** Dynamic single-zone swell on kick drum detection with trailing exponential decay. Steps through palette on bar boundaries. | **Concentric Gaussian Ripples:** Spawns 2-4 zone wide Gaussian waves from center outward on each kick drum. Wave velocity scales with BPM. Color cycles per bar. |
+| **Spectrum** | **Energy & Balance Wash:** 20ms attack tracking overall RMS volume with 600ms release. Hue dynamically shifts warm for bass-heavy or cool for treble-heavy audio. | **Mirrored 50-Band Equalizer:** Mirrored 50-band audio spectrum display (sub-bass in center, highs at ends) with peak-hold markers that fall over 600ms. |
+| **Flow** | **Organic Breathing Wash:** Slow cyclic wash drifting across the active palette synchronized to tempo (brightness breathes between 30% and 90%). | **2-Octave Perlin Noise Curtains:** Dual-octave noise curtains flowing across 50 zones. When harmonic ratio is high, adds dominant-pitch Melody Glow. |
+
+---
+
+### 2. L900 Single-Zone Ambient Effects
+
+* **`ambient_drift`**: Gentle, very slow cycling through calming tones with subtle brightness breathing.
+* **`fireplace`**: Warm amber and orange embers with organic pseudo-random micro-flicker.
+* **`golden_hour`**: Sunset ambers, honey golds, and soft oranges designed for evening winding down.
+* **`ocean_waves`**: Deep navy blues, cyan ripples, and turquoise swells oscillating like sea waves.
+* **`color_breath`**: Smooth sine-wave brightness breathing from 10% to 100%.
+* **`candle_flicker`**: Fast pseudo-random micro-fluctuations in warm yellow/orange emulating a candle.
+
+---
+
+### 3. L930 Addressable Effects (From Registry)
+
+#### Ambient Effects
+* **`tide`** *(firmware)*: Layered slow ocean waves with pale highlights (Pacifica-style)
+* **`drift`** *(firmware)*: Muted 16-color glide across the strip with 6s transition
+* **`dusk`** *(streamed, <= 2 ups)*: Warm to rose to violet over many minutes (circadian-linked)
+* **`breathe`** *(firmware)*: Slow 6-8s whole-strip breathing cycle for winding down
+* **`starfield`** *(firmware)*: Sparse soft twinkles on dark navy background
+* **`embers`** *(firmware)*: Very dim warm glow with slow random flicker for sleeping
+* **`lava_lamp`** *(streamed, <= 2 ups)*: Viscous molten metaballs drifting with long transitions
+* **`golden_hour`** *(streamed, <= 2 ups)*: Warm sunset twilight and radiating golden dust
+* **`sunrise`** *(firmware)*: Native progressive dawn awakening sequence
+* **`sunset`** *(firmware)*: Native twilight fade sequence
+* **`flicker`** *(firmware)*: Native candlelight micro-fluctuation
+
+#### Motion Effects
+* **`hearth`** *(firmware)*: Restrained flame simulation with glowing ember foundation
+* **`comet`** *(firmware)*: Bright comet head with cooling chromatic tail traversing the strip
+* **`cyber_chase`** *(firmware)*: Two color pulses passing through each other and adding at intersection
+* **`vaporwave_neon`** *(firmware)*: Slow aesthetic gradient drift in magenta, cyan, and violet
+* **`sonar_sweep`** *(firmware)*: Smooth radar sweep with soft exponential fading tail
+* **`neon_heartbeat`** *(firmware)*: Slow soft double-pulse rhythm for evening relaxation
+* **`lantern_sweep`** *(firmware)*: Slow Cylon-style light gliding back and forth with glowing tail
+* **`aurora`** *(firmware)*: Polar light ribbon sequence with wide spread and long transition
+* **`deep_ocean`** *(firmware)*: Layered blue-green oceanic wave sequence
+* **`ocean`** *(firmware)*: Native aqua and deep ocean swells
+* **`raindrop`** *(firmware)*: Native soft droplets falling along strip
+* **`lightning`** *(firmware)*: Native electric storm flashes
+
+#### Seasonal & Novelty Effects
+* **`police`** *(firmware)*: Split-strip alternating emergency flasher sequence
+* **`candy_cane`** *(firmware)*: Native peppermint red and crisp white bands
+* **`haunted_mansion`** *(firmware)*: Native spooky emerald green and eerie purple lightning flashes
+* **`rainbow`** *(firmware)*: Native classic rainbow gradient sequence
+
+---
+
+### 4. Perceptual Color Palettes (OKLab)
+
+* **Auto (Mood-based):** Dynamically derived from track energy, valence, and detected musical key.
+* **Sunset:** Deep night purple -> crimson -> sunset orange -> warm amber -> golden light.
+* **Forest:** Abyssal pine -> emerald -> spring leaf -> lime zest -> sunlight canopy.
+* **Fire:** Cold ember -> dark blood red -> blaze orange -> flame yellow -> warm white hot.
+* **Pastel:** Soft lavender -> powder sky blue -> tranquil mint -> soft peach.
+* **Tide:** Pacifica ocean blues -> cerulean -> aquamarine -> seafoam crest.
+* **Dusk:** Twilight rose -> magenta twilight -> deep amethyst violet.
+* **Ember:** Glowing coals: deep mahogany red -> glowing ember orange -> dim warm amber.
+* **WarmMono:** Ultra-clean cozy 2700K warm white golden ambience.
+
+</details>
+
+---
+
+## 🛠️ Credits & Disclaimer
+
+* **Inspiration:** Developed with deep gratitude to the open-source lighting and firmware communities, notably [WLED](https://github.com/Aircoookie/WLED) and [FastLED](https://github.com/FastLED/FastLED) for their pioneering work on addressable LED algorithms, Pacifica waves, and Fire2012 heat models.
+* **Color Science:** Based on the uniform [OKLab color space](https://bottosson.github.io/posts/oklab/) created by Björn Ottosson.
+* **Disclaimer:** This project is an independent open-source tool and is **not** affiliated with, endorsed by, or supported by TP-Link or Tapo. TP-Link, Tapo, and their respective logos are registered trademarks of TP-Link Corporation Limited.
+* **License:** [MIT License](LICENSE)
