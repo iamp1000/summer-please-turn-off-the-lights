@@ -678,6 +678,31 @@ body {
   box-shadow: 0 0 8px var(--success-glow);
 }
 
+/* ── EFFECT SEARCH + IMPLEMENTATION LABELS ─────────────────────────────────── */
+.effect-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 10px 0 12px;
+  padding: 0 12px;
+  min-height: 42px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: var(--radius-md);
+  background: rgba(0,0,0,.22);
+  color: var(--theme-accent);
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+.effect-search-wrap:focus-within {
+  border-color: var(--theme-accent);
+  box-shadow: 0 0 0 3px rgba(var(--theme-accent-rgb),.12);
+}
+.effect-search { width:100%; min-width:0; border:0; outline:0; background:transparent; color:var(--text-primary); font:inherit; font-size:12px; }
+.effect-search::placeholder { color:var(--text-muted); }
+.effect-item-copy { display:flex; min-width:0; flex-direction:column; gap:2px; }
+.effect-item-copy small { color:var(--text-muted); font-size:9px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; }
+.effects-empty { margin:8px 0; color:var(--text-muted); font-size:12px; }
+.effects-empty[hidden] { display:none; }
+
 /* ── DYNAMIC EFFECTS & PRESETS GRIDS ─────────────────────────────────────── */
 .effects-grid, .presets-grid {
   display: grid;
