@@ -9,8 +9,16 @@ env/
 
 # Configuration & Secrets
 config.yaml
+config*.yaml
 .env
+.env*
+*.env
+*.key
+*.pem
+*.cert
 
-# Logs
+# Logs & Debugging
+*.log
 crash.log
 debug_log.txt
+
