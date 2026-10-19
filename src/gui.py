@@ -162,49 +162,39 @@ MODE_TRANSITIONS = {
 }
 
 EFFECT_COLORS = {
-    "ambient_drift":    "#aa88ff",
-    "northern_lights":  "#44ffaa",
-    "fireplace":        "#ff6622",
-    "sakura":           "#ff88cc",
+    # Reworked L930 & L900 Effects
+    "tide":             "#00c7be",
+    "drift":            "#7c6ef5",
+    "dusk":             "#c084fc",
+    "breathe":          "#f59e0b",
+    "starfield":        "#38bdf8",
+    "embers":           "#ea580c",
+    "lava_lamp":        "#ff4500",
     "golden_hour":      "#ffcc44",
-    "candle_flicker":   "#ff9933",
-    "deep_ocean":       "#0088ff",
-    "pulse":            "#ff44aa",
-    "rainbow":          "#ff3b30",
-    "aurora":           "#34c759",
-    "ocean":            "#00c7be",
-    "lightning":        "#5856d6",
-    "fire_crawl":       "#ff5c00",
-    "police":           "#007aff",
+    "hearth":           "#f97316",
     "comet":            "#af52de",
-    "pixel_bounce":     "#ffffff",
-    "breathing_wave":   "#7c6ef5",
-    "meteor":           "#4da8ff",
-    "neon_chase":       "#ff007f",
-    "color_wipe":       "#ffd700",
-    "raindrop":         "#00d2ff",
-    "spring":           "#2ecc71",
+    "cyber_chase":      "#ec4899",
+    "vaporwave_neon":   "#f43f5e",
+    "sonar_sweep":      "#10b981",
+    "neon_heartbeat":   "#e11d48",
+    "lantern_sweep":    "#fbbf24",
+    "aurora":           "#34c759",
+    "deep_ocean":       "#0284c7",
     "sunrise":          "#f39c12",
     "sunset":           "#e67e22",
     "flicker":          "#f1c40f",
-    "rainbow_chase":    "#ff3b30",
-    "cyber_chase":      "#ff007f",
-    "aurora_wave":      "#34c759",
-    "spectrum_idle":    "#9d92ff",
-    "matrix_rain":      "#00ff66",
-    "strobe_party":     "#ffff00",
-    "lava_lamp":        "#ff4500",
-    "glitch_wave":      "#00ffff",
-    "neon_heartbeat":   "#ff0055",
-    "twinkle_stars":    "#70a1ff",
-    "hyperdrive":       "#5352ed",
-    "sunset_glow":      "#ff6b81",
-    "plasma_flow":      "#a55eea",
-    "vaporwave_neon":   "#ff78ae",
-    "portal_pulse":     "#20bf6b",
-    "sonar_sweep":      "#0fb9b1",
-    "electric_arc":     "#45aaf2",
-    "quantum_dots":     "#fa8231",
+    "ocean":            "#00c7be",
+    "raindrop":         "#00d2ff",
+    "lightning":        "#5856d6",
+    "police":           "#007aff",
+    "candy_cane":       "#ff3b30",
+    "haunted_mansion":  "#8b5cf6",
+    "rainbow":          "#ff3b30",
+    "ambient_drift":    "#aa88ff",
+    "fireplace":        "#ff6622",
+    "ocean_waves":      "#0088ff",
+    "color_breath":     "#f59e0b",
+    "candle_flicker":   "#ff9933",
 }
 
 def get_local_ip() -> str:
@@ -311,9 +301,15 @@ class TapoGUI:
                 self.scroll_body._parent_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
             except Exception:
                 pass
-        widget.bind("<MouseWheel>", _on_wheel)
-        for child in widget.winfo_children():
-            self._bind_mousewheel_recursive(child)
+        try:
+            widget.bind("<MouseWheel>", _on_wheel)
+        except Exception:
+            pass
+        try:
+            for child in widget.winfo_children():
+                self._bind_mousewheel_recursive(child)
+        except Exception:
+            pass
 
     def _build_ui(self):
         t = self.theme
@@ -628,6 +624,14 @@ class TapoGUI:
         # ── AUTO (DIRECTOR) FEATURED CARD ──
         self.btn_auto_mode = ctk.CTkButton(
             vst_inner, text="✨  Auto (Director)  ·  Autonomous Intelligence",
+            fg_color=t["accent"], hover_color=t["accent_soft"],
+            text_color="#ffffff", font=ctk.CTkFont(size=10, weight="bold"),
+            height=30, corner_radius=8,
+            command=lambda: self._set_visual_style("auto")
+        )
+        self.btn_auto_mode.pack(fill="x", pady=(0, 8))
+        self.vstyle_buttons["auto"] = self.btn_auto_mode
+
         # ── EXACTLY 4 MODES (Movie, Pulse, Spectrum, Flow) ──
         styles_grid = ctk.CTkFrame(vst_inner, fg_color="transparent")
         styles_grid.pack(fill="x", pady=(0, 8))
@@ -670,6 +674,19 @@ class TapoGUI:
                 w.bind("<Button-1>", _make_click())
 
             self.vstyle_buttons[sid] = card
+
+        # Equalizer Layout (Mirrored 50-Band vs Segmented Staccato VU)
+        eq_row = ctk.CTkFrame(vst_inner, fg_color="transparent")
+        eq_row.pack(fill="x", pady=(2, 6))
+        ctk.CTkLabel(eq_row, text="Equalizer Layout:", font=ctk.CTkFont(size=9, weight="bold"), text_color=t["text_muted"]).pack(side="left")
+        self.opt_eq_layout = ctk.CTkSegmentedButton(
+            eq_row, values=["Mirrored 50-Band", "Segmented Staccato VU"],
+            command=self._on_eq_layout_change,
+            height=22, font=ctk.CTkFont(size=9, weight="bold"),
+            selected_color=t["accent"], selected_hover_color=t["accent_soft"]
+        )
+        self.opt_eq_layout.set("Mirrored 50-Band")
+        self.opt_eq_layout.pack(side="right")
 
         # ── CONTROLS: Sensitivity, Brightness Cap, Palette (Auto/Fixed) ──
         tuning_frame = ctk.CTkFrame(vst_inner, fg_color="transparent")
@@ -951,6 +968,9 @@ class TapoGUI:
         return frame
 
     def _render_effects_list(self):
+        # Clean up stale effect button references before destroying widgets
+        self.buttons = {k: v for k, v in self.buttons.items() if not k.startswith("eff_")}
+
         for widget in self.fx_grid_frame.winfo_children():
             widget.destroy()
 
@@ -958,22 +978,133 @@ class TapoGUI:
         if self.current_dev_id in self.hub.devices:
             is_l930 = (self.hub.devices[self.current_dev_id].model == "L930")
 
+        t = self.theme
+
+        # ── Parameter Controls Row (Speed, Brightness, Palette) ──
+        fx_ctrls = ctk.CTkFrame(self.fx_grid_frame, fg_color=t["surface_raised"], corner_radius=10)
+        fx_ctrls.pack(fill="x", pady=(0, 10))
+        fc_inner = ctk.CTkFrame(fx_ctrls, fg_color="transparent")
+        fc_inner.pack(fill="x", padx=10, pady=8)
+
+        # Row 1: Speed & Brightness
+        sb_row = ctk.CTkFrame(fc_inner, fg_color="transparent")
+        sb_row.pack(fill="x", pady=(0, 4))
+        sb_row.columnconfigure((0, 1), weight=1)
+
+        # Speed
+        sp_box = ctk.CTkFrame(sb_row, fg_color="transparent")
+        sp_box.grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        sp_hdr = ctk.CTkFrame(sp_box, fg_color="transparent")
+        sp_hdr.pack(fill="x")
+        ctk.CTkLabel(sp_hdr, text="⚡ Speed:", font=ctk.CTkFont(size=9, weight="bold"), text_color=t["text_muted"]).pack(side="left")
+        self.lbl_fx_speed = ctk.CTkLabel(sp_hdr, text="1.0x", font=ctk.CTkFont(family="Consolas", size=9, weight="bold"), text_color=t["accent_glow"])
+        self.lbl_fx_speed.pack(side="right")
+        self.slider_fx_speed = ctk.CTkSlider(
+            sp_box, from_=0.2, to=3.0, number_of_steps=28,
+            command=self._on_fx_speed_slide,
+            fg_color=t["surface_high"], progress_color=t["accent"],
+            button_color=t["accent_glow"], height=12
+        )
+        self.slider_fx_speed.set(1.0)
+        self.slider_fx_speed.pack(fill="x", pady=(1, 0))
+
+        # Palette
+        pal_box = ctk.CTkFrame(sb_row, fg_color="transparent")
+        pal_box.grid(row=0, column=1, sticky="ew", padx=(4, 0))
+        pal_hdr = ctk.CTkFrame(pal_box, fg_color="transparent")
+        pal_hdr.pack(fill="x")
+        ctk.CTkLabel(pal_hdr, text="🎨 Palette:", font=ctk.CTkFont(size=9, weight="bold"), text_color=t["text_muted"]).pack(side="left")
+        pal_names = ["sunset", "forest", "fire", "pastel", "tide", "dusk", "ember", "warm_mono"]
+        self.opt_fx_pal = ctk.CTkOptionMenu(
+            pal_box, values=pal_names,
+            command=self._on_fx_palette_selected,
+            fg_color=t["surface_high"], button_color=t["surface_raised"],
+            text_color=t["text_primary"], height=20, corner_radius=6,
+            font=ctk.CTkFont(size=9)
+        )
+        self.opt_fx_pal.set("sunset")
+        self.opt_fx_pal.pack(fill="x", pady=(4, 0))
+
         if is_l930:
             self.fx_header_label.configure(text="L930 50-ZONE WRGBIC EFFECTS")
-            eff_list = sorted(list(self.hub.get_full_state().get("effects_l930", [])))
-        else:
-            self.fx_header_label.configure(text="DYNAMIC EFFECTS")
-            eff_list = list(self.hub.config.get("effects", {}).keys()) or [
-                "ambient_drift", "northern_lights", "fireplace", "sakura", "golden_hour", "candle_flicker", "deep_ocean", "pulse"
-            ]
+            full_st = self.hub.get_full_state()
+            catalog = full_st.get("effects_catalog", {})
 
-        for idx, name in enumerate(eff_list):
-            r, c = divmod(idx, 2)
-            dot_col = EFFECT_COLORS.get(name, self.theme["accent"])
-            display = name.replace("_", " ").title()
-            btn = self._make_item_button(self.fx_grid_frame, display, dot_col, lambda n=name: self._apply_effect(n))
-            btn.grid(row=r, column=c, padx=3, pady=3, sticky="nsew")
-            self.buttons[f"eff_{name}"] = btn
+            # Group items by Ambient, Motion, Seasonal & Novelty
+            groups = {"Ambient": [], "Motion": [], "Seasonal & Novelty": []}
+            for eff_name, meta in catalog.items():
+                grp = meta.get("group", "Motion")
+                if grp in groups:
+                    groups[grp].append(eff_name)
+
+            for grp_name, eff_names in groups.items():
+                if not eff_names:
+                    continue
+
+                is_novelty = (grp_name == "Seasonal & Novelty")
+                grp_hdr_frame = ctk.CTkFrame(self.fx_grid_frame, fg_color="transparent")
+                grp_hdr_frame.pack(fill="x", pady=(6, 4))
+
+                hdr_text = f"▼  {grp_name.upper()}" if not is_novelty else "▶  SEASONAL & NOVELTY (COLLAPSED)"
+                grp_lbl = ctk.CTkLabel(
+                    grp_hdr_frame, text=hdr_text,
+                    font=ctk.CTkFont(size=8, weight="bold"),
+                    text_color=t["text_muted"], anchor="w"
+                )
+                grp_lbl.pack(side="left")
+
+                grid = ctk.CTkFrame(self.fx_grid_frame, fg_color="transparent")
+                grid.pack(fill="x", pady=(0, 6))
+                grid.columnconfigure((0, 1), weight=1, uniform="fx")
+
+                if is_novelty:
+                    # Initially collapse novelty group
+                    grid.pack_forget()
+                    def _toggle_novelty(lbl=grp_lbl, g=grid):
+                        if g.winfo_ismapped():
+                            g.pack_forget()
+                            lbl.configure(text="▶  SEASONAL & NOVELTY (COLLAPSED)")
+                        else:
+                            g.pack(fill="x", pady=(0, 6))
+                            lbl.configure(text="▼  SEASONAL & NOVELTY")
+                    grp_hdr_frame.bind("<Button-1>", lambda e, fn=_toggle_novelty: fn())
+                    grp_lbl.bind("<Button-1>", lambda e, fn=_toggle_novelty: fn())
+
+                for idx, name in enumerate(eff_names):
+                    r, c = divmod(idx, 2)
+                    dot_col = EFFECT_COLORS.get(name, self.theme["accent"])
+                    display = name.replace("_", " ").title()
+                    btn = self._make_item_button(grid, display, dot_col, lambda n=name: self._apply_effect(n))
+                    btn.grid(row=r, column=c, padx=3, pady=3, sticky="nsew")
+                    self.buttons[f"eff_{name}"] = btn
+        else:
+            self.fx_header_label.configure(text="L900 SLOW AMBIENT EFFECTS")
+            eff_list = [
+                "ambient_drift", "fireplace", "golden_hour", "ocean_waves", "color_breath", "candle_flicker"
+            ]
+            grid = ctk.CTkFrame(self.fx_grid_frame, fg_color="transparent")
+            grid.pack(fill="x")
+            grid.columnconfigure((0, 1), weight=1, uniform="fx")
+
+            for idx, name in enumerate(eff_list):
+                r, c = divmod(idx, 2)
+                dot_col = EFFECT_COLORS.get(name, self.theme["accent"])
+                display = name.replace("_", " ").title()
+                btn = self._make_item_button(grid, display, dot_col, lambda n=name: self._apply_effect(n))
+                btn.grid(row=r, column=c, padx=3, pady=3, sticky="nsew")
+                self.buttons[f"eff_{name}"] = btn
+
+    def _on_fx_speed_slide(self, val: float):
+        v = round(float(val), 2)
+        self.lbl_fx_speed.configure(text=f"{v}x")
+        dev_ctx = self.hub.devices.get(self.current_dev_id)
+        if dev_ctx and hasattr(dev_ctx.fx_engine, "set_parameters"):
+            dev_ctx.fx_engine.set_parameters(speed=v)
+
+    def _on_fx_palette_selected(self, pal_name: str):
+        dev_ctx = self.hub.devices.get(self.current_dev_id)
+        if dev_ctx and hasattr(dev_ctx.fx_engine, "set_parameters"):
+            dev_ctx.fx_engine.set_parameters(palette_name=pal_name)
 
     def _select_device_tab(self, dev_id: str):
         self.current_dev_id = dev_id
@@ -1078,14 +1209,20 @@ class TapoGUI:
             text_color="#a5f3fc" if is_screen else self.theme["text_primary"]
         )
 
-        for key, btn in self.buttons.items():
-            active = (key == f"mode_{label}" or key == f"eff_{label}")
-            btn._active = active
-            btn.configure(
-                fg_color=self.theme["accent_soft"] if active else self.theme["surface_raised"],
-                border_width=1 if active else 1,
-                border_color=self.theme["accent"] if active else self.theme["border"]
-            )
+        for key, btn in list(self.buttons.items()):
+            try:
+                if not btn.winfo_exists():
+                    self.buttons.pop(key, None)
+                    continue
+                active = (key == f"mode_{label}" or key == f"eff_{label}")
+                btn._active = active
+                btn.configure(
+                    fg_color=self.theme["accent_soft"] if active else self.theme["surface_raised"],
+                    border_width=1 if active else 1,
+                    border_color=self.theme["accent"] if active else self.theme["border"]
+                )
+            except Exception:
+                self.buttons.pop(key, None)
 
     def _on_hub_update(self, full_state: dict):
         try:
@@ -1201,10 +1338,23 @@ class TapoGUI:
         trans_desc = "Flow" if trans > 0 else "Punchy"
         self.lbl_transition_val.configure(text=f"Transition: {trans}ms ({trans_desc})")
 
+    def _on_eq_layout_change(self, choice: str):
+        layout = "segmented" if "Segmented" in choice else "mirrored"
+        targets = [self.hub.devices[self.current_dev_id]] if self.current_dev_id in self.hub.devices else list(self.hub.devices.values())
+        for ctx in targets:
+            if hasattr(ctx.audio_sync, "_styles"):
+                spec = ctx.audio_sync._styles.get("spectrum")
+                if spec and hasattr(spec, "set_params"):
+                    spec.set_params(layout=layout)
+
     def _update_style_card_selection(self, current_style: str):
         c_clean = (current_style or "auto").strip().lower()
         for sid, sbtn in self.vstyle_buttons.items():
-            is_act = (sid == c_clean) or (sid == "auto" and c_clean in ("auto", "hybrid", "director"))
+            is_act = (
+                (sid == c_clean) or
+                (sid == "auto" and c_clean in ("auto", "hybrid", "director")) or
+                (sid == "spectrum" and c_clean in ("spectrum", "segmented", "segmented_vu", "staccato"))
+            )
             if isinstance(sbtn, ctk.CTkButton):
                 sbtn.configure(
                     fg_color=self.theme["accent"] if is_act else self.theme["surface_high"],
@@ -1214,7 +1364,7 @@ class TapoGUI:
                 sbtn.configure(
                     fg_color=self.theme["accent_soft"] if is_act else self.theme["surface_high"],
                     border_width=1 if is_act else 0,
-                    border_color=self.theme["accent_glow"] if is_act else "transparent"
+                    border_color=self.theme["accent_glow"] if is_act else self.theme["border"]
                 )
 
     def _toggle_accent(self, name: str):

@@ -12,7 +12,7 @@ from src.device_l930 import L930Controller
 from src.event_loop import BackgroundLoop
 from src.modes import ModeManager
 from src.effects import AnimationEngine
-from src.effects_l930 import L930EffectsEngine, NATIVE_EFFECTS, CUSTOM_EFFECTS
+from src.effects_l930 import L930EffectsEngine, EFFECT_CATALOG
 from src.music_reactive import MusicReactive, list_available_audio_devices
 from src.music_reactive_l930 import MusicReactiveL930
 from src.screen_sync import ScreenSync
@@ -166,8 +166,12 @@ class LightHub:
             "devices": {dev_id: dict(ctx.state) for dev_id, ctx in self.devices.items()},
             "diagnostics": self.get_diagnostics(),
             "modes": list(self.config.get("modes", {}).keys()),
-            "effects_l900": list(self.config.get("effects", {}).keys()),
-            "effects_l930": sorted(list(NATIVE_EFFECTS.keys()) + list(CUSTOM_EFFECTS)),
+            "effects_l900": [
+                "ambient_drift", "fireplace", "golden_hour", "ocean_waves", "color_breath", "candle_flicker"
+            ],
+            "effects_l930": list(EFFECT_CATALOG.keys()),
+            "effects_catalog": EFFECT_CATALOG,
+            "palettes": ["auto", "sunset", "forest", "fire", "pastel", "tide", "dusk", "ember", "warm_mono"],
             "visualizer_styles": [
                 {"id": "movie", "name": "🎬 Movie"},
                 {"id": "pulse", "name": "💥 Pulse"},
@@ -370,9 +374,9 @@ class LightHub:
             if ctx.model == "L930":
                 ctx.fx_engine.start(effect_name)
             else:
-                eff_cfg = self.config.get("effects", {}).get(effect_name)
-                if eff_cfg:
-                    ctx.fx_engine.start(eff_cfg)
+                eff_cfg = dict(self.config.get("effects", {}).get(effect_name, {}))
+                eff_cfg["name"] = effect_name
+                ctx.fx_engine.start(eff_cfg)
         self.notify_change()
 
     def toggle_music(self, dev_id: str):

@@ -335,3 +335,56 @@ def test_dedicated_single_zone_l900_rendering():
         assert 0 <= h <= 360, f"{mode_name} invalid hue: {h}"
         assert 0 <= s <= 100, f"{mode_name} invalid saturation: {s}"
         assert 0 <= v <= 100, f"{mode_name} invalid brightness: {v}"
+
+
+# ── 6. Segmented VU Visualizer Mode ──────────────────────────────────────────
+
+def test_segmented_vu_visualizer_breaks_and_peaks():
+    """
+    Verifies that SegmentedVUStyle:
+      1. Returns strictly all-zeros on silence.
+      2. Renders unidirectional fill with staccato breaks (dark gap zones).
+      3. Modulates break offsets on transient/hat impacts.
+      4. SpectrumStyle delegates to SegmentedVUStyle when layout='segmented'.
+      5. Handles single-zone L900 correctly.
+    """
+    from src.visual_styles import SegmentedVUStyle
+
+    vu = SegmentedVUStyle()
+
+    # 1. Silence check
+    silent_st = MusicState(energy=0.0, section=Section.SILENT)
+    f_silent = vu.render(silent_st, dt=0.03, num_zones=50)
+    assert all(v == 0 for _, _, v in f_silent), "Silent state must return 100% true black"
+
+    # 2. Active fill check
+    active_st = MusicState(energy=0.75, kick=0.8, hat=0.1, section=Section.VERSE)
+    f_active = vu.render(active_st, dt=0.03, num_zones=50)
+    assert len(f_active) == 50
+
+    # Must have some lit zones and some break/dark zones
+    lit_zones = [i for i, (_, _, v) in enumerate(f_active) if v > 0]
+    dark_zones = [i for i, (_, _, v) in enumerate(f_active) if v == 0]
+    assert len(lit_zones) > 10, "Expected at least 10 lit zones during active music"
+    assert len(dark_zones) > 0, "Expected dark break gaps in between clusters"
+
+    # 3. Transient shift test
+    init_offset = vu.break_offset
+    transient_st = MusicState(energy=0.8, kick=0.9, hat=0.8, impact=0.85, section=Section.VERSE)
+    time.sleep(0.15) # Ensure impact interval threshold passes
+    vu.render(transient_st, dt=0.03, num_zones=50)
+    assert vu.break_offset != init_offset, "Break offset should dynamically shift on transient impact"
+
+    # 4. SpectrumStyle layout toggle
+    spec = SpectrumStyle(layout="segmented")
+    f_spec = spec.render(active_st, dt=0.03, num_zones=50)
+    assert len(f_spec) == 50
+    # Must have breaks
+    assert any(v == 0 for _, _, v in f_spec[:20]), "SpectrumStyle layout='segmented' should contain break gaps"
+
+    # 5. Single zone L900
+    f_1 = vu.render(active_st, dt=0.03, num_zones=1)
+    assert len(f_1) == 1
+    assert 0 <= f_1[0][0] <= 360
+    assert 0 <= f_1[0][1] <= 100
+    assert 0 <= f_1[0][2] <= 100

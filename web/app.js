@@ -1153,20 +1153,76 @@ function renderUI() {
   const fxCount = document.getElementById("effectsCount");
 
   const effectsList = isL930 ? state.effects_l930 : state.effects_l900;
-  fxHeader.textContent = isL930 ? "L930 50-ZONE WRGBIC EFFECTS" : "DYNAMIC EFFECTS";
+  fxHeader.textContent = isL930 ? "L930 50-ZONE WRGBIC EFFECTS" : "L900 SLOW AMBIENT EFFECTS";
   fxCount.textContent = `${effectsList.length} modes`;
 
-  let fxHtml = "";
-  effectsList.forEach(eff => {
-    const isAct = (activeDev.active_label === eff) ? "active" : "";
-    const color = EFFECT_COLORS[eff] || "#7c6ef5";
-    fxHtml += `
-      <button class="item-btn ${isAct}" onclick="applyEffect('${eff}')">
-        <span class="item-dot" style="background: ${color};"></span>
-        <span>${formatName(eff)}</span>
-      </button>
-    `;
-  });
+  let fxHtml = `
+    <div style="grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; background: rgba(0,0,0,0.25); padding: 8px 10px; border-radius: 8px;">
+      <div>
+        <div style="font-size: 9px; font-weight: 700; color: #888899; margin-bottom: 2px;">⚡ SPEED</div>
+        <select onchange="updateFxSpeed(this.value)" style="width: 100%; background: #181824; color: #eee; border: 1px solid #2d2d40; border-radius: 6px; padding: 3px 6px; font-size: 11px;">
+          <option value="0.5">0.5x (Slow)</option>
+          <option value="1.0" selected>1.0x (Normal)</option>
+          <option value="1.5">1.5x (Fast)</option>
+          <option value="2.0">2.0x (Hyper)</option>
+        </select>
+      </div>
+      <div>
+        <div style="font-size: 9px; font-weight: 700; color: #888899; margin-bottom: 2px;">🎨 PALETTE</div>
+        <select onchange="updateFxPalette(this.value)" style="width: 100%; background: #181824; color: #eee; border: 1px solid #2d2d40; border-radius: 6px; padding: 3px 6px; font-size: 11px;">
+          <option value="sunset" selected>Sunset</option>
+          <option value="forest">Forest</option>
+          <option value="fire">Fire</option>
+          <option value="pastel">Pastel</option>
+          <option value="tide">Tide</option>
+          <option value="dusk">Dusk</option>
+          <option value="ember">Ember</option>
+          <option value="warm_mono">WarmMono</option>
+        </select>
+      </div>
+    </div>
+  `;
+
+  if (isL930 && state.effects_catalog) {
+    const catalog = state.effects_catalog;
+    const groups = { "Ambient": [], "Motion": [], "Seasonal & Novelty": [] };
+    Object.keys(catalog).forEach(k => {
+      const g = catalog[k].group || "Motion";
+      if (groups[g]) groups[g].push(k);
+    });
+
+    Object.keys(groups).forEach(gName => {
+      const items = groups[gName];
+      if (!items.length) return;
+      const isNovelty = (gName === "Seasonal & Novelty");
+      fxHtml += `
+        <div style="grid-column: 1 / -1; margin-top: 6px; font-size: 10px; font-weight: 800; color: #a1a1aa; text-transform: uppercase; cursor: pointer;" onclick="toggleGroup('${gName}')">
+          ${isNovelty ? '▶ ' + gName + ' (COLLAPSED)' : '▼ ' + gName}
+        </div>
+      `;
+      items.forEach(eff => {
+        const isAct = (activeDev.active_label === eff) ? "active" : "";
+        const color = EFFECT_COLORS[eff] || "#7c6ef5";
+        fxHtml += `
+          <button class="item-btn ${isAct} grp-${gName.replace(/\s+/g, '')}" style="${isNovelty ? 'display: none;' : ''}" onclick="applyEffect('${eff}')">
+            <span class="item-dot" style="background: ${color};"></span>
+            <span>${formatName(eff)}</span>
+          </button>
+        `;
+      });
+    });
+  } else {
+    effectsList.forEach(eff => {
+      const isAct = (activeDev.active_label === eff) ? "active" : "";
+      const color = EFFECT_COLORS[eff] || "#7c6ef5";
+      fxHtml += `
+        <button class="item-btn ${isAct}" onclick="applyEffect('${eff}')">
+          <span class="item-dot" style="background: ${color};"></span>
+          <span>${formatName(eff)}</span>
+        </button>
+      `;
+    });
+  }
   fxGrid.innerHTML = fxHtml;
 
   // 5. Static Presets
@@ -1203,6 +1259,22 @@ function applyEffect(name) {
   document.body.setAttribute("data-theme", theme);
   bgEngine.setTheme(theme);
   apiPost(`/api/device/${currentDevId}/effect`, { effect: name });
+}
+
+function toggleGroup(gName) {
+  const cls = `grp-${gName.replace(/\s+/g, '')}`;
+  const btns = document.querySelectorAll(`.${cls}`);
+  btns.forEach(b => {
+    b.style.display = (b.style.display === 'none') ? 'flex' : 'none';
+  });
+}
+
+function updateFxSpeed(val) {
+  apiPost(`/api/device/${currentDevId}/effect_params`, { speed: parseFloat(val) });
+}
+
+function updateFxPalette(val) {
+  apiPost(`/api/device/${currentDevId}/effect_params`, { palette_name: val });
 }
 
 // Power Toggle

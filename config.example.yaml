@@ -1,0 +1,51 @@
+# ==============================================================================
+# Summer, Please Turn Off The Lights — Sample Configuration
+# Copy this file to config.yaml and edit with your light strip IP addresses.
+# ==============================================================================
+
+tapo:
+  devices:
+    strip1:
+      ip: "192.168.1.145"             # Replace with static IP of your L900 strip
+      name: "Desk Monitor"
+      model: "L900"
+      calibration:
+        curve_exponent: 1.8           # Gamma correction curve exponent
+        white_balance: [1.0, 1.0, 1.0] # [R, G, B] linear scaling factors
+        min_brightness: 5             # Minimum visible brightness floor (%)
+        transition_ms: 150            # Hardware transition time (ms)
+
+    strip2:
+      ip: "192.168.1.146"             # Replace with static IP of your L930 strip
+      name: "Bed Backboard"
+      model: "L930"
+      calibration:
+        curve_exponent: 1.8
+        white_balance: [1.0, 0.95, 0.85] # Warm white compensation
+        min_brightness: 3
+        transition_ms: 120
+
+web:
+  port: 8765
+  host: "0.0.0.0"                     # 0.0.0.0 for LAN access, 127.0.0.1 for local only
+  auth_enabled: false                 # Enable token authentication (or set TAPO_WEB_TOKEN in .env)
+  token: ""                           # Leave empty to generate a random LAN access token
+
+audio:
+  device: null                        # null = auto-detect default Windows audio loopback
+  sensitivity: 1.0                    # Audio reactivity gain (0.2x to 3.0x)
+  style: "pulse"                      # Default style: movie | pulse | spectrum | flow
+  accents:
+    - "beat_flash"
+    - "hat_sparkle"
+    - "build_tension"
+    - "drop_bloom"
+  output_delay_ms: 0                  # Fine latency compensation in ms
+  l900_mode: "style"                  # "style" (rendered) or "composite" (follows L930)
+
+screen_sync:
+  monitor_index: 0                    # 0 = primary monitor
+  fps_cap: 30                         # Desktop duplication frame capture cap
+  black_bar_detection: true           # Detect and ignore letterbox/pillarbox bars
+  room_floor_brightness: 18           # Minimum brightness floor in Movie mode (%)
+  flare_on_impacts: true              # Trigger brightness flares on low-frequency impacts

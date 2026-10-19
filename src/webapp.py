@@ -33,6 +33,12 @@ class EffectRequest(BaseModel):
     effect: str
 
 
+class EffectParamsRequest(BaseModel):
+    speed: Optional[float] = None
+    brightness: Optional[int] = None
+    palette_name: Optional[str] = None
+
+
 class ColorRequest(BaseModel):
     h: int
     s: int
@@ -200,6 +206,14 @@ def create_app(hub) -> FastAPI:
     @app.post("/api/device/{dev_id}/effect", dependencies=[Depends(verify_auth)])
     def apply_effect(dev_id: str, req: EffectRequest):
         hub.apply_effect(dev_id, req.effect)
+        return {"status": "ok"}
+
+    @app.post("/api/device/{dev_id}/effect_params", dependencies=[Depends(verify_auth)])
+    def set_effect_params(dev_id: str, req: EffectParamsRequest):
+        targets = hub._resolve_targets(dev_id)
+        for ctx in targets:
+            if hasattr(ctx.fx_engine, "set_parameters"):
+                ctx.fx_engine.set_parameters(speed=req.speed, brightness=req.brightness, palette_name=req.palette_name)
         return {"status": "ok"}
 
     @app.post("/api/device/{dev_id}/music", dependencies=[Depends(verify_auth)])

@@ -553,20 +553,142 @@ class PulseStyle(VisualStyle):
         return segs
 
 
-# ── 3. SPECTRUM MODE (Mirrored 50-Band Equalizer & Peak Hold) ────────────────
+# ── 3. SPECTRUM & SEGMENTED VU MODES ─────────────────────────────────────────
+
+class SegmentedVUStyle(VisualStyle):
+    """
+    Segmented VU Visualizer Mode:
+    - L930: Unidirectional progression from start of lights (Zone 0) to end (Zone 49)
+            with rhythmic / dynamic staccato break gaps (1-2 unlit zones) in between clusters.
+            Break locations dynamically modulate on percussion / transient impacts.
+            Floating peak hold markers ride above active blocks.
+            Color flows from smooth OKLab gradient (e.g. Cyan -> Blue -> Purple -> Magenta).
+    - L900: Smooth single-zone energy & frequency wash.
+    - Internal shared events: Build Tension & Drop Bloom.
+    """
+    name = "SegmentedVU"
+
+    def __init__(self):
+        super().__init__()
+        self.fill_level: float = 0.0
+        self.peak_zone: float = 0.0
+        self.peak_hold_timer: float = 0.0
+        self.break_offset: int = 0
+        self._last_impact_time: float = 0.0
+        self._single_level: float = 0.0
+        self._cached_pal: Optional[Tuple[Tuple[int, int, int], ...]] = None
+        self._cached_gradient: List[Tuple[int, int]] = []
+
+        # Internal shared event layers
+        self._tension = BuildTensionAccent()
+        self._bloom = DropBloomAccent()
+
+    def render(self, state: MusicState, dt: float, num_zones: int, **kwargs: Any) -> List[Tuple[int, int, int]]:
+        if self.is_silent_state(state):
+            self.fill_level = 0.0
+            self.peak_zone = 0.0
+            self.peak_hold_timer = 0.0
+            self._single_level = 0.0
+            return [(0, 0, 0)] * num_zones
+
+        pal = self.get_palette(state)
+
+        # ── Single-Zone L900 Mapping ──
+        if num_zones == 1:
+            target_b = (state.energy * 75.0 + state.kick * 25.0) * self.intensity
+            tau = 0.02 if target_b > self._single_level else 0.18
+            self._single_level = exp_smooth_fast(self._single_level, target_b, dt, tau)
+
+            t_col = max(0.0, min(1.0, state.energy * 0.8 + state.kick * 0.2))
+            h, s, _ = sample_palette_oklab(pal, t_col)
+            b = int(max(0, min(100, self._single_level)))
+            frame = [(h, s, b)]
+            frame = self._tension.render_accent(state, dt, num_zones, frame)
+            frame = self._bloom.render_accent(state, dt, num_zones, frame)
+            return frame
+
+        # ── 50-Zone L930 Mapping ──
+        pal_tuple = tuple(pal)
+        if pal_tuple != self._cached_pal or len(self._cached_gradient) != num_zones:
+            self._cached_gradient = [
+                sample_palette_oklab(pal, i / max(1, num_zones - 1))[:2]
+                for i in range(num_zones)
+            ]
+            self._cached_pal = pal_tuple
+
+        # Target fill length (Zone 0 to num_zones) driven by energy and kick
+        raw_target_zones = (state.energy * 0.65 + state.kick * 0.35) * num_zones * self.intensity
+        raw_target_zones = max(0.0, min(float(num_zones), raw_target_zones))
+
+        # Snappy attack (15ms), smooth responsive decay (85ms / speed)
+        if raw_target_zones > self.fill_level:
+            self.fill_level = exp_smooth_fast(self.fill_level, raw_target_zones, dt, 0.015)
+        else:
+            self.fill_level = exp_smooth_fast(self.fill_level, raw_target_zones, dt, 0.085 / self.speed)
+
+        # Peak hold logic
+        if self.fill_level >= self.peak_zone:
+            self.peak_zone = self.fill_level
+            self.peak_hold_timer = 0.12
+        else:
+            if self.peak_hold_timer > 0.0:
+                self.peak_hold_timer -= dt
+            else:
+                self.peak_zone = max(0.0, self.peak_zone - dt * (28.0 * self.speed))
+
+        # Dynamic break shift on sharp hi-hat / snare or transient impacts
+        now = time.time()
+        if (state.hat > 0.45 or state.impact > 0.5) and (now - self._last_impact_time > 0.12):
+            self.break_offset = (self.break_offset + 1) % 5
+            self._last_impact_time = now
+
+        cur_fill_int = int(math.ceil(self.fill_level))
+        peak_idx = int(round(self.peak_zone))
+
+        segs: List[Tuple[int, int, int]] = []
+        for i in range(num_zones):
+            h, s = self._cached_gradient[i]
+
+            # Break every 5 zones (cluster of 4 on, 1 gap off)
+            is_break = ((i + self.break_offset) % 5 == 4)
+            if is_break and state.snare > 0.7 and state.hat > 0.6:
+                is_break = False
+
+            if i < cur_fill_int:
+                if is_break:
+                    b_val = 0
+                else:
+                    dist_to_head = abs(i - self.fill_level)
+                    b_norm = max(35, 100 - dist_to_head * 2.0)
+                    b_val = int(max(0, min(100, b_norm)))
+            elif i == peak_idx and peak_idx < num_zones:
+                b_val = 90
+            else:
+                b_val = 0
+
+            segs.append((h, s, b_val))
+
+        # Apply internal shared events: build tension and drop bloom
+        segs = self._tension.render_accent(state, dt, num_zones, segs)
+        segs = self._bloom.render_accent(state, dt, num_zones, segs)
+        return segs
+
 
 class SpectrumStyle(VisualStyle):
     """
     Equalizer Mode:
     - L930: Mirrored 50-band display (bass at centre, treble at ends), peak-hold markers
             (fall time ~600 ms), colour from smooth palette gradient by frequency position.
+            Supports layout="mirrored" or layout="segmented" (unidirectional VU with staccato breaks).
     - L900: Smoothed energy wash reflecting overall spectrum balance.
     - Internal shared events: Build Tension & Drop Bloom.
     """
     name = "Spectrum"
 
-    def __init__(self):
+    def __init__(self, layout: str = "mirrored"):
         super().__init__()
+        self.layout: str = layout
+        self._segmented_delegate = SegmentedVUStyle()
         self.levels = [0.0] * NUM_SEGMENTS
         self.peaks = [0.0] * NUM_SEGMENTS
         self.peak_hold_timers = [0.0] * NUM_SEGMENTS
@@ -578,7 +700,16 @@ class SpectrumStyle(VisualStyle):
         self._tension = BuildTensionAccent()
         self._bloom = DropBloomAccent()
 
+    def set_params(self, layout: Optional[str] = None, **kwargs: Any):
+        super().set_params(**kwargs)
+        if layout is not None:
+            self.layout = layout.strip().lower()
+        self._segmented_delegate.set_params(**kwargs)
+
     def render(self, state: MusicState, dt: float, num_zones: int, **kwargs: Any) -> List[Tuple[int, int, int]]:
+        if self.layout in ("segmented", "vu", "staccato"):
+            return self._segmented_delegate.render(state, dt, num_zones, **kwargs)
+
         if self.is_silent_state(state):
             self.levels = [0.0] * num_zones
             self.peaks = [0.0] * num_zones
@@ -817,6 +948,7 @@ def create_style_instances() -> Dict[str, VisualStyle]:
     pulse = PulseStyle()
     spectrum = SpectrumStyle()
     flow = FlowStyle()
+    segmented = SegmentedVUStyle()
 
     registry: Dict[str, VisualStyle] = {
         # Exactly four primary modes
@@ -824,6 +956,11 @@ def create_style_instances() -> Dict[str, VisualStyle]:
         "pulse": pulse,
         "spectrum": spectrum,
         "flow": flow,
+
+        # Segmented VU Mode & Aliases
+        "segmented": segmented,
+        "segmented_vu": segmented,
+        "staccato": segmented,
 
         # Migration & Backward Compatibility Aliases:
         "shockwave": pulse,

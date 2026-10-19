@@ -5,149 +5,234 @@
 <br/>
 
 [![Python 3.13](https://img.shields.io/badge/Python-3.13-3776ab.svg?style=flat-square&logo=python&logoColor=white)](https://python.org)
-[![Platform: Windows 10 / 11](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011-0078d4.svg?style=flat-square&logo=windows&logoColor=white)](#limitations)
+[![Platform: Windows 10 / 11](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011-0078d4.svg?style=flat-square&logo=windows&logoColor=white)](#-compatibility)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 
-<br/>
+# 💡 Summer, Please Turn Off The Lights
 
-**A local-first desktop controller & audio-reactive lighting engine for TP-Link Tapo smart light strips.**  
-Controls strips directly over your local area network (LAN) with zero cloud round-trips for real-time updates.
+### *Make your lights move with your music. Keep control local.*
 
-[Key Features](#-key-features) • [Quick Start](#-quick-start) • [Limitations](#-limitations) • [Security](#-security) • [Effects Catalog](#-complete-effects-catalog) • [Credits](#-credits--disclaimer)
+A Windows desktop app and audio-reactive lighting engine for TP-Link Tapo smart light strips. Sync your lighting to music, movies, and ambient effects—directly over your local area network without cloud round-trips for real-time updates.
+
+[Features](#-feature-highlights) • [Compatibility](#-compatibility) • [Quick Start](#-quick-start) • [Showcase](#-modes-showcase) • [Troubleshooting](#-troubleshooting) • [Architecture](#-architecture--performance) • [Effects Catalog](#-complete-effects-catalog) • [Contributing](#-contributing--development)
 
 <br/>
 
 <img src="assets/pulse.gif" alt="Pulse Mode - Simulated 50-Zone Strip" width="100%" style="border-radius: 8px;">
-<p align="center"><em>Real effect engine simulation of the Tapo L930 50-zone addressable strip in Pulse mode.</em></p>
+<p align="center"><em>Pulse mode — simulated output for the 50-zone Tapo L930 addressable light strip.</em></p>
 
 </div>
 
 ---
 
-## 💡 What Is This?
+## ✨ Feature Highlights
 
-Controlling lights through a mobile app introduces cloud latency and breaks your desktop workflow. **Summer, Please Turn Off The Lights** communicates with your TP-Link Tapo light strips (tested with **L900** and **L930**) directly over your LAN using local KLAP/TPAP protocol handshakes.
-
-Initial device discovery and pairing require your TP-Link account credentials, but all runtime lighting updates, animations, and sound-reactive commands are sent directly from your PC to the strip's local IP address.
-
----
-
-## ⚡ Key Features
-
-1. **Local LAN Streaming & Firmware Looping Hybrid**
-   - Live music and movie reactive modes stream dynamically over your LAN at safe, measured rates (4–8 updates/sec).
-   - Complex ambient animations (Tide, Drift, Breathe, Starfield, Embers) execute directly inside the L930 microcontroller firmware at 60+ FPS with **zero network traffic**.
-   - Single-zone strips (L900) update Hue, Saturation, and Brightness in a single combined network call rather than three separate requests.
-
-2. **Perceptual Audio-Reactive Engine (OKLab)**
-   - Desktop audio loopback capture with sub-5ms FFT analysis, transient kick detection, and tempo tracking.
-   - All color interpolation is calculated in **perceptual OKLab color space**, eliminating muddy brown/grey transitions between contrasting hues.
-
-3. **Unified Dual-Strip Orchestration & Dashboard**
-   - Concurrently coordinates two light strips: a single-zone monitor bias light (L900) and an addressable 50-zone bed backboard (L930).
-   - Includes a dark-mode desktop tray application and a responsive web dashboard accessible across your LAN.
+* 🎵 **Music-Reactive Lighting:** Real-time desktop audio loopback capture with sub-5ms FFT analysis, transient kick detection, and tempo tracking. Colors dynamically shift across perceptual OKLab gradients with no muddy brown or grey midtones.
+* 🎬 **Cinematic Movie Ambilight:** Screen-reactive lighting that complements what is playing on your display, featuring automated GPU black-bar detection (letterbox/pillarbox) and low-frequency impact flares.
+* 🌈 **Ambient & Firmware Effects:** Viscous molten metaballs (*Lava Lamp*), ember crawls (*Hearth*), and circadian twilight glides (*Dusk*), plus 60+ FPS autonomous hardware loops (*Tide*, *Drift*, *Starfield*, *Embers*) that execute inside the strip with zero network packets.
+* 🏠 **Local-First LAN Control:** Sends real-time lighting commands directly to your strips over your home Wi-Fi via local KLAP/TPAP protocol sessions instead of routing every frame through remote cloud servers.
+* 🖥️ **Desktop Tray + Responsive Web Dashboard:** Control power, brightness, modes, and color palettes from a lightweight Windows system tray application or from any browser on your local network.
 
 ---
 
-## 🎬 Live Modes Showcase
+## 💻 Compatibility
 
-| Mode | Simulated 50-Zone Hardware Output |
-| :--- | :--- |
-| **Pulse**<br>*Rhythm & Kick Drum Swell* | <img src="assets/pulse.gif" alt="Pulse Mode" width="100%"> |
-| **Spectrum**<br>*Mirrored 50-Band Equalizer* | <img src="assets/spectrum.gif" alt="Spectrum Mode" width="100%"> |
-| **Flow**<br>*Dual-Octave Noise Curtains* | <img src="assets/flow.gif" alt="Flow Mode" width="100%"> |
-| **Movie**<br>*Cinematic Ambilight Sync* | <img src="assets/movie.gif" alt="Movie Mode" width="100%"> |
+* **Operating System:** Windows 10 / 11 (uses Windows WASAPI audio loopback, DirectX GPU duplication, and Win32 hotkeys).
+* **Python Version:** 3.13 (verified against the automated test suite).
+* **Supported Hardware:** TP-Link Tapo **L900** (single-zone RGB) and **L930** (50-zone addressable WRGBIC).
+* **Network Requirement:** Light strips must be assigned static local IP addresses and reachable on your local Wi-Fi subnet.
+
+> [!NOTE]
+> *Initial device pairing and account credentials originate from the TP-Link Tapo cloud and mobile app ecosystem. Runtime local control means real-time frame updates stay on your LAN once the device session is established.*
+
+---
+
+## ⚡ Quick Start
+
+### 1. Prerequisites
+Ensure you have **Git** and **Python 3.13** installed on Windows.
+
+### 2. Clone the Repository
+```powershell
+git clone https://github.com/iamp1000/summer-please-turn-off-the-lights.git
+cd summer-please-turn-off-the-lights
+```
+
+### 3. Create a Virtual Environment & Install Dependencies
+
+**Using PowerShell:**
+```powershell
+py -3.13 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+**Using Command Prompt (CMD):**
+```cmd
+py -3.13 -m venv .venv
+.venv\Scripts\activate.bat
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+### 4. Configure Authentication (`.env`)
+Copy the sample environment file [.env.example](.env.example) to `.env`:
+```powershell
+Copy-Item .env.example .env
+```
+Edit `.env` with your TP-Link account credentials (used locally for session token derivation):
+```env
+TAPO_EMAIL=your_tapo_email@example.com
+TAPO_PASSWORD=your_tapo_password
+
+# Optional: Access token for the web dashboard (leave empty for open LAN access)
+TAPO_WEB_TOKEN=
+```
+
+### 5. Configure Device IP Addresses (`config.yaml`)
+Copy the sample configuration template [`config.example.yaml`](config.example.yaml) to `config.yaml`:
+```powershell
+Copy-Item config.example.yaml config.yaml
+```
+Edit `config.yaml` to specify your light strips' local static IP addresses:
+```yaml
+tapo:
+  devices:
+    strip1:
+      ip: "192.168.1.145"   # Replace with your L900 static IP
+      name: "Desk Monitor"
+      model: "L900"
+    strip2:
+      ip: "192.168.1.146"   # Replace with your L930 static IP
+      name: "Bed Backboard"
+      model: "L930"
+```
+
+### 6. Launch
+Double-click `run_lights.bat` or run:
+```powershell
+python -m src.main
+```
+Open **`http://localhost:8765`** in your browser to access the web dashboard.
+
+---
+
+## 🎬 Modes Showcase
+
+> All lighting previews below depict simulated output generated by the real 50-zone effect engine and calibrated output curves.
+
+| Mode | Simulated 50-Zone Hardware Output | Description |
+| :--- | :--- | :--- |
+| **Pulse** | <img src="assets/pulse.gif" alt="Pulse Mode" width="100%"> | **Beat-Synced Swell:** Dynamic swell on kick drum detection with concentric Gaussian ripples propagating outward across the 50 zones. |
+| **Spectrum** | <img src="assets/spectrum.gif" alt="Spectrum Mode" width="100%"> | **50-Band Equalizer:** Mirrored real-time audio spectrum analyzer (sub-bass in center, highs at edges) with peak-hold decay. |
+| **Flow** | <img src="assets/flow.gif" alt="Flow Mode" width="100%"> | **Noise Curtains:** Dual-octave Perlin noise curtains drifting across zones with tempo-synchronized brightness breathing and pitch glow. |
+| **Movie** | <img src="assets/movie.gif" alt="Movie Mode" width="100%"> | **Cinematic Ambilight:** Room-fill lighting that tracks screen luminance and dominant colors with low-frequency impact flares. |
 
 <details>
-<summary><strong>📸 View Web Dashboard Screenshots</strong></summary>
+<summary><strong>📸 View Web Dashboard Interface Screenshots</strong></summary>
 
 <br/>
 
-| Mode | Dashboard Interface (1280x800) |
+The web dashboard is responsive and works seamlessly across desktop and mobile browsers on your local network:
+
+| Mode Selected | Dashboard Interface (1280x800) |
 | :--- | :--- |
-| **Pulse** | <img src="assets/dashboard_pulse.png" alt="Pulse Dashboard" width="100%"> |
-| **Spectrum** | <img src="assets/dashboard_spectrum.png" alt="Spectrum Dashboard" width="100%"> |
-| **Flow** | <img src="assets/dashboard_flow.png" alt="Flow Dashboard" width="100%"> |
-| **Movie** | <img src="assets/dashboard_movie.png" alt="Movie Dashboard" width="100%"> |
+| **Pulse Mode** | <img src="assets/dashboard_pulse.png" alt="Pulse Dashboard" width="100%"> |
+| **Spectrum Mode** | <img src="assets/dashboard_spectrum.png" alt="Spectrum Dashboard" width="100%"> |
+| **Flow Mode** | <img src="assets/dashboard_flow.png" alt="Flow Dashboard" width="100%"> |
+| **Movie Mode** | <img src="assets/dashboard_movie.png" alt="Movie Dashboard" width="100%"> |
 
 </details>
 
 ---
 
-## 🚀 Quick Start
+## 🔒 Security & Privacy
 
-> **Note:** This project is **Windows 10 / 11 only** (tested on Python 3.13).
-
-### 1. Clone & Install Dependencies
-```bash
-git clone https://github.com/iamp1000/summer-please-turn-off-the-lights.git
-cd summer-please-turn-off-the-lights
-
-# Create and activate virtual environment
-python -m venv venv
-venv\Scripts\activate
-
-# Install requirements
-pip install -r requirements.txt
-```
-
-### 2. Configure Credentials (`.env`)
-Create a `.env` file in the project root with your TP-Link Tapo account credentials (used locally for the KLAP token handshake):
-```env
-TAPO_EMAIL=your_tapo_email@example.com
-TAPO_PASSWORD=your_tapo_password
-
-# Optional: Token protection for web dashboard (leave empty for open LAN access)
-TAPO_WEB_TOKEN=
-```
-
-### 3. Configure Devices (`config.yaml`)
-Create or edit `config.yaml` to specify your light strips' static local IP addresses:
-```yaml
-tapo:
-  devices:
-    strip1:
-      ip: "192.168.1.145" # Replace with your L900 static IP
-      name: "Desk Monitor"
-    strip2:
-      ip: "192.168.1.146" # Replace with your L930 static IP
-      name: "Bed Backboard"
-```
-
-### 4. Launch
-Run via the included batch script or python module:
-```bash
-run_lights.bat
-# or
-python -m src.main
-```
-The web dashboard will be available at `http://localhost:8765`.
+* **Local Control vs. Cloud Authentication:** Lighting commands and animation frames are sent directly to the device over your LAN once an authenticated session is established. Initial pairing and account registration involve TP-Link's cloud services.
+* **Dashboard Access on Local Networks:** By default, the web dashboard on port `8765` permits open access to any device connected to your local Wi-Fi. If you operate on a shared network or bind the web host to `0.0.0.0`, define `TAPO_WEB_TOKEN` in `.env` to require token authentication before unlocking controls. Avoid exposing port `8765` to the public internet.
+* **Credentials & Secrets Protection:** `.env`, `config.yaml`, and debug logs are strictly excluded via `.gitignore`. The repository commit history is verified clean with zero recorded secret leaks.
 
 ---
 
-## ⚠️ Limitations
+## ❓ Troubleshooting
 
-We believe in complete technical transparency about hardware constraints:
+#### 1. The app cannot connect to my Tapo light strip
+* Verify that your PC and light strips are connected to the same subnet (e.g. `192.168.1.x`).
+* Ensure your Wi-Fi router does not have **AP Client Isolation** enabled (which blocks local communication between devices).
+* Check that your strip's IP address has not changed by assigning a static DHCP reservation in your router settings.
+* Verify that your credentials in `.env` match your TP-Link account.
 
-* **Windows Only:** Audio loopback uses Windows WASAPI (`soundcard`), screen synchronization uses Windows Desktop Duplication via DirectX (`dxcam`), and global hotkeys hook into Windows APIs (`ctypes.windll.user32`). There is currently no Linux or macOS support.
-* **Microcontroller Rate Limits:** The Tapo L930 onboard microcontroller has limited network buffer capacity. Pushing more than ~8 state updates per second can overwhelm its TCP stack and cause the device to temporarily drop off the network. The pipeline enforces an update budget (typically 4–8 updates/sec for live streaming), while ambient animations run as native firmware loops.
-* **Tapo Mobile App Sync Quirks:** When streaming frequent local frames over LAN, the official Tapo mobile app may occasionally report the strip as offline or delay updating its state in the cloud UI. The strip remains fully responsive to local LAN commands.
-* **Initial Cloud Pairing:** While frame transmission operates purely over LAN, initial device pairing, Wi-Fi onboarding, and account credential validation are managed by the TP-Link Tapo cloud and app ecosystem.
+#### 2. The web dashboard will not load
+* Confirm that the application is running in your terminal or system tray without startup errors.
+* Open `http://localhost:8765` directly on the host PC.
+* If port `8765` is in use by another service, edit `port:` under `web:` in `config.yaml`.
+* If connecting from another PC or phone on the same Wi-Fi, verify that Windows Firewall allows incoming connections on port `8765`.
+
+#### 3. Music-reactive lighting is not responding to sound
+* Verify that audio is currently playing through your default Windows playback device.
+* Open Windows **Sound Settings** and confirm that the active output device is selected.
+* In the web dashboard, inspect the **Audio Input Source** dropdown and select your active audio playback device.
+* Adjust the **Sensitivity & AGC** slider in the dashboard if input volume is quiet.
+
+#### 4. Is Linux or macOS supported?
+* Not currently. The application relies on Windows-specific WASAPI audio loopback (`soundcard`), DirectX GPU desktop duplication (`dxcam`), and Win32 user32 hotkey APIs (`ctypes.windll`).
+
+#### 5. Does the app work without an internet connection?
+* Real-time lighting updates, audio sync, and animations operate purely over your local Wi-Fi network. However, initial account token negotiation and initial device setup through the Tapo ecosystem require internet access.
 
 ---
 
-## 🔒 Security
+## 🏗️ Architecture & Performance
 
-* **Local LAN Access by Default:** The web dashboard (`http://localhost:8765`) allows unauthenticated control by default across your local Wi-Fi. If running on a shared network or binding to `0.0.0.0`, configure `TAPO_WEB_TOKEN` in `.env` to require a bearer token before unlocking control.
-* **Secrets Management:** `.env`, `config.yaml`, and local logs are strictly excluded in `.gitignore`. A full secret scan has been performed across the git history to guarantee no credentials or private IPs are tracked.
-* **Local Handshake:** Your Tapo password is used solely to derive session keys for the local KLAP/TPAP protocol handshakes and is never transmitted outside your network.
+### Data Flow Overview
+
+```mermaid
+flowchart TD
+    subgraph AudioEngine["Audio & Screen Input"]
+        WASAPI["Windows WASAPI Loopback"] --> DSP["MusicAnalyzer (FFT, BPM, Energy)"]
+        DXCAM["DirectX Desktop Duplication"] --> ScreenSync["ScreenSync (Luminance & Letterbox)"]
+    end
+
+    subgraph StateHub["Hub & Visual Dispatcher"]
+        DSP --> Styles["Visual Styles Engine (Pulse, Spectrum, Flow)"]
+        ScreenSync --> Styles
+        Styles --> OKLab["Render Pipeline (OKLab Color Correction)"]
+    end
+
+    subgraph Transport["Local LAN Output"]
+        OKLab --> Sender["Frame Sender (Latest-Frame-Wins)"]
+        Sender --> KLAP["Local KLAP Driver (L900)"]
+        Sender --> TPAP["Local TPAP Driver (L930)"]
+    end
+
+    subgraph Strips["Tapo Hardware"]
+        KLAP --> L900["Tapo L900 (Single-Zone)"]
+        TPAP --> L930["Tapo L930 (50-Zone Addressable)"]
+    end
+
+    Web["FastAPI Dashboard / Tray UI"] <--> StateHub
+```
+
+### Measured Diagnostics Telemetry
+
+Performance benchmarks measured across local Wi-Fi test sessions:
+
+| Metric | Tapo L900 (Single-Zone) | Tapo L930 (50-Zone Addressable) |
+| :--- | :--- | :--- |
+| **Request Model** | Single combined HTTP request (Hue + Saturation + Brightness) | 50-zone state array payload |
+| **Mean HTTP RTT** | **~40–60 ms** | **~75–95 ms** |
+| **Safe Streaming Rate** | **10–15 updates/sec** | **4–8 updates/sec** (paced to prevent TCP buffer overflow) |
+| **Firmware Looping Modes** | N/A (updates every 1–3s with matched transition) | **0 updates/sec over LAN** (60+ FPS autonomous hardware loop) |
+| **End-to-End Latency** | **~55–75 ms** | **~90–115 ms median** (~10–15 ms frame age + ~75–90 ms RTT + pacing delay) |
+| **Internal DSP Analysis** | < 5 ms (FFT analysis) + < 2 ms (OKLab color correction) | < 5 ms (FFT analysis) + < 2 ms (OKLab color correction) |
 
 ---
 
 ## 📖 Complete Effects Catalog
 
 <details>
-<summary><strong>Click to expand the full Effects & Lighting Modes Catalog</strong></summary>
+<summary><strong>Click to expand the full catalog of lighting modes, ambient animations, and palettes</strong></summary>
 
 <br/>
 
@@ -228,9 +313,30 @@ Both strips operate concurrently with real-time audio synchronization:
 
 ---
 
+## 🤝 Contributing & Development
+
+Contributions of all levels are welcome!
+
+### Running the Test Suite
+You can run the entire suite of 70+ automated tests without physical light hardware:
+```powershell
+python -m pytest tests/ -v
+```
+
+### Adding New Lighting Effects
+* **For L930 addressable animations:** Add your procedural algorithm or sequence builder to `src/effects_l930.py` and register it in `EFFECT_CATALOG`.
+* **For L900 ambient modes:** Add your continuous target function to `src/effects.py`.
+* **For new audio visual styles:** Implement a subclass of `VisualStyle` in `src/visual_styles.py`.
+
+### Hardware vs. Simulation Testing
+* The test suite uses synthetic audio generators and simulated socket clients to verify latency models, calibration curves, and frame drops without needing physical hardware.
+* Run `python scripts/render_gifs.py` to preview new animations as rendered 50-zone GIFs.
+
+---
+
 ## 🛠️ Credits & Disclaimer
 
-* **Inspiration:** Developed with deep gratitude to the open-source lighting and firmware communities, notably [WLED](https://github.com/Aircoookie/WLED) and [FastLED](https://github.com/FastLED/FastLED) for their pioneering work on addressable LED algorithms, Pacifica waves, and Fire2012 heat models.
+* **Inspiration:** Developed with deep gratitude to the open-source lighting and firmware communities, notably [WLED](https://github.com/Aircoookie/WLED) and [FastLED](https://github.com/FastLED/FastLED) for addressable strip algorithms and heat diffusion models.
 * **Color Science:** Based on the uniform [OKLab color space](https://bottosson.github.io/posts/oklab/) created by Björn Ottosson.
 * **Disclaimer:** This project is an independent open-source tool and is **not** affiliated with, endorsed by, or supported by TP-Link or Tapo. TP-Link, Tapo, and their respective logos are registered trademarks of TP-Link Corporation Limited.
 * **License:** [MIT License](LICENSE)
