@@ -87,16 +87,28 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         "default_palette": "warm_mono",
     },
     "starfield": {
-        "kind": "streamed_slow",
+        "kind": "firmware",
         "group": "Ambient",
         "desc": "50 autonomous IC agents with independent sine oscillators and prime phase offsets",
         "default_palette": "tide",
     },
     "embers": {
-        "kind": "streamed_slow",
+        "kind": "firmware",
         "group": "Ambient",
-        "desc": "50 autonomous warm glowing embers with independent random micro-fluctuations",
+        "desc": "Independent warm ember ICs with slow randomized glow and long decay",
         "default_palette": "ember",
+    },
+    "fireflies": {
+        "kind": "firmware",
+        "group": "Ambient",
+        "desc": "Green-gold bioluminescent points with independent rise and decay",
+        "default_palette": "forest",
+    },
+    "prism_sparks": {
+        "kind": "firmware",
+        "group": "Motion",
+        "desc": "High-saturation RGB pinpoints with fast independent phosphor fades",
+        "default_palette": "dusk",
     },
     "lava_lamp": {
         "kind": "streamed_slow",
@@ -139,6 +151,12 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         "desc": "Multi-pod bouncing comets with cooling chromatic tails",
         "default_palette": "sunset",
     },
+    "meteor_shower": {
+        "kind": "streamed_slow",
+        "group": "Motion",
+        "desc": "Three narrow meteor heads with cool-white cores and blue fading tails",
+        "default_palette": "tide",
+    },
     "cyber_chase": {
         "kind": "streamed_slow",
         "group": "Motion",
@@ -158,7 +176,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         "default_palette": "dusk",
     },
     "confetti": {
-        "kind": "streamed_slow",
+        "kind": "firmware",
         "group": "Motion",
         "desc": "FastLED classic: Multi-colored shimmering speckles popping and fading smoothly",
         "default_palette": "sunset",
@@ -527,12 +545,22 @@ class L930EffectsEngine:
             )
 
         elif name == "drift":
-            # Muted 16-color glide across the strip with 6s transition
-            seq16 = self._expand_palette_to_16(pal)
-            trans = int(min(6000, 6000 * sp_factor))
-            return build_firmware_sequence_effect(
-                name="Drift", sequence=seq16, spread=12, direction=1, transition=trans, brightness=b
+            # Drift is a soft per-IC field, not another whole-strip sweep like Tide.
+            angles = [math.radians(c[0]) for c in pal]
+            center = int(round(math.degrees(math.atan2(
+                sum(math.sin(a) for a in angles), sum(math.cos(a) for a in angles)
+            )) % 360))
+            t0 = max(150, min(6000, int(round(900 * sp_factor))))
+            t1 = max(t0, min(6000, int(round(2200 * sp_factor))))
+            fx = build_firmware_random_effect(
+                name="Drift", hue_range=(max(0, center - 28), min(359, center + 28)),
+                saturation_range=(max(10, min(c[1] for c in pal) - 10), min(100, max(c[1] for c in pal) + 5)),
+                brightness_range=(18, 72), transition_range=(t0, t1), random_seed=173,
+                fadeoff=max(150, int(round(1400 * sp_factor))),
+                backgrounds=[[pal[0][0], pal[0][1], 2]], brightness=b,
             )
+            fx.id = make_effect_id(f"drift_{self._palette_name}_s{int(round(self._speed * 100))}_b{b}")
+            return fx
 
         elif name == "breathe":
             # Slow 6-8s whole-strip breathing cycle
@@ -610,17 +638,16 @@ class L930EffectsEngine:
             )
 
         elif name == "confetti":
-            return build_firmware_random_effect(
-                name="Confetti",
-                hue_range=(0, 360),
-                saturation_range=(70, 100),
-                brightness_range=(20, 100),
-                transition_range=(300, 1000),
-                random_seed=77,
-                fadeoff=600,
-                backgrounds=[[240, 60, 10]],
-                brightness=b,
+            t0 = max(80, min(6000, int(round(300 * sp_factor))))
+            t1 = max(t0, min(6000, int(round(1000 * sp_factor))))
+            fx = build_firmware_random_effect(
+                name="Confetti", hue_range=(0, 359), saturation_range=(70, 100),
+                brightness_range=(20, 100), transition_range=(t0, t1), random_seed=77,
+                fadeoff=max(120, int(round(600 * sp_factor))),
+                backgrounds=[[pal[0][0], pal[0][1], 2]], brightness=b,
             )
+            fx.id = make_effect_id(f"confetti_s{int(round(self._speed * 100))}_b{b}_{self._palette_name}")
+            return fx
 
         elif name == "radial_ripple":
             seq = [
@@ -743,32 +770,53 @@ class L930EffectsEngine:
 
         # 3. Firmware Random Effects
         elif name == "starfield":
-            # Sparse soft twinkles on dark navy background (WLED Fairy)
-            return build_firmware_random_effect(
-                name="Starfield",
-                hue_range=(200, 230),
-                saturation_range=(10, 40),
-                brightness_range=(10, 100),
-                transition_range=(400, 1500),
-                random_seed=42,
-                fadeoff=800,
-                backgrounds=[[235, 90, 8]],
-                brightness=b,
+            # Cool star-like points, each with independent fade timing.
+            t0 = max(100, min(6000, int(round(400 * sp_factor))))
+            t1 = max(t0, min(6000, int(round(1500 * sp_factor))))
+            fx = build_firmware_random_effect(
+                name="Starfield", hue_range=(200, 230), saturation_range=(8, 42),
+                brightness_range=(8, 100), transition_range=(t0, t1), random_seed=42,
+                fadeoff=max(150, int(round(800 * sp_factor))),
+                backgrounds=[[235, 90, 2]], brightness=b,
             )
+            fx.id = make_effect_id(f"starfield_{self._palette_name}_s{int(round(self._speed * 100))}_b{b}")
+            return fx
 
         elif name == "embers":
-            # Dim warm glow with slow random flicker for sleeping
-            return build_firmware_random_effect(
-                name="Embers",
-                hue_range=(15, 35),
-                saturation_range=(85, 100),
-                brightness_range=(5, 45),
-                transition_range=(600, 2000),
-                random_seed=100,
-                fadeoff=1200,
-                backgrounds=[[10, 100, 15]],
-                brightness=b,
+            t0 = max(150, min(6000, int(round(600 * sp_factor))))
+            t1 = max(t0, min(6000, int(round(2000 * sp_factor))))
+            fx = build_firmware_random_effect(
+                name="Embers", hue_range=(8, 38), saturation_range=(82, 100),
+                brightness_range=(5, 48), transition_range=(t0, t1), random_seed=100,
+                fadeoff=max(250, int(round(1200 * sp_factor))),
+                backgrounds=[[18, 100, 2]], brightness=b,
             )
+            fx.id = make_effect_id(f"embers_s{int(round(self._speed * 100))}_b{b}_{self._palette_name}")
+            return fx
+
+        elif name == "fireflies":
+            t0 = max(150, min(6000, int(round(500 * sp_factor))))
+            t1 = max(t0, min(6000, int(round(1700 * sp_factor))))
+            fx = build_firmware_random_effect(
+                name="Fireflies", hue_range=(72, 150), saturation_range=(58, 100),
+                brightness_range=(12, 92), transition_range=(t0, t1), random_seed=319,
+                fadeoff=max(180, int(round(1100 * sp_factor))),
+                backgrounds=[[135, 80, 2]], brightness=b,
+            )
+            fx.id = make_effect_id(f"fireflies_s{int(round(self._speed * 100))}_b{b}")
+            return fx
+
+        elif name == "prism_sparks":
+            t0 = max(70, min(6000, int(round(120 * sp_factor))))
+            t1 = max(t0, min(6000, int(round(700 * sp_factor))))
+            fx = build_firmware_random_effect(
+                name="PrismSparks", hue_range=(0, 359), saturation_range=(82, 100),
+                brightness_range=(20, 100), transition_range=(t0, t1), random_seed=211,
+                fadeoff=max(80, int(round(350 * sp_factor))),
+                backgrounds=[[260, 80, 2]], brightness=b,
+            )
+            fx.id = make_effect_id(f"prism_sparks_s{int(round(self._speed * 100))}_b{b}")
+            return fx
 
         return None
 
@@ -860,6 +908,10 @@ class L930EffectsEngine:
                     segs = self._render_confetti_burst(t)
                     interval = 0.35
                     trans_ms = 350
+                elif eff == "meteor_shower":
+                    segs = self._render_meteor_shower(t)
+                    interval = 0.28
+                    trans_ms = 260
                 elif eff == "radial_ripple":
                     segs = self._render_radial_ripple(t)
                     interval = 0.35
@@ -930,86 +982,65 @@ class L930EffectsEngine:
     # ── Procedural Streamed Models ───────────────────────────────────────────
 
     def _render_lava_lamp(self, t: float) -> List[List[int]]:
-        """
-        Lava lamp: Fluid viscous molten metaballs drifting with smooth buoyant convection cells.
-        Uses continuous harmonic trajectories and OKLab perceptual palette interpolation
-        to eliminate discrete stepping and visual flickering.
-        """
+        """Five deforming molten metaballs with a dark background and blended blob colors."""
         pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "sunset")
         if not pal:
             pal = [(280, 85, 25), (345, 90, 75), (22, 95, 90), (48, 60, 100)]
         elif len(pal) == 1:
             pal = [pal[0], pal[0]]
-
         from src.visual_styles import sample_palette_oklab
         from src.pipeline import tapo_hsv_to_rgb, rgb_to_tapo_hsv
-
-        sp = self._speed
-        # 4 continuous, harmonic buoyant convection cells with non-integer phase ratios
-        b1_pos = 18.0 + 12.0 * math.sin(0.24 * t * sp + 0.5) + 3.0 * math.cos(0.55 * t * sp)
-        b1_rad = 7.5 + 1.2 * math.sin(0.18 * t * sp)
-
-        b2_pos = 32.0 + 13.0 * math.cos(0.21 * t * sp + 1.2) + 2.5 * math.sin(0.48 * t * sp)
-        b2_rad = 8.0 + 1.0 * math.cos(0.15 * t * sp)
-
-        b3_pos = 24.5 + 18.0 * math.sin(0.31 * t * sp + 2.8)
-        b3_rad = 5.5 + 0.8 * math.sin(0.35 * t * sp)
-
-        b4_pos = 24.5 + 21.0 * math.cos(0.17 * t * sp + 4.1)
-        b4_rad = 6.5 + 1.0 * math.sin(0.22 * t * sp)
-
-        blobs = [
-            (b1_pos, max(4.0, b1_rad)),
-            (b2_pos, max(4.0, b2_rad)),
-            (b3_pos, max(3.0, b3_rad)),
-            (b4_pos, max(3.5, b4_rad)),
+        sp = max(0.2, self._speed)
+        cells = [
+            (7.5 + 7.5*math.sin(.62*t*sp+.4) + 2*math.sin(1.17*t*sp+1.3), 5+.1*math.sin(.34*t*sp)+1.4, .08),
+            (41 + 6.5*math.sin(.49*t*sp+2.1) + 2*math.cos(.91*t*sp), 6.2+1.4*math.cos(.29*t*sp+.7), .31),
+            (24.5+15*math.sin(.37*t*sp+2.8), 4.4+math.sin(.57*t*sp+1.1), .53),
+            (24.5+18*math.cos(.31*t*sp+4.1), 5.4+1.2*math.sin(.41*t*sp+2), .74),
+            (14+6.5*math.cos(.78*t*sp+1.8), 3.8+.8*math.sin(.63*t*sp+.9), .91),
         ]
-
-        # Keep self._metaballs updated for state inspection compatibility
-        self._metaballs = [
-            {"pos": b1_pos, "vel": 0.24 * sp, "radius": b1_rad},
-            {"pos": b2_pos, "vel": -0.21 * sp, "radius": b2_rad},
-            {"pos": b3_pos, "vel": 0.31 * sp, "radius": b3_rad},
-            {"pos": b4_pos, "vel": -0.17 * sp, "radius": b4_rad},
-        ]
-
-        blob_colors = [
-            sample_palette_oklab(pal, 0.15, cyclic=True),
-            sample_palette_oklab(pal, 0.45, cyclic=True),
-            sample_palette_oklab(pal, 0.75, cyclic=True),
-            sample_palette_oklab(pal, 0.95, cyclic=True),
-        ]
-
-        segs = []
+        blobs=[(max(-2,min(NUM_SEGMENTS+1,p)),max(3,r),phase) for p,r,phase in cells]
+        self._metaballs=[{"pos":p,"vel":0.0,"radius":r} for p,r,_ in blobs]
+        segs=[]
         for i in range(NUM_SEGMENTS):
-            field = 0.0
-            sum_r, sum_g, sum_b = 0.0, 0.0, 0.0
-            for b_idx, (pos, rad) in enumerate(blobs):
-                dist = abs(i - pos)
-                if dist < rad:
-                    r = dist / rad
-                    w = 1.0 - r * r
-                    w2 = w * w
-                    field += w2
-                    bc_hsv = blob_colors[b_idx % len(blob_colors)]
-                    b_rgb = tapo_hsv_to_rgb(bc_hsv[0], bc_hsv[1], 100)
-                    sum_r += b_rgb[0] * w2
-                    sum_g += b_rgb[1] * w2
-                    sum_b += b_rgb[2] * w2
+            field=sr=sg=sb=0.0
+            for j,(pos,radius,phase) in enumerate(blobs):
+                dist=abs(i-pos)
+                if dist>=radius: continue
+                x=dist/radius; weight=(1-x*x)**2; field+=weight
+                bh,bs,_=sample_palette_oklab(pal,(phase+.025*math.sin(t*.11*sp+j))%1,cyclic=False)
+                cr,cg,cb=tapo_hsv_to_rgb(bh,bs,100)
+                sr+=cr*weight; sg+=cg*weight; sb+=cb*weight
+            if field<=1e-6:
+                segs.append([pal[0][0],pal[0][1],2]); continue
+            density=min(1.0,1-math.exp(-1.25*field))
+            h,sat,_=rgb_to_tapo_hsv(sr/field,sg/field,sb/field)
+            segs.append([int(h)%360,max(0,min(100,int(sat))),int(max(2,min(100,2+98*density**1.08)))])
+        return segs
 
-            norm_field = min(1.0, 1.0 - math.exp(-1.4 * field))
-            if field > 0.01:
-                norm_r = sum_r / field
-                norm_g = sum_g / field
-                norm_b = sum_b / field
-                h, s, _ = rgb_to_tapo_hsv(norm_r, norm_g, norm_b)
-            else:
-                bg_c = sample_palette_oklab(pal, 0.0, cyclic=True)
-                h, s = bg_c[0], bg_c[1]
-
-            bright = int(max(15, min(100, 16.0 + 84.0 * (norm_field ** 1.3))))
-            segs.append([h, s, bright])
-
+    def _render_meteor_shower(self, t: float) -> List[List[int]]:
+        """Several asymmetric meteor streaks move with cool-white heads and blue tails."""
+        from src.visual_styles import sample_palette_oklab
+        pal=get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "tide")
+        sp=max(.2,self._speed)
+        meteors=[((t*13*sp+3)%(NUM_SEGMENTS+16)-8,1.0,7.0),
+                 ((t*9*sp+27)%(NUM_SEGMENTS+20)-10,.72,10.0),
+                 ((t*16*sp+41)%(NUM_SEGMENTS+12)-6,.48,5.0)]
+        segs=[]
+        for i in range(NUM_SEGMENTS):
+            best=trail=0.0
+            for head,gain,length in meteors:
+                behind=head-i
+                if 0<=behind<=length:
+                    glow=math.exp(-behind/max(1.2,length*.38))*gain
+                    if glow>best: best,trail=glow,behind/length
+                if abs(i-head)<=1.15:
+                    glow=gain*(1-abs(i-head)/1.15)
+                    if glow>best: best,trail=glow,0.0
+            if best<=.015:
+                segs.append([pal[0][0],pal[0][1],2]); continue
+            h,sat,_=sample_palette_oklab(pal,min(1,.1+trail*.9),cyclic=False)
+            mix=max(0,1-trail*2.8)
+            segs.append([int((h*(1-mix)+195*mix)%360),int(sat*(1-mix)+22*mix),int(max(2,min(100,2+98*best)))])
         return segs
 
     def _render_dusk(self, t: float) -> List[List[int]]:
@@ -1493,6 +1524,8 @@ class L930EffectsEngine:
             return self._render_multi_pod_comet(t)
         elif eff == "sonar_sweep":
             return self._render_multi_pod_sonar(t)
+        elif eff == "meteor_shower":
+            return self._render_meteor_shower(t)
         elif eff == "starfield":
             return self._render_autonomous_starfield(t)
         elif eff == "embers":
