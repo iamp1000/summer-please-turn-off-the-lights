@@ -54,12 +54,22 @@ class TrayApp:
         )
 
     def _quit(self):
-        self._on_quit()
-        self.stop()
+        try:
+            self.stop()
+        except Exception:
+            pass
+        if callable(self._on_quit):
+            try:
+                self._on_quit()
+            except Exception:
+                pass
 
     def stop(self):
         if self._icon is not None:
-            self._icon.stop()
+            try:
+                self._icon.stop()
+            except Exception:
+                pass
 
     def run(self):
         self._icon = pystray.Icon(

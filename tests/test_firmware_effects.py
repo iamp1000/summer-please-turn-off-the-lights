@@ -348,5 +348,70 @@ def test_output_arbiter_strict_ownership():
     assert not arbiter.can_submit(dev, OutputProducer.AUDIO)
 
 
+def test_new_geometric_and_fastled_effects():
+    """Verify all new 2D spatial and FastLED effects render valid 50-zone outputs."""
+    engine = L930EffectsEngine(controller=None, loop_runner=None, app_state={})
+    new_effects = [
+        "gravity_slosh",
+        "lissajous_orbit",
+        "planar_wind",
+        "radar_sweep",
+        "glitter_cascade",
+        "bpm_resonator",
+        "coordinated_lightning",
+        "vaporwave_neon",
+        "lantern_sweep",
+        "aurora",
+        "raindrop",
+        "lightning",
+        "police",
+        "candy_cane",
+        "haunted_mansion",
+        "rainbow",
+    ]
+    for eff in new_effects:
+        assert eff in EFFECT_CATALOG, f"Missing {eff} in EFFECT_CATALOG"
+        frame = engine._compute(eff, t=1.5)
+        assert len(frame) == 50, f"Expected 50 segments for {eff}, got {len(frame)}"
+        for h, s, v in frame:
+            assert 0 <= h <= 360, f"Invalid hue {h} in {eff}"
+            assert 0 <= s <= 100, f"Invalid saturation {s} in {eff}"
+            assert 0 <= v <= 100, f"Invalid brightness {v} in {eff}"
 
 
+def test_new_firmware_payload_builders():
+    """Verify new firmware autonomous effects generate valid LightEffect payloads."""
+    engine = L930EffectsEngine(controller=None, loop_runner=None, app_state={})
+    new_fw = ["bioluminescent_abyss", "campfire_hearth", "dual_wipe", "infinite_prism"]
+    for eff in new_fw:
+        assert eff in EFFECT_CATALOG
+        fx = engine._build_effect_payload(eff)
+        assert fx is not None, f"Payload builder for {eff} returned None"
+        assert len(fx.id) == 32
+        assert fx.type in ("sequence", "random", "pulse", "static")
+
+
+def test_next_gen_music_styles():
+    """Verify all next-gen music styles render valid frames."""
+    from src.visual_styles import create_style_instances
+    from src.audio_dsp import MusicState
+
+    styles = create_style_instances()
+    st = MusicState(
+        energy=0.65,
+        kick=0.90,
+        hat=0.70,
+        onset=0.75,
+        centroid_norm=0.45,
+        silent=False,
+    )
+
+    for style_name in ("acoustic_string", "hydro_acoustic", "lofi_vinyl", "melodic_contour"):
+        assert style_name in styles
+        style = styles[style_name]
+        frame = style.render(st, dt=0.033, num_zones=50)
+        assert len(frame) == 50
+        for h, s, v in frame:
+            assert 0 <= h <= 360
+            assert 0 <= s <= 100
+            assert 0 <= v <= 100

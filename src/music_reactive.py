@@ -225,9 +225,9 @@ class MusicReactive:
         if isinstance(director, DirectorStyle):
             director.compositor.set_accent_enabled(name, enabled)
 
-    def set_style_params(self, speed: float | None = None, intensity: float | None = None, palette_mode: str | None = None):
+    def set_style_params(self, speed: float | None = None, intensity: float | None = None, smoothing: float | None = None, palette_mode: str | None = None):
         for s in self._styles.values():
-            s.set_params(speed=speed, intensity=intensity, palette_mode=palette_mode)
+            s.set_params(speed=speed, intensity=intensity, smoothing=smoothing, palette_mode=palette_mode)
 
     def set_device(self, device_name: str | None):
         self._preferred_device = device_name

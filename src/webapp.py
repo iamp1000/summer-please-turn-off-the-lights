@@ -39,6 +39,13 @@ class EffectParamsRequest(BaseModel):
     palette_name: Optional[str] = None
 
 
+class StyleParamsRequest(BaseModel):
+    speed: Optional[float] = None
+    intensity: Optional[float] = None
+    smoothing: Optional[float] = None
+    palette_mode: Optional[str] = None
+
+
 class ColorRequest(BaseModel):
     h: int
     s: int
@@ -235,6 +242,11 @@ def create_app(hub) -> FastAPI:
     def set_music_lookahead(dev_id: str, req: AudioLookaheadRequest):
         hub.set_audio_lookahead(dev_id, req.lookahead_ms)
         return {"status": "ok", "lookahead_ms": req.lookahead_ms}
+
+    @app.post("/api/device/{dev_id}/music/style_params", dependencies=[Depends(verify_auth)])
+    def set_music_style_params(dev_id: str, req: StyleParamsRequest):
+        hub.set_style_params(dev_id, speed=req.speed, intensity=req.intensity, smoothing=req.smoothing, palette_mode=req.palette_mode)
+        return {"status": "ok"}
 
     @app.get("/api/audio/telemetry", dependencies=[Depends(verify_auth)])
     def get_audio_telemetry():

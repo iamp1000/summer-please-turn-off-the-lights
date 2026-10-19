@@ -69,6 +69,8 @@ class MusicState:
     section_progress: float = 0.0 # Estimated 0.0 - 1.0 progression within section
     drop_strength: float = 0.0  # 0.0 - 1.0 drop qualification score
     silent: bool = True         # True if stream is quiet or timed out
+    source_preset: SourcePreset = SourcePreset.STANDARD
+    speech_dominance: float = 0.0  # 0.0 - 1.0 speech vs music/bass ratio for dialogue suppression
 
     # ── Macro (30 s+) ──
     chroma: np.ndarray = field(default_factory=lambda: np.zeros(12, dtype=np.float32))
@@ -146,9 +148,9 @@ class LowPassKickDetector:
         k_max = float(np.max(rect)) if n > 0 else 0.0
         target = 0.5 * k_rms + 0.5 * k_max
 
-        # Continuous attack (10ms) and decay (70ms)
-        alpha_att = 1.0 - math.exp(-dt / 0.010)
-        alpha_dec = 1.0 - math.exp(-dt / 0.070)
+        # Continuous attack (15ms) and decay (180ms)
+        alpha_att = 1.0 - math.exp(-dt / 0.015)
+        alpha_dec = 1.0 - math.exp(-dt / 0.180)
         if target > self.envelope:
             self.envelope += alpha_att * (target - self.envelope)
         else:
@@ -795,9 +797,11 @@ class MusicAnalyzer:
         self._sample_clock_time: float = 0.0
         self._last_process_time: float = 0.0
         self._current_state = MusicState()
-        self.backlog_warning_count: int = 0
         self._hat_peak: float = 0.05
         self._snare_peak: float = 0.05
+        self._snare_env: float = 0.0
+        self._hat_env: float = 0.0
+        self.backlog_warning_count: int = 0
 
         # Expose bpm_tracker for backwards compatibility
         self.bpm_tracker = BPMTracker()
@@ -876,13 +880,12 @@ class MusicAnalyzer:
         energy, energy_trend, drop_str, is_silent = self.calibrator.update(rms, kick_e, stream_time, dt=dt)
 
         # Source Preset Adaptation (e.g. MOVIE dialogue isolation & dimming)
-        if self.source_preset == SourcePreset.MOVIE:
-            speech_e = float(np.mean(fft_4096[self.speech_mask])) if np.any(self.speech_mask) else 0.0
-            sub_bass_e = float(np.mean(fft_4096[self.sub_bass_mask])) if np.any(self.sub_bass_mask) else 0.0
-            total_speech_bass = max(1e-4, speech_e + sub_bass_e + kick_e)
-            speech_dominance = speech_e / total_speech_bass
-            if speech_dominance > 0.60:
-                energy *= 0.55
+        speech_e = float(np.mean(fft_4096[self.speech_mask])) if np.any(self.speech_mask) else 0.0
+        sub_bass_e = float(np.mean(fft_4096[self.sub_bass_mask])) if np.any(self.sub_bass_mask) else 0.0
+        total_speech_bass = max(1e-4, speech_e + sub_bass_e + kick_e)
+        speech_dominance = speech_e / total_speech_bass
+        if self.source_preset == SourcePreset.MOVIE and speech_dominance > 0.60:
+            energy *= 0.55
 
         # 6. Spectral Centroid, Harmonic Ratio & Spectral Complexity (Shannon Entropy)
         total_mag = float(np.sum(fft_4096))
@@ -907,16 +910,32 @@ class MusicAnalyzer:
             complexity = 0.0
         complexity = float(max(0.0, min(1.0, complexity)))
 
-        # Transient metrics with rolling scale-invariant normalization
+        # Transient metrics with rolling scale-invariant normalization and dedicated attack/release envelopes
         snare_mask = (self.freqs_4096 >= 200) & (self.freqs_4096 < 2000)
         hat_mask = (self.freqs_4096 >= 4000) & (self.freqs_4096 < 14000)
         raw_snare = float(np.mean(fft_4096[snare_mask])) if np.any(snare_mask) else 0.0
         raw_hat = float(np.mean(fft_4096[hat_mask])) if np.any(hat_mask) else 0.0
 
-        self._hat_peak = max(raw_hat, self._hat_peak * math.exp(-dt / 3.0))
-        norm_hat = float(max(0.0, min(1.0, raw_hat / max(0.005, self._hat_peak))))
-        self._snare_peak = max(raw_snare, self._snare_peak * math.exp(-dt / 3.0))
-        norm_snare = float(max(0.0, min(1.0, raw_snare / max(0.005, self._snare_peak))))
+        if is_silent:
+            self._snare_env = 0.0
+            self._hat_env = 0.0
+            norm_snare = 0.0
+            norm_hat = 0.0
+        else:
+            self._hat_peak = max(raw_hat, self._hat_peak * math.exp(-dt / 3.0))
+            instant_hat = float(max(0.0, min(1.0, raw_hat / max(0.005, self._hat_peak))))
+            # Hi-hats: snappy attack (10ms) and short, sparse sparkle decay (60ms)
+            alpha_hat = 1.0 - math.exp(-dt / 0.010) if instant_hat > self._hat_env else 1.0 - math.exp(-dt / 0.060)
+            self._hat_env += alpha_hat * (instant_hat - self._hat_env)
+            norm_hat = float(max(0.0, min(1.0, self._hat_env)))
+
+            self._snare_peak = max(raw_snare, self._snare_peak * math.exp(-dt / 3.0))
+            instant_snare = float(max(0.0, min(1.0, raw_snare / max(0.005, self._snare_peak))))
+            # Snare/transient: sharp attack (12ms) with 110ms visible tail
+            alpha_snare = 1.0 - math.exp(-dt / 0.012) if instant_snare > self._snare_env else 1.0 - math.exp(-dt / 0.110)
+            self._snare_env += alpha_snare * (instant_snare - self._snare_env)
+            norm_snare = float(max(0.0, min(1.0, self._snare_env)))
+
         norm_kick = float(getattr(self.calibrator, "norm_kick", kick_e))
 
         intensity = float(max(0.0, min(1.0, energy * 0.50 + norm_kick * 0.30 + (1.0 - flatness) * 0.20)))
@@ -964,6 +983,8 @@ class MusicAnalyzer:
             section_progress=round(sec_prog, 2),
             drop_strength=drop_str,
             silent=is_silent,
+            source_preset=self.source_preset,
+            speech_dominance=round(speech_dominance, 3),
             chroma=chroma,
             key_hue=round(key_hue, 1),
             mode=mode,

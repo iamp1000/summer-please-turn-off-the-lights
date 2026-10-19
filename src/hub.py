@@ -180,6 +180,10 @@ class LightHub:
                 {"id": "party", "name": "🎉 Party"},
                 {"id": "chill", "name": "☕ Chill"},
                 {"id": "edm", "name": "💥 EDM"},
+                {"id": "acoustic_string", "name": "🎸 Acoustic String"},
+                {"id": "hydro_acoustic", "name": "💧 Hydro Acoustic"},
+                {"id": "lofi_vinyl", "name": "📻 Lofi Vinyl"},
+                {"id": "melodic_contour", "name": "🎼 Melodic Ribbon"},
                 {"id": "movie", "name": "🎬 Movie"},
                 {"id": "pulse", "name": "⚡ Pulse"},
                 {"id": "spectrum", "name": "📊 Spectrum"},
@@ -192,6 +196,10 @@ class LightHub:
                 {"id": "party", "name": "🎉 Party"},
                 {"id": "chill", "name": "☕ Chill"},
                 {"id": "edm", "name": "💥 EDM"},
+                {"id": "acoustic_string", "name": "🎸 Acoustic String"},
+                {"id": "hydro_acoustic", "name": "💧 Hydro Acoustic"},
+                {"id": "lofi_vinyl", "name": "📻 Lofi Vinyl"},
+                {"id": "melodic_contour", "name": "🎼 Melodic Ribbon"},
                 {"id": "movie", "name": "🎬 Movie"},
                 {"id": "pulse", "name": "⚡ Pulse"},
                 {"id": "spectrum", "name": "📊 Spectrum"},
@@ -297,10 +305,31 @@ class LightHub:
             analyzer = getattr(sync, "_analyzer", None)
             st = getattr(sync, "latest_music_state", None) or coord_st or (analyzer.state if analyzer else None)
 
+            # Determine noise floor from calibrator if available
+            calibrator = getattr(analyzer, "calibrator", None) or getattr(sync, "_calibrator", None)
+            noise_floor_val = float(getattr(calibrator, "p5", getattr(calibrator, "noise_floor", 0.005)))
+
+            # Get outgoing send FPS from controller diagnostics
+            diag = getattr(getattr(ctx, "controller", None), "diagnostics", None)
+            tx_fps = float(getattr(diag, "send_fps", 0.0))
+
+            raw_spectrum = getattr(sync, "latest_spectrum", None)
+            if not raw_spectrum and st is not None and hasattr(st, "bands") and len(st.bands) > 0:
+                raw_spectrum = [float(x) for x in st.bands]
+            if not raw_spectrum:
+                raw_spectrum = [0.0] * 50
+
             result[dev_id] = {
                 "active": sync.is_running(),
-                "spectrum": [float(x) for x in getattr(sync, "latest_spectrum", [0.0] * 50)],
-                "bpm": getattr(sync, "estimated_bpm", 120.0),
+                "spectrum": [float(x) for x in raw_spectrum],
+                "bpm": float(getattr(st, "bpm", getattr(sync, "estimated_bpm", 120.0))),
+                "confidence": float(getattr(st, "bpm_confidence", getattr(sync, "confidence", 0.0))),
+                "onset": float(getattr(st, "onset", 0.0)),
+                "kick": float(getattr(st, "kick", 0.0)),
+                "snare": float(getattr(st, "snare", 0.0)),
+                "hat": float(getattr(st, "hat", 0.0)),
+                "noise_floor": noise_floor_val,
+                "send_fps": tx_fps,
                 "beat_phase": getattr(st, "beat_phase", 0.0) if st else 0.0,
                 "bar_pos": getattr(st, "bar_pos", 0) if st else 0,
                 "energy": getattr(st, "energy", 0.0) if st else 0.0,
@@ -315,12 +344,19 @@ class LightHub:
                 "mode": getattr(st, "mode", "major") if st else "major",
                 "palette": getattr(st, "palette", []) if st else [],
                 "harmonic_ratio": getattr(st, "harmonic_ratio", 0.5) if st else 0.5,
-                "confidence": getattr(sync, "confidence", 0.0),
                 "sensitivity": getattr(sync, "sensitivity", 1.0),
                 "lookahead_ms": getattr(sync, "latency_lookahead_ms", 40.0),
                 "style": getattr(sync, "style_name", getattr(sync, "_mode", "hybrid")),
             }
         return result
+
+    def set_effect_params(self, dev_id: str, **kwargs):
+        """Passes effect tuning parameters (speed, brightness, palette_name, tail_length, etc.) to target engines."""
+        targets = self._resolve_targets(dev_id)
+        for ctx in targets:
+            if hasattr(ctx, "fx_engine") and hasattr(ctx.fx_engine, "set_parameters"):
+                ctx.fx_engine.set_parameters(**kwargs)
+        self.notify_change()
 
     def set_audio_sensitivity(self, dev_id: str, val: float):
         targets = self._resolve_targets(dev_id)
@@ -499,11 +535,11 @@ class LightHub:
                 ctx.audio_sync.set_accent(name, enabled)
         self.notify_change()
 
-    def set_style_params(self, dev_id: str, speed: float | None = None, intensity: float | None = None, palette_mode: str | None = None):
+    def set_style_params(self, dev_id: str, speed: float | None = None, intensity: float | None = None, smoothing: float | None = None, palette_mode: str | None = None):
         targets = self._resolve_targets(dev_id)
         for ctx in targets:
             if hasattr(ctx.audio_sync, "set_style_params"):
-                ctx.audio_sync.set_style_params(speed=speed, intensity=intensity, palette_mode=palette_mode)
+                ctx.audio_sync.set_style_params(speed=speed, intensity=intensity, smoothing=smoothing, palette_mode=palette_mode)
         self.notify_change()
 
     def toggle_screen(self, dev_id: str):

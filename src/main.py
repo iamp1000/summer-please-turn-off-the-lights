@@ -100,23 +100,37 @@ def main():
         print(f"[Warning] Web server start error: {ex}")
 
     # 4. Graceful Shutdown Handler
+    _quitting = False
+
     def on_quit():
+        nonlocal _quitting
+        if _quitting:
+            return
+        _quitting = True
         print("\nShutdown sequence engaged. Releasing threads gracefully...")
         try:
             hotkeys.unregister_all()
         except Exception:
             pass
-        hub.shutdown()
+        try:
+            hub.shutdown()
+        except Exception:
+            pass
         try:
             tray.stop()
         except Exception:
             pass
-        loop_runner.stop()
         try:
-            gui.quit()
+            loop_runner.stop()
         except Exception:
             pass
-        sys.exit(0)
+        try:
+            if hasattr(gui, "app") and gui.app:
+                gui.app.after(0, gui.app.destroy)
+        except Exception:
+            pass
+        # Immediate clean exit to avoid lingering background daemon threads
+        os._exit(0)
 
     atexit.register(on_quit)
 

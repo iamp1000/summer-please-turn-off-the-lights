@@ -698,6 +698,88 @@ class TapoGUI:
         )
         self.gui_bpm_lbl.pack(side="right")
 
+        # ── LIVE AUDIO MONITOR (Spectrum Visualizer + Onset / Kick / Snare / Hat Meters) ──
+        self.audio_monitor_frame = ctk.CTkFrame(vst_inner, fg_color=t["surface_high"], corner_radius=10)
+        self.audio_monitor_frame.pack(fill="x", pady=(0, 8))
+        mon_inner = ctk.CTkFrame(self.audio_monitor_frame, fg_color="transparent")
+        mon_inner.pack(fill="x", padx=10, pady=8)
+
+        # Header with Diagnostic Metrics (BPM + Conf, Noise Floor, Outgoing Tx FPS)
+        mon_hdr = ctk.CTkFrame(mon_inner, fg_color="transparent")
+        mon_hdr.pack(fill="x", pady=(0, 4))
+        ctk.CTkLabel(
+            mon_hdr, text="LIVE AUDIO MONITOR",
+            font=ctk.CTkFont(size=8, weight="bold"), text_color=t["text_muted"]
+        ).pack(side="left")
+
+        self.lbl_mon_meta = ctk.CTkLabel(
+            mon_hdr,
+            text="BPM: 120 (0%) · Floor: -52dB · Tx: 0 FPS",
+            font=ctk.CTkFont(family="Consolas", size=8, weight="bold"),
+            text_color=t["accent_glow"]
+        )
+        self.lbl_mon_meta.pack(side="right")
+
+        # Live 16-band Spectrum Mini Bar Chart Canvas
+        import tkinter as tk
+        self.spectrum_canvas = tk.Canvas(
+            mon_inner, height=32, bg="#06080d", highlightthickness=0, bd=0
+        )
+        self.spectrum_canvas.pack(fill="x", pady=(2, 6))
+
+        # Transient Meters Grid: Onset, Kick, Snare, Hat
+        meters_row = ctk.CTkFrame(mon_inner, fg_color="transparent")
+        meters_row.pack(fill="x")
+        meters_row.columnconfigure((0, 1, 2, 3), weight=1, uniform="m")
+
+        # 1. Onset
+        m_on = ctk.CTkFrame(meters_row, fg_color="transparent")
+        m_on.grid(row=0, column=0, padx=2, sticky="ew")
+        m_on_hdr = ctk.CTkFrame(m_on, fg_color="transparent")
+        m_on_hdr.pack(fill="x")
+        ctk.CTkLabel(m_on_hdr, text="ONSET", font=ctk.CTkFont(size=7, weight="bold"), text_color=t["text_muted"]).pack(side="left")
+        self.lbl_meter_onset = ctk.CTkLabel(m_on_hdr, text="0.0", font=ctk.CTkFont(family="Consolas", size=7), text_color="#38bdf8")
+        self.lbl_meter_onset.pack(side="right")
+        self.bar_meter_onset = ctk.CTkProgressBar(m_on, height=6, progress_color="#38bdf8", fg_color=t["surface_raised"])
+        self.bar_meter_onset.set(0.0)
+        self.bar_meter_onset.pack(fill="x", pady=(1, 0))
+
+        # 2. Kick
+        m_k = ctk.CTkFrame(meters_row, fg_color="transparent")
+        m_k.grid(row=0, column=1, padx=2, sticky="ew")
+        m_k_hdr = ctk.CTkFrame(m_k, fg_color="transparent")
+        m_k_hdr.pack(fill="x")
+        ctk.CTkLabel(m_k_hdr, text="KICK", font=ctk.CTkFont(size=7, weight="bold"), text_color=t["text_muted"]).pack(side="left")
+        self.lbl_meter_kick = ctk.CTkLabel(m_k_hdr, text="0.0", font=ctk.CTkFont(family="Consolas", size=7), text_color="#f43f5e")
+        self.lbl_meter_kick.pack(side="right")
+        self.bar_meter_kick = ctk.CTkProgressBar(m_k, height=6, progress_color="#f43f5e", fg_color=t["surface_raised"])
+        self.bar_meter_kick.set(0.0)
+        self.bar_meter_kick.pack(fill="x", pady=(1, 0))
+
+        # 3. Snare
+        m_s = ctk.CTkFrame(meters_row, fg_color="transparent")
+        m_s.grid(row=0, column=2, padx=2, sticky="ew")
+        m_s_hdr = ctk.CTkFrame(m_s, fg_color="transparent")
+        m_s_hdr.pack(fill="x")
+        ctk.CTkLabel(m_s_hdr, text="SNARE", font=ctk.CTkFont(size=7, weight="bold"), text_color=t["text_muted"]).pack(side="left")
+        self.lbl_meter_snare = ctk.CTkLabel(m_s_hdr, text="0.0", font=ctk.CTkFont(family="Consolas", size=7), text_color="#fbbf24")
+        self.lbl_meter_snare.pack(side="right")
+        self.bar_meter_snare = ctk.CTkProgressBar(m_s, height=6, progress_color="#fbbf24", fg_color=t["surface_raised"])
+        self.bar_meter_snare.set(0.0)
+        self.bar_meter_snare.pack(fill="x", pady=(1, 0))
+
+        # 4. Hat
+        m_h = ctk.CTkFrame(meters_row, fg_color="transparent")
+        m_h.grid(row=0, column=3, padx=2, sticky="ew")
+        m_h_hdr = ctk.CTkFrame(m_h, fg_color="transparent")
+        m_h_hdr.pack(fill="x")
+        ctk.CTkLabel(m_h_hdr, text="HAT", font=ctk.CTkFont(size=7, weight="bold"), text_color=t["text_muted"]).pack(side="left")
+        self.lbl_meter_hat = ctk.CTkLabel(m_h_hdr, text="0.0", font=ctk.CTkFont(family="Consolas", size=7), text_color="#10b981")
+        self.lbl_meter_hat.pack(side="right")
+        self.bar_meter_hat = ctk.CTkProgressBar(m_h, height=6, progress_color="#10b981", fg_color=t["surface_raised"])
+        self.bar_meter_hat.set(0.0)
+        self.bar_meter_hat.pack(fill="x", pady=(1, 0))
+
         # ── AUTO (DIRECTOR) FEATURED CARD ──
         self.btn_auto_mode = ctk.CTkButton(
             vst_inner, text="✨  Auto (Director)  ·  Autonomous Intelligence",
@@ -1109,6 +1191,78 @@ class TapoGUI:
         self.opt_fx_pal.set("sunset")
         self.opt_fx_pal.pack(fill="x", pady=(4, 0))
 
+        # Row 2: Dynamic Effect-Specific Tuning Sliders Container
+        self.fx_specific_frame = ctk.CTkFrame(fc_inner, fg_color="transparent")
+        self.fx_specific_frame.pack(fill="x", pady=(4, 0))
+        self.fx_specific_frame.columnconfigure((0, 1), weight=1)
+
+        # 1. Tail Length Slider Box
+        self.box_fx_tail = ctk.CTkFrame(self.fx_specific_frame, fg_color="transparent")
+        tail_hdr = ctk.CTkFrame(self.box_fx_tail, fg_color="transparent")
+        tail_hdr.pack(fill="x")
+        ctk.CTkLabel(tail_hdr, text="☄ Tail Length:", font=ctk.CTkFont(size=9, weight="bold"), text_color=t["text_muted"]).pack(side="left")
+        self.lbl_fx_tail = ctk.CTkLabel(tail_hdr, text="1.0x", font=ctk.CTkFont(family="Consolas", size=9, weight="bold"), text_color=t["accent_glow"])
+        self.lbl_fx_tail.pack(side="right")
+        self.slider_fx_tail = ctk.CTkSlider(
+            self.box_fx_tail, from_=0.3, to=3.0, number_of_steps=27,
+            command=self._on_fx_tail_slide,
+            fg_color=t["surface_high"], progress_color=t["accent"],
+            button_color=t["accent_glow"], height=12
+        )
+        self.slider_fx_tail.set(1.0)
+        self.slider_fx_tail.pack(fill="x", pady=(1, 0))
+
+        # 2. Particle Density Slider Box
+        self.box_fx_density = ctk.CTkFrame(self.fx_specific_frame, fg_color="transparent")
+        dens_hdr = ctk.CTkFrame(self.box_fx_density, fg_color="transparent")
+        dens_hdr.pack(fill="x")
+        ctk.CTkLabel(dens_hdr, text="✨ Density:", font=ctk.CTkFont(size=9, weight="bold"), text_color=t["text_muted"]).pack(side="left")
+        self.lbl_fx_density = ctk.CTkLabel(dens_hdr, text="1.0x", font=ctk.CTkFont(family="Consolas", size=9, weight="bold"), text_color=t["accent_glow"])
+        self.lbl_fx_density.pack(side="right")
+        self.slider_fx_density = ctk.CTkSlider(
+            self.box_fx_density, from_=0.2, to=3.0, number_of_steps=28,
+            command=self._on_fx_density_slide,
+            fg_color=t["surface_high"], progress_color=t["accent"],
+            button_color=t["accent_glow"], height=12
+        )
+        self.slider_fx_density.set(1.0)
+        self.slider_fx_density.pack(fill="x", pady=(1, 0))
+
+        # 3. Wave Width Slider Box
+        self.box_fx_width = ctk.CTkFrame(self.fx_specific_frame, fg_color="transparent")
+        width_hdr = ctk.CTkFrame(self.box_fx_width, fg_color="transparent")
+        width_hdr.pack(fill="x")
+        ctk.CTkLabel(width_hdr, text="🌊 Wave Width:", font=ctk.CTkFont(size=9, weight="bold"), text_color=t["text_muted"]).pack(side="left")
+        self.lbl_fx_width = ctk.CTkLabel(width_hdr, text="1.0x", font=ctk.CTkFont(family="Consolas", size=9, weight="bold"), text_color=t["accent_glow"])
+        self.lbl_fx_width.pack(side="right")
+        self.slider_fx_width = ctk.CTkSlider(
+            self.box_fx_width, from_=0.3, to=3.0, number_of_steps=27,
+            command=self._on_fx_width_slide,
+            fg_color=t["surface_high"], progress_color=t["accent"],
+            button_color=t["accent_glow"], height=12
+        )
+        self.slider_fx_width.set(1.0)
+        self.slider_fx_width.pack(fill="x", pady=(1, 0))
+
+        # 4. Flash Strength Slider Box
+        self.box_fx_flash = ctk.CTkFrame(self.fx_specific_frame, fg_color="transparent")
+        flash_hdr = ctk.CTkFrame(self.box_fx_flash, fg_color="transparent")
+        flash_hdr.pack(fill="x")
+        ctk.CTkLabel(flash_hdr, text="⚡ Flash Pwr:", font=ctk.CTkFont(size=9, weight="bold"), text_color=t["text_muted"]).pack(side="left")
+        self.lbl_fx_flash = ctk.CTkLabel(flash_hdr, text="1.0x", font=ctk.CTkFont(family="Consolas", size=9, weight="bold"), text_color=t["accent_glow"])
+        self.lbl_fx_flash.pack(side="right")
+        self.slider_fx_flash = ctk.CTkSlider(
+            self.box_fx_flash, from_=0.2, to=2.5, number_of_steps=23,
+            command=self._on_fx_flash_slide,
+            fg_color=t["surface_high"], progress_color=t["accent"],
+            button_color=t["accent_glow"], height=12
+        )
+        self.slider_fx_flash.set(1.0)
+        self.slider_fx_flash.pack(fill="x", pady=(1, 0))
+
+        # Refresh visible controls based on active effect
+        self._update_effect_specific_controls()
+
         # Search remains outside the generated buttons and is restored after rebuilds.
         search_wrap = ctk.CTkFrame(self.fx_grid_frame, fg_color="transparent")
         search_wrap.pack(fill="x", pady=(0, 8))
@@ -1247,6 +1401,71 @@ class TapoGUI:
         if dev_ctx and hasattr(dev_ctx.fx_engine, "set_parameters"):
             dev_ctx.fx_engine.set_parameters(palette_name=pal_name)
 
+    def _on_fx_tail_slide(self, val: float):
+        v = round(float(val), 2)
+        self.lbl_fx_tail.configure(text=f"{v}x")
+        self.hub.set_effect_params(self.current_dev_id, tail_length=v)
+
+    def _on_fx_density_slide(self, val: float):
+        v = round(float(val), 2)
+        self.lbl_fx_density.configure(text=f"{v}x")
+        self.hub.set_effect_params(self.current_dev_id, particle_density=v)
+
+    def _on_fx_width_slide(self, val: float):
+        v = round(float(val), 2)
+        self.lbl_fx_width.configure(text=f"{v}x")
+        self.hub.set_effect_params(self.current_dev_id, wave_width=v)
+
+    def _on_fx_flash_slide(self, val: float):
+        v = round(float(val), 2)
+        self.lbl_fx_flash.configure(text=f"{v}x")
+        self.hub.set_effect_params(self.current_dev_id, flash_strength=v)
+
+    def _update_effect_specific_controls(self, effect_name: Optional[str] = None):
+        """Dynamically reveals only the sliders supported by the selected effect."""
+        try:
+            if not hasattr(self, "fx_specific_frame"):
+                return
+            dev = self.hub.devices.get(self.current_dev_id)
+            eff = effect_name or (dev.state.get("active_label", "") if dev else "") or ""
+            eff_clean = eff.lower().strip()
+
+            catalog = self.hub.get_full_state().get("effects_catalog", {})
+            meta = catalog.get(eff_clean, {})
+            supported = set(meta.get("supported_controls", ["speed", "brightness"]))
+
+            # Unpack all specific boxes first
+            for box in (self.box_fx_tail, self.box_fx_density, self.box_fx_width, self.box_fx_flash):
+                box.grid_remove()
+
+            visible_count = 0
+            if "tail_length" in supported:
+                r, c = divmod(visible_count, 2)
+                self.box_fx_tail.grid(row=r, column=c, sticky="ew", padx=(0 if c == 0 else 4, 4 if c == 0 else 0), pady=2)
+                visible_count += 1
+
+            if "particle_density" in supported:
+                r, c = divmod(visible_count, 2)
+                self.box_fx_density.grid(row=r, column=c, sticky="ew", padx=(0 if c == 0 else 4, 4 if c == 0 else 0), pady=2)
+                visible_count += 1
+
+            if "wave_width" in supported:
+                r, c = divmod(visible_count, 2)
+                self.box_fx_width.grid(row=r, column=c, sticky="ew", padx=(0 if c == 0 else 4, 4 if c == 0 else 0), pady=2)
+                visible_count += 1
+
+            if "flash_strength" in supported:
+                r, c = divmod(visible_count, 2)
+                self.box_fx_flash.grid(row=r, column=c, sticky="ew", padx=(0 if c == 0 else 4, 4 if c == 0 else 0), pady=2)
+                visible_count += 1
+
+            if visible_count > 0:
+                self.fx_specific_frame.pack(fill="x", pady=(4, 0))
+            else:
+                self.fx_specific_frame.pack_forget()
+        except Exception:
+            pass
+
     def _select_device_tab(self, dev_id: str):
         self.current_dev_id = dev_id
         for did, btn in self.tab_buttons.items():
@@ -1365,6 +1584,8 @@ class TapoGUI:
             except Exception:
                 self.buttons.pop(key, None)
 
+        self._update_effect_specific_controls(label)
+
     def _on_hub_update(self, full_state: dict):
         try:
             self.app.after(0, self._sync_view_to_device)
@@ -1420,6 +1641,36 @@ class TapoGUI:
                 self.gui_section_badge.configure(text=sec)
                 self.gui_key_pill.configure(text=f"🎼 {deg}° {mode}")
 
+                # Update Live Audio Monitor meters and spectrum
+                onset_val = float(dev_telem.get("onset", 0.0))
+                kick_val = float(dev_telem.get("kick", 0.0))
+                snare_val = float(dev_telem.get("snare", 0.0))
+                hat_val = float(dev_telem.get("hat", 0.0))
+                conf_pct = int(round(float(dev_telem.get("confidence", 0.0)) * 100))
+                noise_f = float(dev_telem.get("noise_floor", 0.005))
+                noise_db = int(round(20 * math.log10(max(1e-5, noise_f))))
+                send_fps = float(dev_telem.get("send_fps", (diag.get("send_fps", 0.0) if diag else 0.0)))
+
+                self.bar_meter_onset.set(max(0.0, min(1.0, onset_val)))
+                self.lbl_meter_onset.configure(text=f"{onset_val:.2f}")
+
+                self.bar_meter_kick.set(max(0.0, min(1.0, kick_val)))
+                self.lbl_meter_kick.configure(text=f"{kick_val:.2f}")
+
+                self.bar_meter_snare.set(max(0.0, min(1.0, snare_val)))
+                self.lbl_meter_snare.configure(text=f"{snare_val:.2f}")
+
+                self.bar_meter_hat.set(max(0.0, min(1.0, hat_val)))
+                self.lbl_meter_hat.configure(text=f"{hat_val:.2f}")
+
+                self.lbl_mon_meta.configure(
+                    text=f"BPM: {bpm} ({conf_pct}%) · Floor: {noise_db}dB · Tx: {send_fps:.1f} FPS"
+                )
+
+                # Render mini 16-band spectrum canvas
+                raw_spec = dev_telem.get("spectrum", [])
+                self._draw_audio_spectrum(raw_spec)
+
                 # Sync active visual style button & cards
                 cur_vstyle = dev_telem.get("style", "auto")
                 self._update_style_card_selection(cur_vstyle)
@@ -1428,6 +1679,16 @@ class TapoGUI:
                 self.lbl_transition_val.configure(text=f"Transition: {trans}ms ({trans_desc})")
             else:
                 self.gui_bpm_lbl.configure(text="💤 Inactive", text_color=self.theme["text_muted"])
+                self.lbl_mon_meta.configure(text="BPM: -- (0%) · Floor: -- · Tx: 0 FPS")
+                self.bar_meter_onset.set(0.0)
+                self.bar_meter_kick.set(0.0)
+                self.bar_meter_snare.set(0.0)
+                self.bar_meter_hat.set(0.0)
+                self.lbl_meter_onset.configure(text="0.0")
+                self.lbl_meter_kick.configure(text="0.0")
+                self.lbl_meter_snare.configure(text="0.0")
+                self.lbl_meter_hat.configure(text="0.0")
+                self._draw_audio_spectrum([])
         except Exception:
             pass
         finally:
@@ -1544,6 +1805,23 @@ class TapoGUI:
             num_zones = 50
             led_items = self._canvas_items.get("leds", [])
 
+            # Update Canvas Header Tag with accurate preview source
+            if hasattr(self, "lbl_strip_tag") and self.lbl_strip_tag:
+                active_label = (dev.state.get("active_label", "") if dev else "") or ""
+                eff_name = active_label.lower().strip()
+                if "audio" in eff_name:
+                    self.lbl_strip_tag.configure(text="50-ZONE PREVIEW · [LIVE AUDIO STREAMED 1:1]")
+                elif "screen" in eff_name:
+                    self.lbl_strip_tag.configure(text="50-ZONE PREVIEW · [AMBILIGHT LIVE STREAM 1:1]")
+                elif eff_name in ("sunrise", "sunset", "flicker", "ocean", "raindrop", "lightning", "candy_cane", "haunted_mansion", "rainbow_native"):
+                    self.lbl_strip_tag.configure(text="50-ZONE PREVIEW · [HARDWARE APPROXIMATION]")
+                elif hasattr(dev, "fx_engine") and getattr(dev.fx_engine, "_active_kind", None) == "firmware":
+                    self.lbl_strip_tag.configure(text="50-ZONE PREVIEW · [FIRMWARE PATTERN]")
+                elif hasattr(dev, "fx_engine") and getattr(dev.fx_engine, "_active_kind", None) == "streamed_slow":
+                    self.lbl_strip_tag.configure(text="50-ZONE PREVIEW · [PROCEDURAL STREAMED 1:1]")
+                else:
+                    self.lbl_strip_tag.configure(text="50-ZONE ADDRESSABLE CANVAS")
+
             if not is_powered or not segments or len(segments) == 0:
                 self._last_rendered_segments = None
                 for i in range(min(num_zones, len(led_items))):
@@ -1603,6 +1881,59 @@ class TapoGUI:
         except Exception:
             pass
 
+    def _draw_audio_spectrum(self, spectrum: List[float]):
+        """Renders a responsive 16-bar EQ chart on self.spectrum_canvas."""
+        if not hasattr(self, "spectrum_canvas") or not self.spectrum_canvas:
+            return
+        try:
+            cw = self.spectrum_canvas.winfo_width()
+            ch = self.spectrum_canvas.winfo_height()
+            if cw <= 10:
+                cw = 320
+            if ch <= 5:
+                ch = 32
+
+            self.spectrum_canvas.delete("all")
+            num_bars = 16
+            margin = 4.0
+            gap = 2.0
+            avail_w = cw - 2 * margin - (num_bars - 1) * gap
+            bar_w = max(2.0, avail_w / float(num_bars))
+
+            # Downsample from 50 bands (or whatever length) to 16 display bars
+            bars_vals = [0.0] * num_bars
+            if spectrum and len(spectrum) > 0:
+                spec_len = len(spectrum)
+                for b_idx in range(num_bars):
+                    s_start = int(b_idx * spec_len / num_bars)
+                    s_end = max(s_start + 1, int((b_idx + 1) * spec_len / num_bars))
+                    sub = spectrum[s_start:s_end]
+                    bars_vals[b_idx] = float(max(sub)) if sub else 0.0
+
+            # Gradient colors: bass (cyan/blue) -> mid (teal/green) -> treble (amber/magenta)
+            bar_colors = [
+                "#06b6d4", "#0ea5e9", "#38bdf8", "#60a5fa",
+                "#34d399", "#10b981", "#059669", "#84cc16",
+                "#eab308", "#f59e0b", "#f97316", "#fb923c",
+                "#f43f5e", "#ec4899", "#d946ef", "#a855f7"
+            ]
+
+            for i in range(num_bars):
+                val = max(0.02, min(1.0, bars_vals[i]))
+                bar_h = max(2.0, val * (ch - 4.0))
+                x0 = margin + i * (bar_w + gap)
+                x1 = x0 + bar_w
+                y1 = ch - 2.0
+                y0 = y1 - bar_h
+
+                col = bar_colors[i % len(bar_colors)]
+                self.spectrum_canvas.create_rectangle(
+                    x0, y0, x1, y1,
+                    fill=col, outline="", width=0
+                )
+        except Exception:
+            pass
+
     def _on_strip_canvas_hover(self, event):
         try:
             if not getattr(self, "_last_rendered_segments", None) or not hasattr(self, "strip_canvas"):
@@ -1654,6 +1985,7 @@ class TapoGUI:
 
     def _apply_effect(self, name: str):
         self.hub.apply_effect(self.current_dev_id, name)
+        self._update_effect_specific_controls(name)
 
     def _handle_music_toggle(self):
         self.hub.toggle_music(self.current_dev_id)
@@ -1853,4 +2185,7 @@ class TapoGUI:
                 self.on_quit()
             except Exception:
                 pass
-        self.app.quit()
+        try:
+            self.app.destroy()
+        except Exception:
+            pass

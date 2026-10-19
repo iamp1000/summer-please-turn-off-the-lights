@@ -231,6 +231,7 @@ class VisualStyle:
     def __init__(self):
         self.speed: float = 1.0        # 0.2x to 3.0x
         self.intensity: float = 1.0    # 0.2x to 2.5x
+        self.smoothing: float = 1.0    # 0.2x to 3.0x (independent envelope time factor)
         self.palette_mode: str = "auto" # "auto", "fixed", "preset"
         self._preset_palette: Optional[List[Tuple[int, int, int]]] = None
         self.measured_latency_s: float = 0.0
@@ -239,6 +240,7 @@ class VisualStyle:
         self,
         speed: Optional[float] = None,
         intensity: Optional[float] = None,
+        smoothing: Optional[float] = None,
         palette_mode: Optional[str] = None,
         preset_palette: Optional[List[Tuple[int, int, int]]] = None,
         measured_latency_s: Optional[float] = None,
@@ -248,6 +250,8 @@ class VisualStyle:
             self.speed = max(0.2, min(3.0, float(speed)))
         if intensity is not None:
             self.intensity = max(0.2, min(2.5, float(intensity)))
+        if smoothing is not None:
+            self.smoothing = max(0.2, min(3.0, float(smoothing)))
         if palette_mode is not None:
             self.palette_mode = palette_mode
         if preset_palette is not None:
@@ -353,10 +357,14 @@ class MovieStyle(VisualStyle):
         gh, gs, gv = sd.global_hsv
         cols = sd.column_hsvs if len(sd.column_hsvs) >= 50 else [sd.global_hsv] * 50
 
-        # Speech dominance reduction: when dialogue dominates, reduce audio layer to near zero
-        sp = getattr(state, "source_preset", None)
-        is_speech = (sp == SourcePreset.MOVIE if "SourcePreset" in globals() else False) or (getattr(state, "speech_dominance", 0.0) > 0.50)
-        audio_factor = 0.05 if is_speech else self.audio_reactivity
+        # Speech dominance reduction: when dialogue dominates, suppress audio swells so dialogue never brightens lights
+        sp = getattr(state, "source_preset", SourcePreset.STANDARD)
+        speech_dom = float(getattr(state, "speech_dominance", 0.0))
+        # If speech is dominant (>0.45) or source_preset is MOVIE with active dialogue, suppress audio impact
+        if speech_dom > 0.45 or (sp == SourcePreset.MOVIE and speech_dom > 0.35):
+            audio_factor = 0.0
+        else:
+            audio_factor = self.audio_reactivity
 
         # Low-band impact flare: warm centre-out flare on relative low-band impacts (attack ~60ms, decay ~800ms)
         is_impact = (state.kick > 0.40 or state.impact > 0.50)
@@ -466,8 +474,9 @@ class MovieStyle(VisualStyle):
 class PulseStyle(VisualStyle):
     """
     Rhythm Mode:
-    - L930: Concurrent Gaussian ripples (width 2-4 zones) spawned from centre on each kick,
-            speed from bpm and intensity, trailing decay, ring colour = palette[bar index % n].
+    - L930: Bass kicks launch strong expanding waves from musical phrase origins.
+            Snare hits launch sharp counter-pulses; hi-hats create small scattered sparks.
+            Wave origins shift in response to musical phrases and bar progression.
     - L900: Beat-synced swell with trailing decay.
     - Internal shared events: Build Tension & Drop Bloom.
     """
@@ -477,8 +486,10 @@ class PulseStyle(VisualStyle):
         super().__init__()
         self.ripples: List[Dict[str, Any]] = []
         self._spawn_cooldown: float = 0.0
+        self._snare_cooldown: float = 0.0
         self._prev_bar: int = -1
         self._bar_color_idx: int = 0
+        self._phrase_step: int = 0
         self._single_b: float = 0.0
         self._single_color: Tuple[int, int, int] = (215, 85, 75)
 
@@ -494,47 +505,74 @@ class PulseStyle(VisualStyle):
 
         pal = self.get_palette(state)
         self._spawn_cooldown = max(0.0, self._spawn_cooldown - dt)
+        self._snare_cooldown = max(0.0, self._snare_cooldown - dt)
 
-        # Stepping ring colour through palette each bar
+        # Musical phrase tracking (advance origin based on bar changes and section age)
         if state.bar_pos != self._prev_bar:
             if state.bar_pos == 0:
                 self._bar_color_idx = (self._bar_color_idx + 1) % len(pal)
+                self._phrase_step = (self._phrase_step + 1) % 4
             self._prev_bar = state.bar_pos
 
         cur_color = pal[self._bar_color_idx % len(pal)]
 
-        # Multi-Origin Beat Anchors: Inception rotates across bar positions
-        BAR_ORIGINS = [24.5, 12.0, 37.0, 24.5]
+        # Dynamic Bar & Phrase Origins:
+        # bar_pos 0: Center (24.5)
+        # bar_pos 1: Left-third (12.0)
+        # bar_pos 2: Right-third (37.0)
+        # bar_pos 3: Bilateral ends / apex
+        half = (num_zones - 1) / 2.0
+        BAR_ORIGINS = [half, 12.0, 37.0, half]
         bar_idx = getattr(state, "bar_pos", 0) % 4
         origin = BAR_ORIGINS[bar_idx]
 
-        # Spawn new ripple on kick or transient impact
-        kick_hit = (state.kick > 0.12 or state.onset > 0.45 or state.impact > 0.20) and self._spawn_cooldown <= 0.0
+        # 1. Strong expanding wave on Bass Kick / low-frequency punch
+        kick_hit = (state.kick > 0.15 or state.impact > 0.35) and self._spawn_cooldown <= 0.0
         if kick_hit:
-            self._spawn_cooldown = max(0.05, 0.08 / self.speed)
-            bpm = max(60.0, min(180.0, state.bpm))
-            speed_zones_per_sec = (55.0 + state.intensity * 40.0) * (bpm / 120.0) * self.speed
+            self._spawn_cooldown = max(0.06, 0.10 / self.speed)
+            bpm = max(60.0, min(180.0, state.bpm)) if state.bpm_confidence > 0.5 else 120.0
+            speed_zones_per_sec = (50.0 + state.intensity * 45.0) * (bpm / 120.0) * self.speed
             init_pos = 0.0
             if getattr(self, "measured_latency_s", 0.0) > 0.0:
-                init_pos = min(float((num_zones - 1) / 2.0), speed_zones_per_sec * float(self.measured_latency_s))
+                init_pos = min(float(half), speed_zones_per_sec * float(self.measured_latency_s))
             self.ripples.append({
+                "type": "kick",
                 "origin": origin,
                 "pos": init_pos,
                 "speed": speed_zones_per_sec,
-                "sigma": 2.5 + state.intensity * 1.5,  # Width 2.5-4 zones
+                "sigma": 3.0 + state.kick * 2.0,  # Broad, strong physical punch
                 "life": 1.0,
-                "energy": max(0.60, state.energy * 0.5 + state.kick * 0.5),
+                "energy": max(0.70, state.kick),
                 "color": cur_color,
             })
-            if len(self.ripples) > 6:
-                self.ripples.pop(0)
 
-        # Update active ripples
+        # 2. Shorter, sharper counter-pulse on Snare hits (originates from opposite end / apex)
+        snare_hit = state.snare > 0.45 and self._snare_cooldown <= 0.0
+        if snare_hit:
+            self._snare_cooldown = max(0.08, 0.12 / self.speed)
+            snare_color = pal[(self._bar_color_idx + 2) % len(pal)]
+            # Counter-pulse originates symmetrically or opposite to current phrase origin
+            snare_origin = (num_zones - 1) - origin if abs(origin - half) > 2.0 else 0.0
+            self.ripples.append({
+                "type": "snare",
+                "origin": snare_origin,
+                "pos": 0.0,
+                "speed": (85.0 + state.intensity * 40.0) * self.speed,
+                "sigma": 1.5,  # Narrow, crisp shock
+                "life": 0.85,
+                "energy": state.snare,
+                "color": snare_color,
+            })
+
+        if len(self.ripples) > 8:
+            self.ripples.pop(0)
+
+        # Update active waves
         alive = []
-        half = (num_zones - 1) / 2.0
         for r in self.ripples:
             r["pos"] += r["speed"] * dt
-            r["life"] -= dt * (1.6 * self.speed)  # Envelope lasting > 500 ms (> 2 send periods)
+            decay_rate = 1.8 * self.speed if r["type"] == "kick" else 3.2 * self.speed
+            r["life"] -= dt * decay_rate
             max_dist = max(r.get("origin", half), num_zones - r.get("origin", half)) + 6.0
             if r["pos"] <= max_dist and r["life"] > 0.0:
                 alive.append(r)
@@ -546,9 +584,11 @@ class PulseStyle(VisualStyle):
                 target_b = (state.energy ** 1.1) * 70.0 + state.kick * 30.0
                 self._single_b = max(self._single_b, target_b * self.intensity)
                 self._single_color = cur_color
+            elif snare_hit:
+                self._single_b = max(self._single_b, state.snare * 80.0 * self.intensity)
             else:
-                decay_tau = 0.18 / self.speed  # Persistent envelope > 2 send periods
-                self._single_b *= math.exp(-dt / decay_tau)
+                decay_tau = (0.18 * self.smoothing) / self.speed
+                self._single_b *= math.exp(-dt / max(0.01, decay_tau))
 
             baseline = (state.energy * 25.0) * self.intensity
             final_b = int(max(0, min(100, self._single_b + baseline)))
@@ -563,8 +603,12 @@ class PulseStyle(VisualStyle):
         base_h, base_s, _ = pal[0]
         if base_s <= 5:
             base_h, base_s = cur_color[0], cur_color[1]
-        baseline_b = (state.energy * 25.0) * self.intensity
-        kick_punch = (state.kick * 45.0) * self.intensity
+        baseline_b = (state.energy * 20.0) * self.intensity
+        kick_punch = (state.kick * 40.0) * self.intensity
+
+        # Seed pseudo-random hi-hat sparks
+        hat_active = state.hat > 0.35
+        hat_seed = int((time.time() * 25) % 1000)
 
         for i in range(num_zones):
             accum_b = 0.0
@@ -586,23 +630,27 @@ class PulseStyle(VisualStyle):
                     chosen_s = r["color"][1]
                 accum_b += r_b
 
-            # Center/Crown bass wash on kicks (illuminates top span 15..35)
+            # Center bass wash during kicks
             dist_center_norm = abs(i - half) / half
             center_accent = max(0.0, 1.0 - dist_center_norm * 1.5) * kick_punch
             if center_accent > 5.0 and max_r_b < 20.0:
                 chosen_h, chosen_s = cur_color[0], cur_color[1]
 
-            # Snare & Hi-Hat Counter-Pops (Per-IC spatial accents)
+            # Snare hit localized flash boost at zones 12, 25, and 37
             if state.snare > 0.40:
                 dist_snare = min(abs(i - 12.0), abs(i - 24.5), abs(i - 37.0))
                 if dist_snare <= 2.0:
-                    snare_flash = (2.0 - dist_snare) / 2.0 * (state.snare * 45.0)
+                    snare_flash = (2.0 - dist_snare) / 2.0 * (state.snare * 45.0) * self.intensity
                     accum_b += snare_flash
                     chosen_s = max(10, chosen_s - int(snare_flash * 0.35))
 
-            if state.hat > 0.35:
-                if (i * 17) % 5 == 0:
-                    accum_b += state.hat * 35.0
+            # Hi-hats create small scattered sparks across individual ICs
+            if hat_active:
+                spark_hash = ((i + hat_seed) * 2654435761) % 100
+                if spark_hash < 14:  # Sparse 14% chance
+                    spark_v = state.hat * 45.0 * self.intensity
+                    accum_b += spark_v
+                    chosen_s = max(0, chosen_s - int(spark_v * 0.5))  # Crisp desaturated sparkle
 
             final_b = int(max(0, min(100, accum_b + baseline_b + center_accent)))
             segs.append((chosen_h, chosen_s, final_b))
@@ -755,24 +803,59 @@ class SegmentedVUStyle(VisualStyle):
             self.break_offset = (self.break_offset + 1) % 5
             self._last_impact_time = now
 
+        # Deliberate musical instrument frequency band mapping:
+        # Pod 0: Sub & Kick (bands 0..5, 20-100 Hz)
+        # Pod 1: Bass & Low-Mids (bands 6..15, 100-350 Hz)
+        # Pod 2: Mids & Vocals/Guitars (bands 16..27, 350-1500 Hz)
+        # Pod 3: Upper Mids & Snare snap (bands 28..38, 1500-5000 Hz)
+        # Pod 4: Treble, Air & Hi-Hats (bands 39..49, 5000-16000 Hz)
+        POD_BAND_RANGES = [
+            (0, 6),
+            (6, 16),
+            (16, 28),
+            (28, 39),
+            (39, 50),
+        ]
+        # Independent attack and release envelope constants per pod:
+        # Lower frequencies have slightly longer sustain; treble has snappy instant recovery
+        POD_ATTACK_TAUS = [0.012, 0.015, 0.018, 0.012, 0.008]
+        POD_RELEASE_TAUS = [0.120, 0.100, 0.085, 0.070, 0.050]
+        POD_PEAK_HOLDS = [0.150, 0.130, 0.110, 0.090, 0.070]
+        POD_PEAK_FALLS = [12.0, 15.0, 18.0, 22.0, 28.0]
+
         for p in range(num_pods):
-            b_start = p * 10
-            pod_energy = float(np.mean(bands[b_start : b_start + 10])) * self.intensity
-            target_half = min(pod_size / 2.0, pod_energy * (pod_size / 2.0) * 1.5)
+            b_low, b_high = POD_BAND_RANGES[p]
+            pod_slice = bands[b_low:b_high]
+            raw_e = float(np.mean(pod_slice)) if len(pod_slice) > 0 else 0.0
+
+            # Weight by transient metrics where appropriate (Pod 0 boost on kick, Pod 3 on snare, Pod 4 on hat)
+            if p == 0:
+                raw_e = max(raw_e, state.kick * 0.9)
+            elif p == 3:
+                raw_e = max(raw_e, state.snare * 0.85)
+            elif p == 4:
+                raw_e = max(raw_e, state.hat * 0.80)
+
+            # Square root dynamics expansion
+            pod_energy = math.sqrt(max(0.0, raw_e)) * self.intensity
+            target_half = min(pod_size / 2.0, pod_energy * (pod_size / 2.0) * 1.6)
+
+            att_tau = POD_ATTACK_TAUS[p]
+            rel_tau = (POD_RELEASE_TAUS[p] * self.smoothing) / self.speed
 
             if target_half > self.pod_levels[p]:
-                self.pod_levels[p] = exp_smooth_fast(self.pod_levels[p], target_half, dt, 0.015)
+                self.pod_levels[p] = exp_smooth_fast(self.pod_levels[p], target_half, dt, att_tau)
             else:
-                self.pod_levels[p] = exp_smooth_fast(self.pod_levels[p], target_half, dt, 0.085 / self.speed)
+                self.pod_levels[p] = exp_smooth_fast(self.pod_levels[p], target_half, dt, rel_tau)
 
             if self.pod_levels[p] >= self.pod_peaks[p]:
                 self.pod_peaks[p] = self.pod_levels[p]
-                self.pod_peak_timers[p] = 0.12
+                self.pod_peak_timers[p] = POD_PEAK_HOLDS[p]
             else:
                 if self.pod_peak_timers[p] > 0.0:
                     self.pod_peak_timers[p] -= dt
                 else:
-                    self.pod_peaks[p] = max(0.0, self.pod_peaks[p] - dt * (18.0 * self.speed))
+                    self.pod_peaks[p] = max(0.0, self.pod_peaks[p] - dt * (POD_PEAK_FALLS[p] * self.speed))
 
             pod_center = p * pod_size + (pod_size - 1) / 2.0
             h, s, _ = sample_palette_oklab(pal, p / float(num_pods - 1))
@@ -792,9 +875,9 @@ class SegmentedVUStyle(VisualStyle):
                     v = 0
                 elif dist <= cur_half:
                     falloff = dist / max(0.5, pod_size / 2.0)
-                    v = int(max(25, 100 * (1.0 - falloff * 0.45)))
+                    v = int(max(25, 100 * (1.0 - falloff * 0.40)))
                 elif abs(dist - peak_dist) < 0.65:
-                    v = 90
+                    v = 95
                 else:
                     v = 0
 
@@ -891,21 +974,21 @@ class SpectrumStyle(VisualStyle):
             band_val = math.sqrt(max(0.0, float(bands[band_idx])))
             raw_target = band_val * 100.0 * self.intensity
 
-            # Fast attack (12ms), snappy responsive decay (80ms / speed)
+            # Fast attack (12ms), snappy responsive decay (80ms * smoothing / speed)
             if raw_target > self.levels[i]:
                 self.levels[i] = exp_smooth_fast(self.levels[i], raw_target, dt, 0.012)
             else:
-                self.levels[i] = exp_smooth_fast(self.levels[i], raw_target, dt, 0.080 / self.speed)
+                self.levels[i] = exp_smooth_fast(self.levels[i], raw_target, dt, (0.080 * self.smoothing) / self.speed)
 
-            # Peak-hold markers: hold for 120ms, fall slowly over ~600ms (>2 send periods)
+            # Peak-hold markers: hold for 140ms, fall slowly over ~600ms (>2 send periods)
             if self.levels[i] >= self.peaks[i]:
                 self.peaks[i] = self.levels[i]
-                self.peak_hold_timers[i] = 0.12
+                self.peak_hold_timers[i] = 0.14
             else:
                 if self.peak_hold_timers[i] > 0.0:
                     self.peak_hold_timers[i] -= dt
                 else:
-                    self.peaks[i] = max(0.0, self.peaks[i] - dt * (120.0 * self.speed))
+                    self.peaks[i] = max(0.0, self.peaks[i] - dt * (100.0 * self.speed / max(0.2, self.smoothing)))
 
             # Continuous OKLab palette gradient across strip
             h, s = self._cached_gradient[i]
@@ -988,38 +1071,61 @@ class FlowStyle(VisualStyle):
         if is_melody_active:
             top_pitches = [p for p in np.argsort(self.chroma_levels)[-3:] if self.chroma_levels[p] > 0.12]
 
+        # Multi-frequency dynamic flow:
+        # Low frequencies create broad, slow curtains;
+        # Mids modulate movement speed and direction (+ or - based on mid balance);
+        # High transients briefly disturb and ripple the curtains.
+        low_e = float(np.mean(bands[:10])) if len(bands) >= 10 else state.energy
+        mid_e = float(np.mean(bands[10:35])) if len(bands) >= 35 else state.energy
+        high_e = float(np.mean(bands[35:])) if len(bands) > 35 else state.energy
+
+        # Mids steer the direction and body of the flow
+        dir_sign = 1.0 if (mid_e >= low_e * 0.8) else -0.7
+        speed_factor = (0.25 + low_e * 0.40 + mid_e * 0.70) * self.speed * dir_sign
+        self.phase += speed_factor * dt
+
+        # High transients briefly perturb the flow
+        transient_disturbance = (state.hat * 0.6 + state.onset * 0.4) if (state.hat > 0.3 or state.onset > 0.4) else 0.0
+
         for i in range(num_zones):
             x = i / float(num_zones - 1)
             effective_phase = self.phase + speed_factor * self.measured_latency_s
-            # 2-octave harmonic noise simulation
-            octave1 = math.sin(x * 4.0 * math.pi + effective_phase * 2.2)
-            octave2 = math.sin(x * 8.0 * math.pi - effective_phase * 3.4) * 0.5
-            noise_val = (octave1 + octave2 + 1.5) / 3.0  # 0.0 to 1.0
+
+            # Low frequencies create broad, deep spatial curtains (low spatial frequency)
+            broad_curtain = math.sin(x * 2.0 * math.pi + effective_phase * 1.2) * (0.6 + low_e * 0.4)
+            # Mids create the flowing body (medium spatial frequency)
+            mid_body = math.sin(x * 5.0 * math.pi - effective_phase * 2.4) * (0.5 + mid_e * 0.5)
+            # High transients briefly disturb the surface with rapid high-frequency ripples
+            high_ripple = math.sin(x * 16.0 * math.pi + effective_phase * 8.0) * transient_disturbance * 0.4
+
+            noise_val = (broad_curtain + mid_body + high_ripple + 2.0) / 4.0  # Normalized 0.0 to 1.0
+            noise_val = max(0.0, min(1.0, noise_val))
 
             # Scale brightness by local frequency energy with square-root lift
             band_e = math.sqrt(max(0.0, float(bands[i])))
-            lift = band_e * 0.65
-            # Dynamic contrast: scale from 15% floor up to 100% on high energy
-            brightness = (noise_val * 0.50 + lift * 0.50) * (state.energy * 0.85 + 0.35) * 110.0 * self.intensity
+            lift = band_e * 0.60
+            # Dynamic contrast: scale from ambient base up to full brightness
+            brightness = (noise_val * 0.45 + lift * 0.55) * (state.energy * 0.85 + 0.30) * 110.0 * self.intensity
 
             # Non-linear organic palette sampling (colors emerge from curtain folds)
-            t_pal = (noise_val * 0.65 + math.sin(effective_phase * 0.25) * 0.35 + 0.5) % 1.0
+            t_pal = (noise_val * 0.60 + math.sin(effective_phase * 0.20) * 0.40 + 0.5) % 1.0
             h, s, _ = sample_palette_oklab(pal, t_pal, cyclic=True)
 
-            # 2. Polyphonic Pitch Constellation (Circle of Fifths spatial distribution)
+            # 2. Localized Sustained Note Color Blooms (Polyphonic Pitch Constellation)
             if top_pitches:
                 for p in top_pitches:
                     pitch_center = (((p * 7) % 12) / 11.0) * (num_zones - 1)
                     sustain = self.pitch_sustain[p]
-                    sigma = 2.0 + sustain * 2.2
+                    # Sustained notes expand outward into localized luminous blooms
+                    sigma = 1.8 + sustain * 2.8
                     diff = abs(i - pitch_center)
                     gauss = math.exp(-0.5 * (diff / max(0.5, sigma)) ** 2)
-                    pitch_boost = gauss * self.chroma_levels[p] * 50.0
+                    pitch_boost = gauss * self.chroma_levels[p] * 55.0
                     brightness = min(100.0, brightness + pitch_boost)
-                    if pitch_boost > 15.0:
+                    if pitch_boost > 12.0:
                         pitch_h = (p * 30.0 + 15.0) % 360.0
                         diff_h = (pitch_h - h + 180) % 360 - 180
-                        h = int(round((h + diff_h * 0.50) % 360))
+                        h = int(round((h + diff_h * 0.65) % 360))
 
             final_b = int(max(0, min(100, brightness)))
             segs.append((h, s, final_b))
@@ -1033,49 +1139,83 @@ class FlowStyle(VisualStyle):
 # ── Custom Vibe & Genre Engines (Party, Chill, EDM) ──────────────────────────
 
 class PartyStyle(VisualStyle):
-    """High-energy club/party mode with chaotic multi-point bursts and rapid color shifts."""
+    """
+    High-energy club/party mode with intentional chaos:
+    - Moving, saturated base palette wave.
+    - Spawns sparks strictly on fresh onset edges, scaling spark density and speed with treble energy.
+    """
     name = "Party"
 
     def __init__(self):
         super().__init__()
-        self._spark_positions: List[int] = []
+        self._sparks: List[Dict[str, Any]] = []
+        self._prev_onset: float = 0.0
+        self._last_spark_time: float = 0.0
 
     def render(self, state: MusicState, dt: float, num_zones: int, **kwargs: Any) -> List[Tuple[int, int, int]]:
         if self.is_silent_state(state):
-            self._spark_positions.clear()
+            self._sparks.clear()
+            self._prev_onset = 0.0
             return [(0, 0, 0)] * num_zones
 
         pal = self.get_palette(state)
+        now = time.time()
+        onset_val = float(getattr(state, "onset", 0.0))
+        hat_val = float(getattr(state, "hat", 0.0))
+        kick_val = float(getattr(state, "kick", 0.0))
+
+        # Fresh onset edge detection: requires rising edge (current > prev + threshold)
+        is_fresh_onset = (onset_val > 0.50 and (onset_val - self._prev_onset) > 0.15) or (hat_val > 0.60 and (now - self._last_spark_time) > 0.08)
+        self._prev_onset = onset_val
+
+        # Spawn sparks on real onset events, density proportional to treble energy (hat_val)
+        if is_fresh_onset and (now - self._last_spark_time) > 0.06:
+            self._last_spark_time = now
+            spark_count = max(1, min(6, int(1 + hat_val * 5.0)))
+            for _ in range(spark_count):
+                pos = random.randint(0, max(0, num_zones - 1))
+                spark_color = pal[random.randint(0, len(pal) - 1)]
+                self._sparks.append({
+                    "pos": pos,
+                    "life": 1.0,
+                    "decay": (4.5 + hat_val * 4.0) * self.speed,
+                    "color": spark_color
+                })
+
+        # Decay active sparks
+        alive_sparks = []
+        for s in self._sparks:
+            s["life"] -= dt * s["decay"]
+            if s["life"] > 0.0:
+                alive_sparks.append(s)
+        self._sparks = alive_sparks
+
+        # Expose active spark positions for telemetry and backward-compatibility
+        self._spark_positions = [s["pos"] for s in self._sparks]
+        spark_dict = {s["pos"]: s for s in self._sparks}
+
         segs = []
+        t_base = now * 3.0 * self.speed
 
-        # Clear older sparks quickly for staccato feel
-        self._spark_positions = [p for p in self._spark_positions if random.random() > 0.5]
-
-        # Spawn random flashes on high onsets or hat triggers
-        onset_val = getattr(state, "onset", 0.0)
-        hat_val = getattr(state, "hat", 0.0)
-        if onset_val > 0.65 or hat_val > 0.50:
-            self._spark_positions.append(random.randint(0, max(0, num_zones - 1)))
-            if len(self._spark_positions) > 8:
-                self._spark_positions.pop(0)
-
-        # Base rapid energetic wave
-        t_base = time.time() * 3.5 * self.speed
         for i in range(num_zones):
-            # Complex multi-frequency interference for chaotic club feel
+            # Dynamic multi-frequency rhythmic baseline
             wave = math.sin(i * 0.35 + t_base) * math.cos(i * 0.20 - t_base * 1.5)
             norm_wave = (wave + 1.0) / 2.0
 
-            # Palette color selection
+            # Saturated palette color selection
             h, s, _ = sample_palette_oklab(pal, (norm_wave + i * 0.02) % 1.0, cyclic=True)
 
-            # Brightness punch driven by energy & transients
-            v = int((norm_wave * 0.5 + state.energy * 0.5) * 90.0 * self.intensity)
+            # Brightness punch driven by energy & kick punch
+            base_v = int((norm_wave * 0.45 + state.energy * 0.35 + kick_val * 0.20) * 85.0 * self.intensity)
 
-            # Add random party spark flashes
-            if i in self._spark_positions:
-                v = 100
-                h = (h + 120) % 360  # Complementary color pop for party contrast
+            if i in spark_dict:
+                spk = spark_dict[i]
+                v = 100  # Staccato peak spark hit
+                # Complementary pop
+                h = (spk["color"][0] + 120) % 360
+                s = max(20, spk["color"][1] - int(spk["life"] * 40))
+            else:
+                v = base_v
 
             segs.append((h, s, max(10, min(100, v))))
 
@@ -1083,117 +1223,190 @@ class PartyStyle(VisualStyle):
 
 
 class ChillStyle(VisualStyle):
-    """Slow, relaxed lounge/lo-fi mode with velvety breathing and warm ambient shifts."""
+    """
+    Slow, relaxed lounge/lo-fi mode:
+    - Velvety warm lighting without becoming a club effect.
+    - Chord changes (chroma shifts) produce slow, smooth palette shifts.
+    - Bass beats create soft, localized blooms that ripple gently and fade.
+    """
     name = "Chill"
 
     def __init__(self):
         super().__init__()
         self._smooth_v: float = 30.0
+        self._pal_drift_phase: float = 0.0
+        self._prev_key_hue: float = 30.0
+        self._cur_key_hue: float = 30.0
+        self._blooms: List[Dict[str, float]] = []
 
     def render(self, state: MusicState, dt: float, num_zones: int, **kwargs: Any) -> List[Tuple[int, int, int]]:
         if self.is_silent_state(state):
             self._smooth_v = 0.0
+            self._blooms.clear()
             return [(0, 0, 0)] * num_zones
 
-        # Force warm cozy palette if in auto mode
         pal = [(32, 85, 80), (22, 90, 85), (345, 60, 75), (45, 50, 90)] if self.palette_mode == "auto" else self.get_palette(state)
 
-        # Organic breathing envelope with lo-fi beat pulse response
-        kick_val = float(getattr(state, "kick", 0.0))
-        target_v = (20.0 + state.energy * 50.0 + kick_val * 25.0) * self.intensity
-        alpha = 1.0 - math.exp(-dt / 0.70) if dt > 0 else 0.0
-        self._smooth_v += alpha * (target_v - self._smooth_v)
+        # Chord change tracking: key hue moves smoothly with long tau (1.5s)
+        target_hue = float(getattr(state, "key_hue", 30.0))
+        diff_h = (target_hue - self._cur_key_hue + 180) % 360 - 180
+        alpha_hue = 1.0 - math.exp(-dt / 1.5)
+        self._cur_key_hue = (self._cur_key_hue + diff_h * alpha_hue) % 360.0
 
-        t_drift = time.time() * 0.15 * self.speed
+        # Organic breathing envelope: soft floor ~22%
+        kick_val = float(getattr(state, "kick", 0.0))
+        target_v = (22.0 + state.energy * 45.0) * self.intensity
+        alpha_v = 1.0 - math.exp(-dt / ((0.85 * self.smoothing) / self.speed))
+        self._smooth_v += alpha_v * (target_v - self._smooth_v)
+
+        # Bass beats create soft, localized blooms
+        if kick_val > 0.35:
+            # Spawn a soft bloom centered around apex or quadrant
+            if not self._blooms or (time.time() - self._blooms[-1]["t0"] > 0.25):
+                half = (num_zones - 1) / 2.0
+                bloom_center = half if len(self._blooms) % 2 == 0 else (half * 0.6 if random.random() < 0.5 else half * 1.4)
+                self._blooms.append({
+                    "center": bloom_center,
+                    "radius": 1.0,
+                    "intensity": kick_val,
+                    "life": 1.0,
+                    "t0": time.time(),
+                })
+
+        alive_blooms = []
+        for b in self._blooms:
+            b["radius"] += 14.0 * self.speed * dt
+            b["life"] -= dt * (1.8 * self.speed)
+            if b["life"] > 0.0:
+                alive_blooms.append(b)
+        self._blooms = alive_blooms
+
+        self._pal_drift_phase += dt * 0.08 * self.speed
         segs = []
         half = (num_zones - 1) / 2.0 if num_zones > 1 else 0.5
 
         for i in range(num_zones):
             dist_center = abs(i - half) / max(0.5, half)
-            # Soft center-out warmth gradient
-            spatial_curve = 1.0 - (dist_center * 0.25)
+            spatial_curve = 1.0 - (dist_center * 0.18)
 
-            # Slow spatial palette drift
-            t_pal = (i / float(max(1, num_zones)) * 0.5 + t_drift) % 1.0
+            # Palette drift influenced by chord changes
+            t_pal = (i / float(max(1, num_zones)) * 0.4 + self._pal_drift_phase) % 1.0
             h, s, _ = sample_palette_oklab(pal, t_pal, cyclic=True)
+            # Gentle harmonic bias
+            h = int((h * 0.80 + self._cur_key_hue * 0.20) % 360)
 
-            v = int(max(12, min(90, self._smooth_v * spatial_curve)))
+            # Accumulate localized soft bloom brightness
+            bloom_boost = 0.0
+            for b in self._blooms:
+                dist_b = abs(i - b["center"])
+                if dist_b <= b["radius"]:
+                    bloom_gauss = math.exp(-0.5 * (dist_b / max(1.5, b["radius"])) ** 2)
+                    bloom_boost = max(bloom_boost, bloom_gauss * b["intensity"] * b["life"] * 24.0)
+
+            v = int(max(15, min(85, self._smooth_v * spatial_curve + bloom_boost)))
             segs.append((h, s, v))
 
         return segs
 
 
 class EdmModeStyle(VisualStyle):
-    """High-impact EDM mode featuring bass-triggered white flashes and explosive shockwaves."""
+    """
+    High-impact EDM mode:
+    - Ordinary kicks launch colored expanding shockwaves without blinding the strip.
+    - Brightest white flashes are reserved strictly for confirmed drops or massive impacts.
+    - Uses onset edges and strict re-trigger intervals to eliminate repeated flash stuttering.
+    """
     name = "EDM"
 
     def __init__(self):
         super().__init__()
         self.ripples: List[Dict[str, float]] = []
         self._flash_decay: float = 0.0
+        self._last_flash_time: float = 0.0
+        self._last_shockwave_time: float = 0.0
+        self._prev_kick: float = 0.0
 
     def render(self, state: MusicState, dt: float, num_zones: int, **kwargs: Any) -> List[Tuple[int, int, int]]:
         if self.is_silent_state(state):
             self.ripples.clear()
             self._flash_decay = 0.0
+            self._prev_kick = 0.0
             return [(0, 0, 0)] * num_zones
 
         pal = self.get_palette(state)
         half = (num_zones - 1) / 2.0 if num_zones > 1 else 0.5
+        now = time.time()
 
-        # Trigger massive white flash & shockwave on drops / heavy kicks
         drop_val = float(getattr(state, "drop_strength", 0.0))
         kick_val = float(getattr(state, "kick", 0.0))
         impact_val = float(getattr(state, "impact", 0.0))
-        is_drop_hit = (drop_val > 0.80 or kick_val > 0.45 or impact_val > 0.75)
-        if is_drop_hit and self._flash_decay <= 0.0:
+        sec_is_drop = (state.section == Section.DROP)
+
+        # 1. White flash is strictly reserved for confirmed drops or extreme impacts
+        # Requires fresh onset edge and a re-trigger cooldown >= 1.2s
+        is_drop_hit = (sec_is_drop and drop_val > 0.85) or (impact_val > 0.85 and drop_val > 0.70)
+        if is_drop_hit and (now - self._last_flash_time) > 1.2 and self._flash_decay <= 0.05:
             self._flash_decay = 1.0  # Full white flash trigger
+            self._last_flash_time = now
+
+        self._flash_decay = max(0.0, self._flash_decay - dt * 2.5)  # Fast crisp flash decay (~400ms)
+
+        # 2. Ordinary kicks launch colored shockwaves (cooldown >= 0.12s, requires rising edge)
+        kick_rising_edge = (kick_val > 0.22) and (kick_val > self._prev_kick + 0.08)
+        self._prev_kick = kick_val
+
+        if kick_rising_edge and (now - self._last_shockwave_time) > 0.12:
+            self._last_shockwave_time = now
             self.ripples.append({
                 "pos": half,
-                "speed": 75.0 * self.speed,
+                "speed": (70.0 + kick_val * 35.0) * self.speed,
                 "radius": 1.0,
-                "life": 1.0
+                "life": 1.0,
+                "energy": kick_val,
+                "color_idx": random.randint(0, len(pal) - 1),
             })
-
-        self._flash_decay = max(0.0, self._flash_decay - dt * 2.2)  # Fast drop recovery (~450ms)
 
         # Update shockwaves
         alive_ripples = []
         for r in self.ripples:
             r["radius"] += r["speed"] * dt
-            r["life"] -= dt * 1.5
-            if r["life"] > 0.0 and r["radius"] < num_zones * 1.2:
+            r["life"] -= dt * (1.6 * self.speed)
+            if r["life"] > 0.0 and r["radius"] < num_zones * 1.3:
                 alive_ripples.append(r)
         self.ripples = alive_ripples
 
         segs = []
-        t_anim = time.time() * 2.0 * self.speed
+        t_anim = now * 2.0 * self.speed
 
         for i in range(num_zones):
             dist_centre = abs(i - half)
 
             # Check if hit by any active shockwave ring
             ring_intensity = 0.0
+            chosen_ring_pal_idx = 0
             for r in self.ripples:
                 ring_dist = abs(dist_centre - r["radius"])
                 if ring_dist < 4.0:
-                    ring_intensity = max(ring_intensity, (1.0 - ring_dist / 4.0) * r["life"])
+                    intensity_sample = (1.0 - ring_dist / 4.0) * r["life"] * r.get("energy", 1.0)
+                    if intensity_sample > ring_intensity:
+                        ring_intensity = intensity_sample
+                        chosen_ring_pal_idx = int(r.get("color_idx", 0))
 
             # Base reactive audio level per zone
-            base_v = int((state.energy * 50.0 + kick_val * 30.0) * self.intensity)
+            base_v = int((state.energy * 45.0 + kick_val * 30.0) * self.intensity)
 
-            if self._flash_decay > 0.4 and dist_centre < 12:
-                # Blinding white flash core during drop hits
+            if self._flash_decay > 0.35 and dist_centre < 14:
+                # Reserved blinding white flash core during confirmed drops
                 key_h = int(getattr(state, "key_hue", 0))
                 h, s, v = (key_h, 0, 100)
-            elif ring_intensity > 0.1:
-                # Electric neon ring on shockwave boundary
-                h, s = sample_palette_oklab(pal, (dist_centre / max(1.0, half) + t_anim) % 1.0)[:2]
-                v = int(max(base_v, ring_intensity * 100.0))
+            elif ring_intensity > 0.10:
+                # Vibrant colored electric ring on shockwave boundary
+                h, s = pal[chosen_ring_pal_idx % len(pal)][:2]
+                v = int(max(base_v, ring_intensity * 100.0 * self.intensity))
             else:
-                # Background bass pulse
-                h, s = sample_palette_oklab(pal, (i / float(max(1, num_zones)) + t_anim * 0.2) % 1.0)[:2]
-                v = int(max(15, base_v + int(math.sin(i * 0.5 + t_anim) * 15)))
+                # Background bass groove
+                h, s = sample_palette_oklab(pal, (i / float(max(1, num_zones)) + t_anim * 0.15) % 1.0)[:2]
+                v = int(max(15, base_v + int(math.sin(i * 0.4 + t_anim) * 12)))
 
             segs.append((h, s, max(5, min(100, v))))
 
@@ -1204,10 +1417,10 @@ class EdmModeStyle(VisualStyle):
 
 class BassBounceStyle(VisualStyle):
     """
-    Symmetrical inward bass reaction (ported from LumiSync):
+    Symmetrical inward bass reaction:
     - Sub-bass and kicks drive light filling symmetrically from the outer ends inward toward the center.
-    - Smooth envelope response with fast attack (tau=0.06s) and musical decay (tau=0.25s).
-    - Color is sampled from the active palette (or Album Art), weighted by bass energy and key.
+    - Creates a continuous brightness gradient at the advancing leading edge rather than a hard block.
+    - Active depth follows low-frequency energy dynamically with smooth envelope response.
     - Single-zone fallback (L900): Breathes dynamically with kick punch and bass-energy scale.
     """
     name = "BassBounce"
@@ -1226,7 +1439,7 @@ class BassBounceStyle(VisualStyle):
         energy = float(getattr(state, "energy", 0.0))
         intensity = self.intensity
 
-        # Bass share calculation from bands if available
+        # Low-frequency energy calculation from bands
         if hasattr(state, "bands") and len(state.bands) > 0:
             bass_slice = state.bands[:max(1, len(state.bands) // 8)]
             bass_energy = float(np.mean(bass_slice))
@@ -1235,12 +1448,12 @@ class BassBounceStyle(VisualStyle):
         else:
             bass_share = float(np.clip(kick_val * 0.7 + energy * 0.3, 0.0, 1.0))
 
-        # Target fill depth [0.0, 1.0]: level * sqrt(bass_share)
-        raw_fill = (energy * 0.4 + kick_val * 0.6) * math.sqrt(max(0.1, bass_share)) * intensity
+        # Target fill depth [0.0, 1.0] follows low-frequency energy
+        raw_fill = (energy * 0.35 + kick_val * 0.65) * math.sqrt(max(0.12, bass_share)) * intensity
         target_fill = float(np.clip(raw_fill, 0.0, 1.0))
 
-        # Smooth envelope: fast attack, smooth decay
-        tau = 0.05 / self.speed if target_fill > self._fill_level else 0.22 / self.speed
+        # Smooth envelope: fast attack (50ms), smooth musical decay
+        tau = 0.05 / self.speed if target_fill > self._fill_level else (0.22 * self.smoothing) / self.speed
         self._fill_level = exp_smooth_fast(self._fill_level, target_fill, dt, tau)
 
         # Single-zone L900 fallback
@@ -1249,171 +1462,446 @@ class BassBounceStyle(VisualStyle):
             v = int(np.clip(self._fill_level * 100.0, 5, 100))
             return [(h, s, v)]
 
-        half = (num_zones + 1) // 2
-        active_from_each_end = min(half, int(math.ceil(self._fill_level * half)))
+        half = (num_zones + 1) / 2.0
+        active_reach = self._fill_level * half
 
         frame: List[Tuple[int, int, int]] = []
         for i in range(num_zones):
-            edge_dist = min(i, num_zones - 1 - i)
-            if edge_dist < active_from_each_end:
-                norm_pos = edge_dist / max(1.0, float(half))
-                h, s, _ = sample_palette_oklab(pal, norm_pos, cyclic=False)
-                boost = 1.0 + kick_val * 0.4
-                v = int(np.clip(min(100.0, 85.0 * boost * intensity), 10, 100))
-                frame.append((h, s, v))
+            edge_dist = min(i, (num_zones - 1) - i)
+            norm_pos = edge_dist / max(1.0, half)
+            h, s, _ = sample_palette_oklab(pal, norm_pos, cyclic=False)
+
+            # Continuous brightness gradient at the advancing leading edge
+            if edge_dist <= active_reach:
+                # Advancing gradient: brighter at outer edge / leading wavefront, tapering inward
+                head_dist = active_reach - edge_dist
+                grad_factor = max(0.40, min(1.0, 1.0 - (edge_dist / max(0.5, active_reach)) * 0.45))
+                boost = 1.0 + kick_val * 0.40
+                v = int(np.clip(85.0 * boost * intensity * grad_factor, 10, 100))
             else:
-                h, s, _ = pal[0] if pal else (215, 85, 75)
-                v = int(np.clip(energy * 15.0 * intensity, 0, 25))
-                frame.append((h, s, v))
+                # Soft taper past advancing edge (no hard rectangular cutoff)
+                past_dist = edge_dist - active_reach
+                soft_taper = math.exp(-0.5 * (past_dist / 1.8) ** 2)
+                v = int(np.clip((energy * 18.0 + 55.0 * soft_taper * self._fill_level) * intensity, 0, 80))
+
+            frame.append((h, s, v))
         return frame
 
 
 class CenterBurstStyle(VisualStyle):
     """
-    Symmetrical outward ripple burst (ported from LumiSync):
-    - Transients and kicks launch vivid color ripples from the center of the strip outward to both ends.
-    - Shifts previous zone values outward each step, leaving an ambient floor behind.
-    - Single-zone fallback (L900): High-transient explosive burst pulses.
+    Symmetrical outward ripple burst:
+    - Transients and kicks launch vivid color ripples from the center outward to both ends.
+    - Uses accumulated fractional movement from elapsed time (no forced 1-zone step bug).
+    - Spawns waves on fresh onset rising edges rather than repeatedly stamping the center.
     """
     name = "CenterBurst"
 
     def __init__(self):
         super().__init__()
-        self._frame: List[Tuple[int, int, int]] = []
+        self._ripples: List[Dict[str, Any]] = []
+        self._accum_phase: float = 0.0
         self._single_v: float = 0.0
+        self._last_spawn_time: float = 0.0
+        self._prev_onset: float = 0.0
 
     def render(self, state: MusicState, dt: float, num_zones: int, **kwargs: Any) -> List[Tuple[int, int, int]]:
         if self.is_silent_state(state):
-            self._frame = [(0, 0, 0)] * num_zones
+            self._ripples.clear()
             self._single_v = 0.0
             return [(0, 0, 0)] * num_zones
-
-        if len(self._frame) != num_zones:
-            self._frame = [(0, 0, 0)] * num_zones
 
         pal = self.get_palette(state)
         kick_val = float(getattr(state, "kick", 0.0))
         onset_val = float(getattr(state, "onset", 0.0))
         energy = float(getattr(state, "energy", 0.0))
-        beat_strength = float(np.clip(kick_val * 0.7 + onset_val * 0.3 + energy * 0.2, 0.0, 1.0))
+        now = time.time()
+
+        beat_strength = float(np.clip(kick_val * 0.70 + onset_val * 0.30 + energy * 0.20, 0.0, 1.0))
 
         # Single-zone L900 fallback
         if num_zones <= 1:
             target_v = beat_strength * 100.0 * self.intensity
-            tau = 0.04 / self.speed if target_v > self._single_v else 0.20 / self.speed
+            tau = 0.04 / self.speed if target_v > self._single_v else (0.20 * self.smoothing) / self.speed
             self._single_v = exp_smooth_fast(self._single_v, target_v, dt, tau)
-            h, s, _ = sample_palette_oklab(pal, (time.time() * 0.1 * self.speed) % 1.0, cyclic=True)
+            h, s, _ = sample_palette_oklab(pal, (now * 0.1 * self.speed) % 1.0, cyclic=True)
             return [(h, s, int(np.clip(self._single_v, 5, 100)))]
 
-        # Symmetrical outward shockwave with continuous propagation
-        left_center = (num_zones - 1) // 2
-        right_center = num_zones // 2
-        prev = self._frame
-        new_frame: List[Tuple[int, int, int]] = list(prev)
+        # Spawn outward ripples strictly on fresh onset edges (cooldown >= 90ms)
+        is_fresh_onset = (onset_val > 0.45 and (onset_val - self._prev_onset) > 0.12) or (kick_val > 0.50 and (now - self._last_spawn_time) > 0.15)
+        self._prev_onset = onset_val
 
-        # Shift outward from center to outer ends proportionally to speed
-        shift_step = max(1, int(round(20.0 * self.speed * dt)))
-        for _ in range(min(3, shift_step)):
-            temp = list(new_frame)
-            for i in range(left_center):
-                temp[i] = new_frame[i + 1]
-            for i in range(right_center + 1, num_zones):
-                temp[i] = new_frame[i - 1]
-            new_frame = temp
+        half = (num_zones - 1) / 2.0
+        if is_fresh_onset and (now - self._last_spawn_time) > 0.09:
+            self._last_spawn_time = now
+            phase = float(getattr(state, "beat_phase", 0.0))
+            wave_color = sample_palette_oklab(pal, phase, cyclic=True)
+            self._ripples.append({
+                "radius": 0.0,
+                "speed": (40.0 + kick_val * 35.0) * self.speed,
+                "life": 1.0,
+                "color": wave_color,
+                "energy": beat_strength,
+                "sigma": 2.5 + kick_val * 1.5,
+            })
 
-        phase = float(getattr(state, "beat_phase", 0.0))
-        h, s, _ = sample_palette_oklab(pal, phase, cyclic=True)
-        center_v = int(np.clip((30.0 + 70.0 * beat_strength) * self.intensity, 15, 100))
-        center_color = (h, s, center_v)
+        # Update ripples using continuous time-accumulated propagation
+        alive_ripples = []
+        for r in self._ripples:
+            r["radius"] += r["speed"] * dt
+            r["life"] -= dt * (1.8 * self.speed)
+            if r["life"] > 0.0 and r["radius"] <= half + 4.0:
+                alive_ripples.append(r)
+        self._ripples = alive_ripples
 
-        new_frame[left_center] = center_color
-        new_frame[right_center] = center_color
+        segs: List[Tuple[int, int, int]] = []
+        ambient_h, ambient_s, _ = pal[0] if pal else (215, 85, 75)
+        ambient_b = max(8, int(energy * 20.0 * self.intensity))
 
-        decay = max(0.80, 1.0 - 0.45 * dt * self.speed)
-        self._frame = [
-            (c[0], c[1], int(c[2] * decay))
-            for c in new_frame
-        ]
-        return list(self._frame)
+        for i in range(num_zones):
+            dist_center = abs(i - half)
+            accum_v = 0.0
+            chosen_h = ambient_h
+            chosen_s = ambient_s
+            max_r_b = 0.0
+
+            for r in self._ripples:
+                diff = abs(dist_center - r["radius"])
+                gauss = math.exp(-0.5 * (diff / max(0.5, r["sigma"])) ** 2)
+                r_v = gauss * r["life"] * r["energy"] * 95.0 * self.intensity
+                if r_v > max_r_b:
+                    max_r_b = r_v
+                    chosen_h = r["color"][0]
+                    chosen_s = r["color"][1]
+                accum_v += r_v
+
+            # Center glow on current transients
+            if dist_center <= 2.5:
+                center_glow = (2.5 - dist_center) / 2.5 * kick_val * 35.0 * self.intensity
+                accum_v += center_glow
+
+            final_b = int(max(ambient_b, min(100, accum_v + ambient_b)))
+            segs.append((chosen_h, chosen_s, final_b))
+
+        return segs
 
 
 class TwinkleStyle(VisualStyle):
     """
-    Sparkle & Ambient Glow (ported from LumiSync):
-    - Treble/hi-hats drive sparkle density and brightness.
-    - Low/mid energy creates a velvet ambient background floor from the palette.
-    - High-velocity random micro-sparkles across IC zones.
+    Event-driven Sparkle & Ambient Glow:
+    - Sparkles vary in position, duration, and density based on high-frequency transients.
+    - Background remains dim (~8-15%), so each sparkle blooms and fades independently.
     - Single-zone fallback (L900): Soft ambient glow with treble micro-shimmers.
     """
     name = "Twinkle"
 
     def __init__(self):
         super().__init__()
-        self._twinkles: List[Tuple[int, int, int]] = []
-        self._phase: float = 0.0
+        self._active_sparkles: List[Dict[str, Any]] = []
+        self._prev_hat: float = 0.0
+        self._last_spawn_time: float = 0.0
 
     def render(self, state: MusicState, dt: float, num_zones: int, **kwargs: Any) -> List[Tuple[int, int, int]]:
         if self.is_silent_state(state):
-            self._twinkles = [(0, 0, 0)] * num_zones
+            self._active_sparkles.clear()
+            self._prev_hat = 0.0
             return [(0, 0, 0)] * num_zones
-
-        if len(self._twinkles) != num_zones:
-            self._twinkles = [(0, 0, 0)] * num_zones
 
         pal = self.get_palette(state)
         hat_val = float(getattr(state, "hat", 0.0))
         energy = float(getattr(state, "energy", 0.0))
         onset_val = float(getattr(state, "onset", 0.0))
-
-        decay_factor = max(0.50, 1.0 - 1.8 * dt * self.speed)
-        self._twinkles = [
-            (c[0], c[1], int(c[2] * decay_factor))
-            for c in self._twinkles
-        ]
-
-        if hasattr(state, "bands") and len(state.bands) > 0:
-            treble_slice = state.bands[int(len(state.bands) * 0.7):]
-            treble_e = float(np.mean(treble_slice))
-            total_e = float(np.mean(state.bands)) + 1e-6
-            treble_share = float(np.clip(treble_e / total_e, 0.0, 1.0))
-        else:
-            treble_share = float(np.clip(hat_val * 0.8 + 0.2, 0.0, 1.0))
+        now = time.time()
 
         # Single-zone L900 fallback
         if num_zones <= 1:
             h, s, _ = pal[0] if pal else (215, 85, 75)
-            ambient_v = int(energy * 40.0 * self.intensity)
-            shimmer_v = int(hat_val * 50.0 * self.intensity)
+            ambient_v = int(energy * 25.0 * self.intensity)
+            shimmer_v = int(hat_val * 60.0 * self.intensity)
             return [(h, s, int(np.clip(ambient_v + shimmer_v, 5, 100)))]
 
-        sparkle_count = max(1, int(round(
-            (hat_val * 1.5 + onset_val * 0.8) * (2.0 + treble_share * max(2, num_zones // 3))
-        )))
+        # Spawn real event-driven sparkles on high-frequency transients / hat hits
+        is_treble_transient = (hat_val > 0.28 and (hat_val - self._prev_hat) > 0.08) or (onset_val > 0.50 and hat_val > 0.35)
+        self._prev_hat = hat_val
 
-        sparkle_h = (int(getattr(state, "key_hue", 180)) + 60) % 360
-        sparkle_color = (sparkle_h, max(10, int(35 * (1.0 - hat_val))), 100)
+        if is_treble_transient and (now - self._last_spawn_time) > 0.04:
+            self._last_spawn_time = now
+            # Sparkle density scales with treble transient energy
+            count = max(1, min(7, int(1 + hat_val * 6.0)))
+            for _ in range(count):
+                idx = random.randint(0, num_zones - 1)
+                duration = random.uniform(0.12, 0.35) / max(0.5, self.speed)
+                spk_hue = (int(getattr(state, "key_hue", 180)) + random.choice([0, 45, 90, 180])) % 360
+                self._active_sparkles.append({
+                    "pos": idx,
+                    "life": 1.0,
+                    "duration": duration,
+                    "color": (spk_hue, random.randint(5, 30), 100),
+                })
 
-        step = int(self._phase)
-        for offset in range(min(num_zones, sparkle_count)):
-            idx = (step * 7 + offset * 3) % num_zones
-            cur = self._twinkles[idx]
-            if sparkle_color[2] > cur[2]:
-                self._twinkles[idx] = sparkle_color
-        self._phase = (self._phase + 1.0 + hat_val * 4.0) % 1000.0
+        # Update active sparkles independently
+        alive_sparkles = []
+        for s in self._active_sparkles:
+            s["life"] -= dt / max(0.01, s["duration"])
+            if s["life"] > 0.0:
+                alive_sparkles.append(s)
+        self._active_sparkles = alive_sparkles
 
-        t_drift = time.time() * 0.12 * self.speed
+        # Keep background dim (~8-18%)
+        dim_ambient_v = int(max(6, min(20, (8.0 + energy * 18.0) * self.intensity)))
+        t_drift = now * 0.08 * self.speed
+        frame: List[Tuple[int, int, int]] = []
+
+        sparkle_map: Dict[int, float] = {}
+        sparkle_col_map: Dict[int, Tuple[int, int]] = {}
+        for spk in self._active_sparkles:
+            pos = spk["pos"]
+            # Bloom and fade envelope: peak immediately or upon bloom, decaying smoothly
+            life = max(0.0, min(1.0, spk["life"]))
+            # High-luminance micro-sparkle (50-100% brightness)
+            b_val = (30.0 + 70.0 * (life ** 0.8)) * self.intensity
+            if b_val > sparkle_map.get(pos, 0.0):
+                sparkle_map[pos] = b_val
+                sparkle_col_map[pos] = (spk["color"][0], spk["color"][1])
+
+        for i in range(num_zones):
+            if i in sparkle_map:
+                h, s = sparkle_col_map[i]
+                v = int(max(dim_ambient_v, min(100, sparkle_map[i])))
+                frame.append((h, s, v))
+            else:
+                amb_pos = (i / float(max(1, num_zones)) + t_drift) % 1.0
+                h_amb, s_amb, _ = sample_palette_oklab(pal, amb_pos, cyclic=True)
+                frame.append((h_amb, s_amb, dim_ambient_v))
+
+        return frame
+
+
+class AcousticStringStyle(VisualStyle):
+    """
+    Acoustic String Resonator / Harmonic Standing Wave:
+    Simulates a vibrating guitar/piano string. The center of the strip vibrates with
+    low-mid notes, while fret/pluck transients send ripple pulses toward both ends.
+    Intensity maps to acoustic sustain. Best for indie, acoustic, guitar, piano, vocals.
+    """
+    def __init__(self):
+        super().__init__()
+        self._phase: float = 0.0
+        self._sustain: float = 0.0
+        self._ripples: List[Tuple[float, float, float]] = []  # (pos, vel, life)
+
+    def render(self, state: MusicState, dt: float, num_zones: int, **kwargs) -> List[Tuple[int, int, int]]:
+        pal = self.get_palette(state)
+        energy = float(getattr(state, "energy", 0.0))
+        bass = float(getattr(state, "bass", 0.0))
+        mid = float(getattr(state, "mid", 0.0))
+        transient = float(getattr(state, "transient", 0.0))
+
+        # Sustain envelope
+        target_sustain = max(energy, mid * 0.9)
+        tau = 0.15 if target_sustain > self._sustain else 0.8
+        self._sustain = exp_smooth_fast(self._sustain, target_sustain, dt, tau)
+
+        # String oscillation frequency modulated by pitch/mids
+        self._phase += dt * (4.0 + mid * 6.0) * self.speed
+
+        # Pluck trigger adds traveling ripple
+        if transient > 0.45:
+            self._ripples.append((num_zones / 2.0, (18.0 + transient * 25.0) * self.speed, 1.0))
+
+        # Update ripples
+        updated_ripples = []
+        for pos, vel, life in self._ripples:
+            new_pos = pos + vel * dt
+            new_life = life - dt * 2.2
+            if new_life > 0.0 and new_pos < num_zones + 5:
+                updated_ripples.append((new_pos, vel, new_life))
+        self._ripples = updated_ripples
+
+        half = (num_zones - 1) / 2.0
         frame: List[Tuple[int, int, int]] = []
         for i in range(num_zones):
-            amb_pos = (i / float(max(1, num_zones)) + t_drift) % 1.0
-            h_amb, s_amb, _ = sample_palette_oklab(pal, amb_pos, cyclic=True)
-            v_amb = int(np.clip((10.0 + energy * 40.0) * self.intensity, 5, 55))
+            x = (i - half) / max(1.0, half)  # -1.0 to 1.0
+            # Fundamental standing wave: zero at ends, maximum in center
+            fundamental = math.cos(x * (math.pi / 2.0)) * math.sin(self._phase)
+            # Harmonic overtone
+            overtone = math.sin(x * math.pi) * math.sin(self._phase * 2.0) * 0.5
+            vibration = abs(fundamental + overtone * 0.6)
 
-            t_col = self._twinkles[i]
-            if t_col[2] > v_amb:
-                frame.append((t_col[0], t_col[1], t_col[2]))
-            else:
-                frame.append((h_amb, s_amb, v_amb))
+            # Check traveling ripple from pluck
+            dist_from_center = abs(i - half)
+            ripple_val = 0.0
+            for r_pos, _, r_life in self._ripples:
+                d = abs(dist_from_center - (r_pos - half))
+                if d < 3.0:
+                    ripple_val = max(ripple_val, (1.0 - d / 3.0) * r_life)
 
+            amp = (0.2 + 0.8 * self._sustain) * (0.4 + 0.6 * vibration) + ripple_val * 0.6
+            v = int(np.clip((12.0 + amp * 88.0) * self.intensity, 5, 100))
+
+            # OKLab palette sampling along string
+            pal_pos = (abs(x) * 0.5 + self._sustain * 0.3) % 1.0
+            h, s, _ = sample_palette_oklab(pal, pal_pos, cyclic=False)
+            if ripple_val > 0.3:
+                s = max(10, int(s * 0.5))  # Shimmer on pluck
+
+            frame.append((h, s, v))
+        return frame
+
+
+class HydroAcousticStyle(VisualStyle):
+    """
+    Hydro-Acoustic Shockwave & Spray:
+    Low-frequency kicks trigger hydraulic displacement expanding outward from center.
+    High-frequency percussion (hi-hats, snares) creates randomized sparkling water droplets
+    on the outer extremities. Best for hip-hop, R&B, modern pop.
+    """
+    def __init__(self):
+        super().__init__()
+        self._waves: List[Tuple[float, float, float]] = []  # (radius, velocity, strength)
+        self._droplets: List[float] = [0.0] * NUM_SEGMENTS
+
+    def render(self, state: MusicState, dt: float, num_zones: int, **kwargs) -> List[Tuple[int, int, int]]:
+        pal = self.get_palette(state)
+        kick = float(getattr(state, "kick", 0.0))
+        hat = float(getattr(state, "hat", 0.0))
+        bass = float(getattr(state, "bass", 0.0))
+
+        # Kick produces hydraulic expanding shockwave
+        if kick > 0.5:
+            self._waves.append((0.0, (14.0 + kick * 20.0) * self.speed, kick))
+
+        # Update shockwaves
+        updated_waves = []
+        for r, v, str_val in self._waves:
+            new_r = r + v * dt
+            new_str = str_val - dt * 1.8
+            if new_str > 0.0 and new_r < (num_zones / 2.0 + 8.0):
+                updated_waves.append((new_r, v, new_str))
+        self._waves = updated_waves
+
+        # Hi-hat percussion produces droplets at the outer 25% of both sides
+        decay = math.exp(-dt * 4.0)
+        for i in range(len(self._droplets)):
+            self._droplets[i] *= decay
+
+        if hat > 0.4:
+            count = int(1 + hat * 4)
+            for _ in range(count):
+                if random.random() < 0.5:
+                    idx = random.randint(0, int(num_zones * 0.25))
+                else:
+                    idx = random.randint(int(num_zones * 0.75), num_zones - 1)
+                if idx < len(self._droplets):
+                    self._droplets[idx] = max(self._droplets[idx], hat)
+
+        half = (num_zones - 1) / 2.0
+        frame: List[Tuple[int, int, int]] = []
+        for i in range(num_zones):
+            dist = abs(i - half)
+            wave_amp = 0.0
+            for r, _, s_val in self._waves:
+                dr = abs(dist - r)
+                if dr < 3.5:
+                    wave_amp = max(wave_amp, (1.0 - dr / 3.5) * s_val)
+
+            drop_val = self._droplets[i] if i < len(self._droplets) else 0.0
+            base_v = 8.0 + bass * 25.0
+            total_v = int(np.clip((base_v + wave_amp * 75.0 + drop_val * 60.0) * self.intensity, 4, 100))
+
+            pal_pos = (dist / max(1.0, half)) * 0.7
+            h, s, _ = sample_palette_oklab(pal, pal_pos, cyclic=False)
+            if drop_val > 0.3:
+                s = max(5, int(s * 0.3))  # Seafoam / sparkling droplet
+            frame.append((h, s, total_v))
+        return frame
+
+
+class LofiVinylStyle(VisualStyle):
+    """
+    Lofi Vinyl Glow & Drift:
+    Ultra-warm analog glow (warm amber / vintage gold). Subtle energy swells pulse gently
+    with rhythm, while subtle micro-flickers mimic the crackle of a vinyl record.
+    Never drops to zero; stays comforting and ambient.
+    Best for lofi hip hop, jazz, chillout study sessions.
+    """
+    def __init__(self):
+        super().__init__()
+        self._crackle: List[float] = [0.0] * NUM_SEGMENTS
+        self._phase: float = 0.0
+        self._swell: float = 0.0
+
+    def render(self, state: MusicState, dt: float, num_zones: int, **kwargs) -> List[Tuple[int, int, int]]:
+        pal = self.get_palette(state)
+        energy = float(getattr(state, "energy", 0.0))
+        bass = float(getattr(state, "bass", 0.0))
+
+        # Smooth analog swell
+        target_swell = 0.25 + energy * 0.45 + bass * 0.3
+        self._swell = exp_smooth_fast(self._swell, target_swell, dt, 0.4)
+        self._phase += dt * 0.25 * self.speed
+
+        # Vinyl micro-crackle: rare, localized analog fluctuations
+        decay = math.exp(-dt * 6.0)
+        for i in range(len(self._crackle)):
+            self._crackle[i] *= decay
+            if random.random() < 0.04:
+                self._crackle[i] = random.uniform(-0.15, 0.25)
+
+        frame: List[Tuple[int, int, int]] = []
+        for i in range(num_zones):
+            x = i / float(max(1, num_zones - 1))
+            drift = 0.5 + 0.5 * math.sin(self._phase + x * 2.5)
+            crackle_val = self._crackle[i] if i < len(self._crackle) else 0.0
+
+            val = self._swell * (0.8 + 0.2 * drift) + crackle_val
+            v = int(np.clip((18.0 + val * 65.0) * self.intensity, 12, 90))
+
+            pal_pos = (x * 0.4 + drift * 0.3) % 1.0
+            h, s, _ = sample_palette_oklab(pal, pal_pos, cyclic=False)
+            frame.append((h, s, v))
+        return frame
+
+
+class MelodicContourStyle(VisualStyle):
+    """
+    Melodic Contour Ribbon:
+    Rather than a static VU meter, the spatial position of the illuminated segment
+    follows the melodic pitch centroid. Loudness controls ribbon width and glow radius.
+    Best for classical, instrumental, synthwave, progressive rock.
+    """
+    def __init__(self):
+        super().__init__()
+        self._pos: float = 24.5
+        self._width: float = 6.0
+        self._vel: float = 0.0
+
+    def render(self, state: MusicState, dt: float, num_zones: int, **kwargs) -> List[Tuple[int, int, int]]:
+        pal = self.get_palette(state)
+        energy = float(getattr(state, "energy", 0.0))
+        centroid = float(getattr(state, "centroid_norm", getattr(state, "spectral_centroid", 0.5)))
+        if centroid <= 0.0 or centroid > 1.0:
+            centroid = 0.5
+
+        # Target position on strip
+        target_pos = centroid * (num_zones - 1)
+        target_width = 4.0 + energy * 12.0
+
+        # Physical tracking with smooth spring damper
+        self._pos = exp_smooth_fast(self._pos, target_pos, dt, 0.12)
+        self._width = exp_smooth_fast(self._width, target_width, dt, 0.20)
+
+        frame: List[Tuple[int, int, int]] = []
+        for i in range(num_zones):
+            dist = abs(i - self._pos)
+            glow = math.exp(-0.5 * (dist / max(1.5, self._width * 0.45)) ** 2)
+
+            base_floor = 6.0
+            v = int(np.clip((base_floor + glow * (30.0 + energy * 64.0)) * self.intensity, 4, 100))
+
+            pal_pos = (self._pos / float(max(1, num_zones - 1))) % 1.0
+            h, s, _ = sample_palette_oklab(pal, pal_pos, cyclic=True)
+            frame.append((h, s, v))
         return frame
 
 
@@ -1466,7 +1954,6 @@ def create_style_instances() -> Dict[str, VisualStyle]:
     """
     Returns fresh, independent style instances per hardware device (L930 and L900).
     Ensures zero cross-contamination of animation buffers or mutable state.
-    Exactly four core modes: Movie, Pulse, Spectrum, Flow.
     """
     party = PartyStyle()
     chill = ChillStyle()
@@ -1480,15 +1967,32 @@ def create_style_instances() -> Dict[str, VisualStyle]:
     center_burst = CenterBurstStyle()
     twinkle = TwinkleStyle()
 
+    # Next-Gen Music Reactivity Engines
+    acoustic_string = AcousticStringStyle()
+    hydro_acoustic = HydroAcousticStyle()
+    lofi_vinyl = LofiVinylStyle()
+    melodic_contour = MelodicContourStyle()
+
     registry: Dict[str, VisualStyle] = {
         # Custom Vibe & Genre Engines
         "party": party,
         "club": party,
         "chill": chill,
-        "lofi": chill,
+        "lofi": lofi_vinyl,
+        "lofi_vinyl": lofi_vinyl,
         "edm": edm,
         "drop": edm,
         "edm_drop": edm,
+
+        # Next-Gen Expressive Music Styles
+        "acoustic_string": acoustic_string,
+        "acoustic": acoustic_string,
+        "string": acoustic_string,
+        "hydro_acoustic": hydro_acoustic,
+        "hydro": hydro_acoustic,
+        "melodic_contour": melodic_contour,
+        "melodic": melodic_contour,
+        "contour": melodic_contour,
 
         # LumiSync Spatial Reaction Styles
         "bass_bounce": bass_bounce,
