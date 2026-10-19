@@ -808,6 +808,38 @@ class L930EffectsEngine:
                 brightness=b,
             )
 
+        elif name == "fireflies":
+            # Green-gold bioluminescent points blinking independently against a dark field
+            t0 = max(150, min(6000, int(round(350 * sp_factor))))
+            t1 = max(t0, min(6000, int(round(950 * sp_factor))))
+            return build_firmware_random_effect(
+                name="Fireflies",
+                hue_range=(75, 130),
+                saturation_range=(75, 100),
+                brightness_range=(5, 95),
+                transition_range=(t0, t1),
+                random_seed=333,
+                fadeoff=max(200, int(round(750 * sp_factor))),
+                backgrounds=[[100, 90, 2]],
+                brightness=b,
+            )
+
+        elif name == "prism_sparks":
+            # Saturated rainbow sparkles popping with independent IC timing
+            t0 = max(100, min(6000, int(round(200 * sp_factor))))
+            t1 = max(t0, min(6000, int(round(600 * sp_factor))))
+            return build_firmware_random_effect(
+                name="PrismSparks",
+                hue_range=(0, 360),
+                saturation_range=(85, 100),
+                brightness_range=(10, 100),
+                transition_range=(t0, t1),
+                random_seed=444,
+                fadeoff=max(150, int(round(450 * sp_factor))),
+                backgrounds=[[0, 0, 0]],
+                brightness=b,
+            )
+
         return None
 
     def _expand_palette_to_16(self, palette: List[Tuple[int, int, int]]) -> List[List[int]]:
