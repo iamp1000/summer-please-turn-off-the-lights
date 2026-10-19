@@ -1201,16 +1201,16 @@ function renderUI() {
       const items = groups[gName];
       if (!items.length) return;
       const isNovelty = (gName === "Seasonal & Novelty");
-      fxHtml += `
-        <div style="grid-column: 1 / -1; margin-top: 6px; font-size: 10px; font-weight: 800; color: #a1a1aa; text-transform: uppercase; cursor: pointer;" onclick="toggleGroup('${gName}')">
-          ${isNovelty ? '▶ ' + gName + ' (COLLAPSED)' : '▼ ' + gName}
-        </div>
-      `;
       const visibleItems = items.filter(eff => {
         const meta = catalog[eff] || {};
         return `${eff} ${formatName(eff)} ${meta.desc || ""} ${meta.group || ""}`.toLowerCase().includes(effectSearchQuery);
       });
       if (!visibleItems.length) return;
+      fxHtml += `
+        <div style="grid-column: 1 / -1; margin-top: 6px; font-size: 10px; font-weight: 800; color: #a1a1aa; text-transform: uppercase; cursor: pointer;" onclick="toggleGroup('${gName}')">
+          ${isNovelty && !effectSearchQuery ? '▶ ' + gName + ' (COLLAPSED)' : '▼ ' + gName}
+        </div>
+      `;
       visibleEffectCount += visibleItems.length;
       visibleItems.forEach(eff => {
         const isAct = (activeDev.active_label === eff) ? "active" : "";

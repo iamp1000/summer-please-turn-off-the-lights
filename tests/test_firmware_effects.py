@@ -226,11 +226,16 @@ def test_meteor_shower_renderer_is_bounded_and_moves():
 
 def test_firmware_effect_previews_are_bounded_and_not_uniform():
     engine = L930EffectsEngine(controller=None, loop_runner=None, app_state={})
-    for effect in ("drift", "deep_ocean", "tide", "fireflies", "prism_sparks", "flicker", "breathe"):
+    for effect in ("drift", "deep_ocean", "tide", "fireflies", "prism_sparks", "flicker"):
         frame = engine._compute(effect, t=1.23)
         assert len(frame) == 50, effect
         assert all(0 <= h <= 360 and 0 <= sat <= 100 and 0 <= val <= 100 for h, sat, val in frame), effect
         assert len({(h, sat, val) for h, sat, val in frame}) > 1, effect
+
+    # Breathe intentionally uses one color and one brightness across all zones.
+    breathing = engine._compute("breathe", t=1.23)
+    assert len(breathing) == 50
+    assert len({(h, sat, val) for h, sat, val in breathing}) == 1
 
 
 def test_2d_geometric_effects():
