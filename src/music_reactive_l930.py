@@ -55,7 +55,7 @@ class MusicReactiveL930:
       7. movie         - Netflix & movie cinematic dialogue center bias & sub-bass rumble
     """
 
-    def __init__(self, controller, loop_runner, app_state, samplerate=44100, blocksize=1024, preferred_device: str | None = None, frame_bus: Any = None, dev_id: str = "strip2"):
+    def __init__(self, controller, loop_runner, app_state, samplerate=44100, blocksize=512, preferred_device: str | None = None, frame_bus: Any = None, dev_id: str = "strip2"):
         self._ctrl = controller
         self._loop_runner = loop_runner
         self._app_state = app_state
@@ -226,7 +226,11 @@ class MusicReactiveL930:
 
             elapsed = time.perf_counter() - t0
             sleep_time = max(0.001, target_dt - elapsed)
-            time.sleep(sleep_time)
+            if self._coordinator and hasattr(self._coordinator, "new_frame_event"):
+                self._coordinator.new_frame_event.wait(timeout=sleep_time)
+                self._coordinator.new_frame_event.clear()
+            else:
+                time.sleep(sleep_time)
 
     def _render_from_music_state(self, st: MusicState, dt: float, timing: Optional[Dict[str, float]] = None):
         master_ceiling = self._app_state.get("brightness", 100) / 100.0
@@ -269,18 +273,21 @@ class MusicReactiveL930:
                     asyncio.run_coroutine_threadsafe(self._ctrl.turn_on(), self._loop_runner.loop)
 
         style_key = self.style_name
-        if style_key == "edm_drop":
-            style_key = "pulse"
+        # Check direct match in style registry first so dedicated vibe styles are never clobbered
+        if style_key in self._styles:
+            style = self._styles[style_key]
+        elif style_key == "edm_drop":
+            style = self._styles.get("edm", self._styles.get("pulse"))
         elif style_key in ("lively", "classical"):
-            style_key = "mirror_eq" if style_key == "lively" else "aurora"
+            style = self._styles.get("spectrum" if style_key == "lively" else "flow")
         elif style_key == "upbeat":
-            style_key = "comet"
+            style = self._styles.get("flow", self._styles.get("pulse"))
         elif style_key == "calm":
-            style_key = "aurora"
+            style = self._styles.get("chill", self._styles.get("flow"))
         elif style_key == "single_color":
-            style_key = "pulse"
-
-        style = self._styles.get(style_key, self._styles.get("pulse", self._styles.get("auto")))
+            style = self._styles.get("pulse")
+        else:
+            style = self._styles.get(style_key, self._styles.get("pulse", self._styles.get("auto")))
         measured_lat = getattr(getattr(self._ctrl, "diagnostics", None), "total_latency_ms", 0.0) / 1000.0
         style.set_params(measured_latency_s=measured_lat)
 

@@ -71,11 +71,16 @@ class PresetManager:
             "devices": {}
         }
         for dev_id, d_st in full_st.get("devices", {}).items():
-            snapshot["devices"][dev_id] = {
+            entry = {
                 "power": d_st.get("power", True),
                 "brightness": d_st.get("brightness", 50),
                 "active_label": d_st.get("active_label", "Idle")
             }
+            if d_st.get("model") == "L930" and hasattr(hub, "frame_bus") and hub.frame_bus:
+                packet = hub.frame_bus.get_latest_frame(dev_id)
+                if packet and packet.segments:
+                    entry["segments"] = [list(x) for x in packet.segments]
+            snapshot["devices"][dev_id] = entry
         self.presets[name] = snapshot
         self.save_to_disk()
         return snapshot
@@ -87,12 +92,32 @@ class PresetManager:
         devs = preset.get("devices", {})
         for dev_id, st in devs.items():
             if dev_id in hub.devices:
+                ctx = hub.devices[dev_id]
                 pwr = st.get("power", True)
                 hub.set_power(dev_id, pwr)
                 if pwr:
                     if "brightness" in st:
                         hub.set_brightness(dev_id, st["brightness"])
-                    if "h" in st and "s" in st:
+                    if ("segments" in st or "regions" in st or "stops" in st) and ctx.model == "L930":
+                        from src.modes import build_mode_segments
+                        from src.frame_bus import FramePacket, OutputProducer
+                        segs = build_mode_segments(st, num_zones=50)
+                        b = st.get("brightness", 50)
+                        hub.arbiter.claim_output(dev_id, OutputProducer.STATIC, on_relinquish=ctx.stop_all_active)
+                        ctx.stop_all_active()
+                        ctx.state["power"] = True
+                        ctx.state["active_label"] = name
+                        hub.frame_bus.publish(FramePacket(
+                            dev_id=dev_id,
+                            producer=OutputProducer.STATIC,
+                            segments=segs,
+                            brightness=b,
+                        ))
+                        if hasattr(ctx.controller, "set_segments"):
+                            hub.loop_runner.run(ctx.controller.set_segments(segs, brightness=b, transition=600, priority=0))
+                        elif hasattr(ctx.controller, "submit_frame"):
+                            ctx.controller.submit_frame({"segments": segs, "brightness": b, "transition": 600})
+                    elif "h" in st and "s" in st:
                         hub.apply_custom_color(dev_id, st["h"], st["s"], st.get("brightness", 50))
                     elif "effect" in st:
                         hub.apply_effect(dev_id, st["effect"])

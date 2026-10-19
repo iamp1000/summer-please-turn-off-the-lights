@@ -139,3 +139,45 @@ async def test_l930_clean_shutdown_and_power_off_safety():
     finally:
         dev_l930_mod.connect = orig_connect
 
+
+def test_light_hub_initialization(monkeypatch):
+    import os
+    from src.hub import LightHub
+    from src.event_loop import BackgroundLoop
+
+    monkeypatch.setenv("TAPO_EMAIL", "test@domain.com")
+    monkeypatch.setenv("TAPO_PASSWORD", "secret123")
+
+    dummy_config = {
+        "tapo": {
+            "devices": {
+                "strip1": {
+                    "ip": "10.0.0.26",
+                    "name": "Desk Strip",
+                    "model": "L900",
+                },
+                "strip2": {
+                    "ip": "10.0.0.24",
+                    "name": "Bias Strip",
+                    "model": "L930",
+                },
+            }
+        },
+        "modes": {"work": {"brightness": 80}},
+        "effects": {"cyber_chase": {"speed": 1.0}},
+        "audio": {"device": "auto", "blocksize": 512},
+    }
+
+    loop_runner = BackgroundLoop()
+    loop_runner.start()
+    try:
+        hub = LightHub(dummy_config, loop_runner)
+        assert "strip1" in hub.devices
+        assert "strip2" in hub.devices
+        assert hub.devices["strip1"].model == "L900"
+        assert hub.devices["strip2"].model == "L930"
+        preview = hub.get_zone_preview("strip2")
+        assert len(preview) == 50
+    finally:
+        loop_runner.stop()
+

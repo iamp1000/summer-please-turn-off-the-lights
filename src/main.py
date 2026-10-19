@@ -1,6 +1,19 @@
 from __future__ import annotations
 import sys
 import os
+
+# Under pythonw.exe, sys.stdout and sys.stderr are None; redirect to devnull to prevent NoneType write errors
+if sys.stdout is None:
+    try:
+        sys.stdout = open(os.devnull, "w", encoding="utf-8")
+    except Exception:
+        pass
+if sys.stderr is None:
+    try:
+        sys.stderr = open(os.devnull, "w", encoding="utf-8")
+    except Exception:
+        pass
+
 import webbrowser
 from pathlib import Path
 import atexit
@@ -17,6 +30,26 @@ from dotenv import load_dotenv
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+CRASH_LOG_PATH = Path(__file__).resolve().parent.parent / "crash.log"
+
+
+def _log_crash(msg: str):
+    try:
+        import time
+        with open(CRASH_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
+    except Exception:
+        pass
+
+
+def _uncaught_handler(ex_type, ex_val, ex_tb):
+    import traceback
+    tb_str = "".join(traceback.format_exception(ex_type, ex_val, ex_tb))
+    _log_crash(f"UNHANDLED EXCEPTION:\n{tb_str}")
+    sys.__excepthook__(ex_type, ex_val, ex_tb)
+
+
+sys.excepthook = _uncaught_handler
 
 
 def load_config() -> dict:
@@ -152,4 +185,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except BaseException as e:
+        import traceback
+        _log_crash(f"TOP-LEVEL EXCEPTION IN MAIN:\n{traceback.format_exc()}")
+        raise

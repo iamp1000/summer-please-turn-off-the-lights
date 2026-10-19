@@ -151,6 +151,18 @@ MODE_COLORS = {
 }
 
 MODE_TRANSITIONS = {
+    "party": 0,
+    "club": 0,
+    "chill": 500,
+    "lofi": 500,
+    "edm": 0,
+    "drop": 0,
+    "edm_drop": 0,
+    "bass_bounce": 0,
+    "bounce": 0,
+    "center_burst": 0,
+    "burst": 0,
+    "twinkle": 150,
     "movie": 800,
     "pulse": 200,
     "spectrum": 200,
@@ -265,22 +277,43 @@ class TapoGUI:
         self._tap_times = []
         self._tap_timer_id = None
 
-        self.app.bind("<FocusOut>", self._on_focus_out)
+        # Clean window controls (Escape or header Close button hides to tray)
         self.app.bind("<Escape>", lambda e: self.hide_window())
         self.app.protocol("WM_DELETE_WINDOW", self.quit)
+
+        # Global mousewheel listening ensures smooth scrolling regardless of widget hovered
+        self.app.bind_all("<MouseWheel>", self._on_global_mousewheel)
+        self.app.bind_all("<Button-4>", lambda e: self._on_mousewheel_linux(-1))
+        self.app.bind_all("<Button-5>", lambda e: self._on_mousewheel_linux(1))
 
         self._build_ui()
         self.hub.subscribe(self._on_hub_update)
 
-    def _on_focus_out(self, event):
-        if self.active_picker:
-            return
+    def _on_global_mousewheel(self, event):
+        """Dispatches smooth mousewheel scrolling across all children inside the window."""
         try:
+            if self.app.state() == "withdrawn" or self.active_picker is not None:
+                return
             x, y = self.app.winfo_pointerxy()
             wx, wy = self.app.winfo_rootx(), self.app.winfo_rooty()
             ww, wh = self.app.winfo_width(), self.app.winfo_height()
             if not (wx <= x <= wx + ww and wy <= y <= wy + wh):
-                self.hide_window()
+                return
+            delta = getattr(event, "delta", 0)
+            if delta:
+                units = int(-1 * (delta / 40))
+                if units == 0:
+                    units = -1 if delta > 0 else 1
+                self.scroll_body._parent_canvas.yview_scroll(units, "units")
+        except Exception:
+            pass
+
+    def _on_mousewheel_linux(self, direction: int):
+        """Scroll handler for X11 systems using Button-4/5."""
+        try:
+            if self.app.state() == "withdrawn" or self.active_picker is not None:
+                return
+            self.scroll_body._parent_canvas.yview_scroll(direction * 3, "units")
         except Exception:
             pass
 
@@ -296,13 +329,23 @@ class TapoGUI:
         widget.bind("<B1-Motion>", drag)
 
     def _bind_mousewheel_recursive(self, widget):
+        """Recursive binding fallback to guarantee scroll responsiveness on dynamic subframes."""
         def _on_wheel(e):
             try:
-                self.scroll_body._parent_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+                if self.active_picker is not None:
+                    return
+                delta = getattr(e, "delta", 0)
+                if delta:
+                    units = int(-1 * (delta / 40))
+                    if units == 0:
+                        units = -1 if delta > 0 else 1
+                    self.scroll_body._parent_canvas.yview_scroll(units, "units")
             except Exception:
                 pass
         try:
             widget.bind("<MouseWheel>", _on_wheel)
+            widget.bind("<Button-4>", lambda e: self._on_mousewheel_linux(-1))
+            widget.bind("<Button-5>", lambda e: self._on_mousewheel_linux(1))
         except Exception:
             pass
         try:
@@ -313,7 +356,10 @@ class TapoGUI:
 
     def _build_ui(self):
         t = self.theme
-        self.root_frame = ctk.CTkFrame(self.app, fg_color=t["bg"], corner_radius=0)
+        self.root_frame = ctk.CTkFrame(
+            self.app, fg_color=t["bg"], corner_radius=14,
+            border_width=1, border_color=t["border"]
+        )
         self.root_frame.pack(fill="both", expand=True)
 
         # ── 1. HEADER (Top Bar) ──────────────────────────────────────────────
@@ -456,6 +502,37 @@ class TapoGUI:
             command=self._handle_power_click
         )
         self.btn_hero_power.grid(row=0, column=1, rowspan=3, sticky="e", padx=(12, 0))
+
+        # ── 50-Segment Rounded LED Strip with Ambient Bloom ──────────────────
+        strip_box = ctk.CTkFrame(self.hero_card, fg_color=t["surface_raised"], corner_radius=12)
+        strip_box.pack(fill="x", padx=16, pady=(0, 14))
+
+        strip_hdr = ctk.CTkFrame(strip_box, fg_color="transparent")
+        strip_hdr.pack(fill="x", padx=10, pady=(6, 2))
+        self.lbl_strip_tag = ctk.CTkLabel(
+            strip_hdr, text="50-ZONE ADDRESSABLE CANVAS",
+            font=ctk.CTkFont(size=9, weight="bold"), text_color=t["text_muted"]
+        )
+        self.lbl_strip_tag.pack(side="left")
+
+        self.lbl_strip_stats = ctk.CTkLabel(
+            strip_hdr, text="IC 0 ··· IC 49",
+            font=ctk.CTkFont(family="Consolas", size=9), text_color=t["accent_glow"]
+        )
+        self.lbl_strip_stats.pack(side="right")
+
+        import tkinter as tk
+        self.strip_canvas = tk.Canvas(
+            strip_box,
+            height=28,
+            bg="#07090e",
+            highlightthickness=0,
+            bd=0
+        )
+        self.strip_canvas.pack(fill="x", padx=8, pady=(0, 8))
+        self.strip_canvas.bind("<Motion>", self._on_strip_canvas_hover)
+        self.strip_canvas.bind("<Leave>", self._on_strip_canvas_leave)
+        self._last_rendered_segments = None
 
         # ── 5. BRIGHTNESS CARD ───────────────────────────────────────────────
         self.bright_card = ctk.CTkFrame(
@@ -632,16 +709,22 @@ class TapoGUI:
         self.btn_auto_mode.pack(fill="x", pady=(0, 8))
         self.vstyle_buttons["auto"] = self.btn_auto_mode
 
-        # ── EXACTLY 4 MODES (Movie, Pulse, Spectrum, Flow) ──
+        # ── Visualizer Modes Grid (Party, Chill, EDM, Movie, Pulse, Spectrum, Flow) ──
         styles_grid = ctk.CTkFrame(vst_inner, fg_color="transparent")
         styles_grid.pack(fill="x", pady=(0, 8))
         styles_grid.columnconfigure((0, 1), weight=1, uniform="vst")
 
         base_modes_list = [
-            ("movie",    "🎬 Movie",    "Ambilight + Room Fill flare"),
-            ("pulse",    "💥 Pulse",    "Gaussian kick ripples & bar rotation"),
-            ("spectrum", "📊 Spectrum", "50-band mirror EQ & peak hold"),
-            ("flow",     "🌌 Flow",     "2-octave harmonic noise curtains"),
+            ("party",        "🎉 Party",    "High-energy club strobe & bursts"),
+            ("chill",        "☕ Chill",    "Velvety warm breathing ambers"),
+            ("edm",          "💥 EDM",      "Bass-triggered white flash strikes"),
+            ("movie",        "🎬 Movie",    "Ambilight + Room Fill flare"),
+            ("pulse",        "⚡ Pulse",    "Gaussian kick ripples & bar rotation"),
+            ("spectrum",     "📊 Spectrum", "50-band mirror EQ & peak hold"),
+            ("flow",         "🌊 Flow",     "2-octave harmonic noise curtains"),
+            ("bass_bounce",  "🏀 Bounce",   "Inward sub-bass edge fills"),
+            ("center_burst", "💫 Burst",    "Outward ripple shockwaves"),
+            ("twinkle",      "✨ Twinkle",  "Treble sparkles & ambient velvet"),
         ]
 
         for idx, (sid, slabel, sdesc) in enumerate(base_modes_list):
@@ -734,7 +817,7 @@ class TapoGUI:
         pal_hdr.pack(fill="x")
         ctk.CTkLabel(pal_hdr, text="🎨 Palette:", font=ctk.CTkFont(size=9, weight="bold"), text_color=t["text_muted"]).pack(side="left")
         self.palette_mode_opt = ctk.CTkOptionMenu(
-            pal_hdr, values=["Auto (Key/Chroma)", "Fixed (Current)"],
+            pal_hdr, values=["Auto (Key/Chroma)", "Album Art (Windows Media)", "Fixed (Current)"],
             command=self._on_palette_mode_selected,
             fg_color=t["surface_high"],
             button_color=t["surface_raised"],
@@ -932,6 +1015,7 @@ class TapoGUI:
 
         self._sync_view_to_device()
         self.app.after(1000, self._periodic_telemetry_tick)
+        self.app.after(100, self._periodic_strip_preview_tick)
 
     def _make_item_button(self, parent, label: str, dot_color: str, cmd):
         t = self.theme
@@ -1094,6 +1178,9 @@ class TapoGUI:
                 btn.grid(row=r, column=c, padx=3, pady=3, sticky="nsew")
                 self.buttons[f"eff_{name}"] = btn
 
+        # Re-bind mousewheel on newly generated effect controls & cards
+        self._bind_mousewheel_recursive(self.fx_grid_frame)
+
     def _on_fx_speed_slide(self, val: float):
         v = round(float(val), 2)
         self.lbl_fx_speed.configure(text=f"{v}x")
@@ -1128,7 +1215,7 @@ class TapoGUI:
 
         # Root & Main components
         self.app.configure(fg_color=t["bg"])
-        self.root_frame.configure(fg_color=t["bg"])
+        self.root_frame.configure(fg_color=t["bg"], border_color=t["border"])
         self.tabs_bar.configure(fg_color=t["surface"])
         self.hero_card.configure(fg_color=t["hero_tint"], border_color=t["hero_border"])
         self.bright_card.configure(fg_color=t["surface"], border_color=t["border"])
@@ -1295,6 +1382,197 @@ class TapoGUI:
             except Exception:
                 pass
 
+    def _periodic_strip_preview_tick(self):
+        try:
+            if self.app.state() != "withdrawn":
+                segs = self.hub.get_zone_preview(self.current_dev_id)
+                self._draw_strip_preview(segs)
+        except Exception:
+            pass
+        finally:
+            try:
+                self.app.after(80, self._periodic_strip_preview_tick)
+            except Exception:
+                pass
+
+    def _draw_rounded_block(self, x0: float, y0: float, x1: float, y1: float, radius: float = 2.0, **kwargs):
+        """Draws a smooth rounded rectangular LED pixel block on the canvas."""
+        r = min(radius, (x1 - x0) / 2.0, (y1 - y0) / 2.0)
+        pts = [
+            x0 + r, y0,
+            x1 - r, y0,
+            x1, y0,
+            x1, y0 + r,
+            x1, y1 - r,
+            x1, y1,
+            x1 - r, y1,
+            x0 + r, y1,
+            x0, y1,
+            x0, y1 - r,
+            x0, y0 + r,
+            x0, y0,
+        ]
+        return self.strip_canvas.create_polygon(pts, smooth=True, **kwargs)
+
+    def _create_or_update_canvas_items(self, cw: float, ch: float):
+        """Creates or repositions canvas items once, re-using them without flicker."""
+        if getattr(self, "_canvas_geom", None) == (cw, ch) and getattr(self, "_canvas_items", None):
+            return
+        self._canvas_geom = (cw, ch)
+        self.strip_canvas.delete("all")
+        self._canvas_items = {"leds": []}
+
+        num_zones = 50
+        margin = 6.0
+        avail_w = cw - 2 * margin
+        step = avail_w / float(num_zones)
+        bw = max(2.5, step - 1.5)
+        bh = 13.0
+        cy = ch / 2.0
+        y0 = cy - bh / 2.0
+        y1 = cy + bh / 2.0
+
+        # Dark sleek recessed channel track
+        self._canvas_items["track"] = self.strip_canvas.create_rectangle(
+            margin - 2, cy - 8, cw - margin + 2, cy + 8,
+            fill="#0b0d14", outline="#171a24", width=1
+        )
+
+        for i in range(num_zones):
+            x0 = margin + i * step
+            x1 = x0 + bw
+
+            # Bloom 1 (Outer Subsurface Diffuse Glow)
+            b1 = self._draw_rounded_block(
+                x0 - 2.5, y0 - 4.5, x1 + 2.5, y1 + 4.5,
+                radius=3.5, fill="", outline="", state="hidden"
+            )
+            # Bloom 2 (Saturated Inner Neon Halo)
+            b2 = self._draw_rounded_block(
+                x0 - 1.2, y0 - 2.2, x1 + 1.2, y1 + 2.2,
+                radius=2.5, fill="", outline="", state="hidden"
+            )
+            # Core LED Block
+            blk = self._draw_rounded_block(
+                x0, y0, x1, y1, radius=2.0, fill="#131620", outline=""
+            )
+            # Specular Lens Reflection Line
+            sp = self.strip_canvas.create_line(
+                x0 + 0.8, y0 + 1.5, x1 - 0.8, y0 + 1.5,
+                fill="", width=1, state="hidden"
+            )
+
+            self._canvas_items["leds"].append({
+                "b1": b1,
+                "b2": b2,
+                "blk": blk,
+                "sp": sp
+            })
+
+    def _draw_strip_preview(self, segments: Optional[List[List[int]]] = None):
+        if not hasattr(self, "strip_canvas") or not self.strip_canvas:
+            return
+        try:
+            cw = self.strip_canvas.winfo_width()
+            ch = self.strip_canvas.winfo_height()
+            if cw <= 10:
+                cw = 320
+            if ch <= 10:
+                ch = 28
+
+            self._create_or_update_canvas_items(cw, ch)
+
+            is_powered = True
+            dev = self.hub.devices.get(self.current_dev_id)
+            if dev and not dev.state.get("power", True):
+                is_powered = False
+
+            num_zones = 50
+            led_items = self._canvas_items.get("leds", [])
+
+            if not is_powered or not segments or len(segments) == 0:
+                self._last_rendered_segments = None
+                for i in range(min(num_zones, len(led_items))):
+                    items = led_items[i]
+                    self.strip_canvas.itemconfig(items["b1"], state="hidden")
+                    self.strip_canvas.itemconfig(items["b2"], state="hidden")
+                    self.strip_canvas.itemconfig(items["blk"], fill="#131620", state="normal")
+                    self.strip_canvas.itemconfig(items["sp"], state="hidden")
+                return
+
+            self._last_rendered_segments = segments
+            from src.pipeline import tapo_hsv_to_rgb
+
+            for i in range(min(num_zones, len(segments), len(led_items))):
+                items = led_items[i]
+                seg = segments[i]
+                h, s, v = int(seg[0]), int(seg[1]), int(seg[2])
+                r, g, b = tapo_hsv_to_rgb(h, s, v)
+
+                r_255 = max(0, min(255, int(r * 255)))
+                g_255 = max(0, min(255, int(g * 255)))
+                b_255 = max(0, min(255, int(b * 255)))
+                core_hex = f"#{r_255:02x}{g_255:02x}{b_255:02x}"
+
+                # 1. Update Core Block
+                self.strip_canvas.itemconfig(items["blk"], fill=core_hex, state="normal")
+
+                # 2. Ambient Bloom Halos
+                if v > 8:
+                    b1_r = int(r_255 * 0.18)
+                    b1_g = int(g_255 * 0.18)
+                    b1_b = int(b_255 * 0.18)
+                    self.strip_canvas.itemconfig(
+                        items["b1"], fill=f"#{b1_r:02x}{b1_g:02x}{b1_b:02x}", state="normal"
+                    )
+
+                    b2_r = int(r_255 * 0.42)
+                    b2_g = int(g_255 * 0.42)
+                    b2_b = int(b_255 * 0.42)
+                    self.strip_canvas.itemconfig(
+                        items["b2"], fill=f"#{b2_r:02x}{b2_g:02x}{b2_b:02x}", state="normal"
+                    )
+                else:
+                    self.strip_canvas.itemconfig(items["b1"], state="hidden")
+                    self.strip_canvas.itemconfig(items["b2"], state="hidden")
+
+                # 3. Micro Specular Reflection
+                if v > 45:
+                    spec_r = min(255, r_255 + 60)
+                    spec_g = min(255, g_255 + 60)
+                    spec_b = min(255, b_255 + 60)
+                    self.strip_canvas.itemconfig(
+                        items["sp"], fill=f"#{spec_r:02x}{spec_g:02x}{spec_b:02x}", state="normal"
+                    )
+                else:
+                    self.strip_canvas.itemconfig(items["sp"], state="hidden")
+        except Exception:
+            pass
+
+    def _on_strip_canvas_hover(self, event):
+        try:
+            if not getattr(self, "_last_rendered_segments", None) or not hasattr(self, "strip_canvas"):
+                return
+            cw = self.strip_canvas.winfo_width()
+            margin = 6.0
+            avail_w = cw - 2 * margin
+            if avail_w <= 0:
+                return
+            step = avail_w / 50.0
+            idx = int((event.x - margin) / step)
+            if 0 <= idx < len(self._last_rendered_segments):
+                seg = self._last_rendered_segments[idx]
+                h, s, v = int(seg[0]), int(seg[1]), int(seg[2])
+                self.lbl_strip_stats.configure(text=f"IC #{idx} · {h}° {s}% {v}%")
+        except Exception:
+            pass
+
+    def _on_strip_canvas_leave(self, event):
+        try:
+            self.lbl_strip_stats.configure(text="IC 0 ··· IC 49")
+        except Exception:
+            pass
+
     def _on_brightness_slide(self, val):
         v = int(val)
         self.bright_val_label.configure(text=f"{v}%")
@@ -1353,7 +1631,10 @@ class TapoGUI:
             is_act = (
                 (sid == c_clean) or
                 (sid == "auto" and c_clean in ("auto", "hybrid", "director")) or
-                (sid == "spectrum" and c_clean in ("spectrum", "segmented", "segmented_vu", "staccato"))
+                (sid == "spectrum" and c_clean in ("spectrum", "segmented", "segmented_vu", "staccato")) or
+                (sid == "party" and c_clean in ("party", "club")) or
+                (sid == "chill" and c_clean in ("chill", "lofi", "calm")) or
+                (sid == "edm" and c_clean in ("edm", "drop", "edm_drop"))
             )
             if isinstance(sbtn, ctk.CTkButton):
                 sbtn.configure(
@@ -1396,7 +1677,12 @@ class TapoGUI:
         self.hub.set_style_params(self.current_dev_id, brightness_cap=float(b))
 
     def _on_palette_mode_selected(self, choice: str):
-        mode = "fixed" if "Fixed" in choice else "auto"
+        if "Album Art" in choice:
+            mode = "album_art"
+        elif "Fixed" in choice:
+            mode = "fixed"
+        else:
+            mode = "auto"
         self.style_palette_mode = mode
         self.hub.set_style_params(self.current_dev_id, palette_mode=mode)
 
@@ -1492,6 +1778,11 @@ class TapoGUI:
         self.app.geometry(f"{w}x{h}+{x}+{y}")
         self.app.deiconify()
         self.app.lift()
+        try:
+            self.app.attributes("-topmost", True)
+            self.app.after(150, lambda: self.app.attributes("-topmost", False))
+        except Exception:
+            pass
         self.app.focus_force()
 
     def run(self):

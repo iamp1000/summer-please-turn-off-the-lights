@@ -20,11 +20,12 @@ def setup_logger(name: str = "tapo", level: int = logging.INFO) -> logging.Logge
         datefmt="%Y-%m-%d %H:%M:%S"
     )
 
-    # Console Handler
-    console = logging.StreamHandler(sys.stdout)
-    console.setLevel(level)
-    console.setFormatter(formatter)
-    logger.addHandler(console)
+    # Console Handler (only when stdout is attached, not under pythonw)
+    if sys.stdout is not None:
+        console = logging.StreamHandler(sys.stdout)
+        console.setLevel(level)
+        console.setFormatter(formatter)
+        logger.addHandler(console)
 
     # File Handler
     try:

@@ -388,3 +388,233 @@ def test_segmented_vu_visualizer_breaks_and_peaks():
     assert 0 <= f_1[0][0] <= 360
     assert 0 <= f_1[0][1] <= 100
     assert 0 <= f_1[0][2] <= 100
+
+
+def test_non_linear_mode_builder():
+    """Verify build_mode_segments handles explicit segments, region slices, and gradient stops."""
+    from src.modes import build_mode_segments
+
+    # 1. Explicit segments
+    m_segs = {"segments": [[100, 80, 60]] * 50}
+    res_segs = build_mode_segments(m_segs, 50)
+    assert len(res_segs) == 50
+    assert res_segs[0] == [100, 80, 60]
+
+    # 2. Region slices
+    m_reg = {
+        "brightness": 70,
+        "regions": [
+            {"range": [0, 15], "hsv": [320, 100, 75]},
+            {"range": [15, 35], "hsv": [180, 90, 80]},
+            {"range": [35, 50], "hsv": [280, 85, 70]},
+        ]
+    }
+    res_reg = build_mode_segments(m_reg, 50)
+    assert len(res_reg) == 50
+    assert res_reg[5] == [320, 100, 75]
+    assert res_reg[25] == [180, 90, 80]
+    assert res_reg[45] == [280, 85, 70]
+
+    # 3. Stops center_out layout (symmetrical around center IC)
+    m_stops = {
+        "brightness": 80,
+        "layout": "center_out",
+        "stops": [[320, 95, 80], [185, 100, 90]],
+    }
+    res_stops = build_mode_segments(m_stops, 50)
+    assert len(res_stops) == 50
+    # Outer edges (0 and 49) should match each other closely
+    assert abs(res_stops[0][0] - res_stops[49][0]) <= 5
+
+    # 4. Fallback subtle depth curve (center slightly brighter than ends)
+    m_single = {"hue": 200, "saturation": 80, "brightness": 60}
+    res_single = build_mode_segments(m_single, 50)
+    assert len(res_single) == 50
+    assert res_single[25][2] > res_single[0][2]  # center halo
+
+
+def test_non_linear_procedural_effects():
+    """Verify L930EffectsEngine non-linear procedural models generate valid 50-IC frames."""
+    from src.effects_l930 import L930EffectsEngine
+
+    engine = L930EffectsEngine(controller=None, loop_runner=None, app_state={"brightness": 100})
+
+    effects = ["cyber_chase", "hearth", "neon_heartbeat", "golden_hour", "dusk", "starfield", "embers", "comet", "sonar_sweep"]
+    for eff in effects:
+        frame = engine._compute(eff, t=1.5)
+        assert len(frame) == 50, f"Effect {eff} failed to produce 50 segments"
+        for i, (h, s, v) in enumerate(frame):
+            assert 0 <= h <= 360, f"{eff} zone {i} invalid hue: {h}"
+            assert 0 <= s <= 100, f"{eff} zone {i} invalid saturation: {s}"
+            assert 0 <= v <= 100, f"{eff} zone {i} invalid brightness: {v}"
+
+
+def test_pulse_multi_origin_and_percussion_accents():
+    """Verify PulseStyle spawns ripples from different bar-locked origins and applies snare/hat accents."""
+    from src.visual_styles import PulseStyle
+
+    pulse = PulseStyle()
+
+    # Bar 0: Center origin (24.5)
+    st_bar0 = MusicState(energy=0.8, kick=0.9, bar_pos=0, section=Section.VERSE)
+    f0 = pulse.render(st_bar0, dt=0.03, num_zones=50)
+    assert len(pulse.ripples) >= 1
+    assert pulse.ripples[-1]["origin"] == 24.5
+
+    # Clear and test Bar 1: Left-third origin (12.0)
+    pulse.ripples.clear()
+    pulse._spawn_cooldown = 0.0
+    st_bar1 = MusicState(energy=0.8, kick=0.9, bar_pos=1, section=Section.VERSE)
+    f1 = pulse.render(st_bar1, dt=0.03, num_zones=50)
+    assert len(pulse.ripples) >= 1
+    assert pulse.ripples[-1]["origin"] == 12.0
+
+    # Snare accent check: high snare activates pockets
+    st_snare = MusicState(energy=0.5, kick=0.0, snare=0.9, bar_pos=0, section=Section.VERSE)
+    f_snare = pulse.render(st_snare, dt=0.03, num_zones=50)
+    # Zone 12, 25, or 37 should have flash boost
+    assert f_snare[12][2] > 0 or f_snare[25][2] > 0
+
+
+def test_movie_5_tap_gaussian_spatial_convolution():
+    """Verify MovieStyle convolves 50-column screen data preserving localized hot spots."""
+    from src.visual_styles import MovieStyle
+    from src.screen_sync import ScreenData
+
+    movie = MovieStyle()
+
+    # Create screen data with one bright green explosion at column 15, rest dark/neutral
+    cols = [[30, 45, 18] for _ in range(50)]
+    cols[15] = [120, 100, 95]
+    cols[16] = [120, 100, 90]
+
+    sd = ScreenData(column_hsvs=cols, global_hsv=(30, 45, 18))
+    st = MusicState(energy=0.2, section=Section.VERSE)
+
+    f = movie.render(st, dt=0.03, num_zones=50, screen_data=sd)
+    assert len(f) == 50
+
+    # IC 15 should reflect the localized bright green explosion distinctly over baseline
+    assert f[15][0] >= 65
+    assert f[15][0] > f[45][0] + 30
+    # Far-away IC (e.g. 45) should remain near the warm room baseline (30)
+    assert f[45][0] <= 35
+
+
+def test_flow_polyphonic_circle_of_fifths_constellation():
+    """Verify FlowStyle maps active chords in polyphonic spatial triads via Circle of Fifths."""
+    from src.visual_styles import FlowStyle
+
+    flow = FlowStyle()
+
+    # Active chord with high harmonic ratio and chroma energy at C (0), E (4), G (7)
+    chroma = np.zeros(12, dtype=np.float32)
+    chroma[0] = 0.90  # C
+    chroma[4] = 0.85  # E
+    chroma[7] = 0.80  # G
+
+    st = MusicState(energy=0.6, harmonic_ratio=0.85, chroma=chroma, section=Section.VERSE)
+    f = flow.render(st, dt=0.03, num_zones=50)
+    assert len(f) == 50
+
+    # Harmonic boosts should illuminate zones across the strip without blackouts
+    lit = [v for _, _, v in f if v > 20]
+    assert len(lit) >= 30
+
+
+def test_party_style_micro_bursts_and_staccato():
+    """Verify PartyStyle generates staccato sparks on hat/onset triggers and adheres to silence."""
+    from src.visual_styles import PartyStyle
+
+    party = PartyStyle()
+
+    # 1. Silence: 100% off
+    st_silent = MusicState(energy=0.001, section=Section.SILENT)
+    f_silent = party.render(st_silent, dt=0.03, num_zones=50)
+    assert all(v == 0 for _, _, v in f_silent)
+
+    # 2. Active audio with hi-hat transient: triggers sparks and bright pops
+    st_hat = MusicState(energy=0.75, onset=0.85, hat=0.90, section=Section.VERSE)
+    f_hat = party.render(st_hat, dt=0.03, num_zones=50)
+    assert len(f_hat) == 50
+    assert len(party._spark_positions) > 0
+    # Zones in spark positions hit peak brightness 100
+    for p in party._spark_positions:
+        assert f_hat[p][2] == 100
+
+    # 3. Single-zone L900 safety
+    f_single = party.render(st_hat, dt=0.03, num_zones=1)
+    assert len(f_single) == 1
+
+
+def test_chill_style_smooth_breathing_envelope():
+    """Verify ChillStyle provides velvety tau=1.2s relaxation in warm amber spectrum."""
+    from src.visual_styles import ChillStyle
+
+    chill = ChillStyle()
+
+    # 1. Silence: 100% off
+    st_silent = MusicState(energy=0.001, section=Section.SILENT)
+    f_silent = chill.render(st_silent, dt=0.03, num_zones=50)
+    assert all(v == 0 for _, _, v in f_silent)
+
+    # 2. Active lofi groove: warm golden palette and center-out gradient
+    st_groove = MusicState(energy=0.55, section=Section.VERSE)
+    f_groove = chill.render(st_groove, dt=0.05, num_zones=50)
+    assert len(f_groove) == 50
+    # Center zone (24, 25) should be brighter or equal to outer edges (0, 49)
+    assert f_groove[25][2] >= f_groove[0][2]
+    # Warm amber hues in auto mode: hues should be in warm spectrum (20 to 50 or 340 to 360)
+    for h, s, v in f_groove:
+        assert (0 <= h <= 60) or (330 <= h <= 360)
+
+    # 3. Single-zone L900 safety
+    f_single = chill.render(st_groove, dt=0.05, num_zones=1)
+    assert len(f_single) == 1
+
+
+def test_edm_mode_drop_strike_and_shockwave():
+    """Verify EdmModeStyle collapses saturation on drop hits and emits expanding neon ripples."""
+    from src.visual_styles import EdmModeStyle
+
+    edm = EdmModeStyle()
+
+    # 1. Silence: 100% off
+    st_silent = MusicState(energy=0.001, section=Section.SILENT)
+    f_silent = edm.render(st_silent, dt=0.03, num_zones=50)
+    assert all(v == 0 for _, _, v in f_silent)
+
+    # 2. Massive drop hit: drop_strength > 0.8 -> saturation collapses to 0 (blinding white flash)
+    st_drop = MusicState(energy=0.95, kick=0.88, drop_strength=0.92, impact=0.85, section=Section.DROP)
+    f_drop = edm.render(st_drop, dt=0.02, num_zones=50)
+    assert len(f_drop) == 50
+    assert len(edm.ripples) >= 1
+
+    # Center zone (24) is within core flash radius (<12) -> saturation must be 0 (pure white)
+    assert f_drop[24][1] == 0  # S = 0
+    assert f_drop[24][2] == 100  # V = 100
+
+    # 3. Expanding ripple propagation over successive frames
+    for _ in range(5):
+        f_wave = edm.render(st_drop, dt=0.05, num_zones=50)
+    assert len(f_wave) == 50
+
+    # 4. Single-zone L900 safety
+    f_single = edm.render(st_drop, dt=0.02, num_zones=1)
+    assert len(f_single) == 1
+
+
+def test_create_style_instances_custom_vibes():
+    """Verify party, chill, and edm are registered in style instances and aliases."""
+    instances = create_style_instances()
+    assert "party" in instances
+    assert "club" in instances
+    assert "chill" in instances
+    assert "lofi" in instances
+    assert "edm" in instances
+    assert "drop" in instances
+    assert "edm_drop" in instances
+
+    assert instances["party"].name == "Party"
+    assert instances["chill"].name == "Chill"
+    assert instances["edm"].name == "EDM"

@@ -60,6 +60,7 @@ class MusicState:
     energy_trend: float = 0.0   # Slope: rising (+), steady (0), falling (-)
     centroid: float = 1000.0    # Spectral centroid (Hz)
     centroid_norm: float = 0.25 # Normalized spectral centroid (0.0 - 1.0)
+    complexity: float = 0.0     # Spectral entropy/complexity from LumiSync (0.0 - 1.0)
     intensity: float = 0.0      # Composite: onset density + bass ratio + energy trend
     tension: float = 0.0        # 0.0 - 1.0 build tension metric
     impact: float = 0.0         # 0.0 - 1.0 transient impact relative to song dynamics
@@ -883,7 +884,7 @@ class MusicAnalyzer:
             if speech_dominance > 0.60:
                 energy *= 0.55
 
-        # 6. Spectral Centroid & Harmonic Ratio
+        # 6. Spectral Centroid, Harmonic Ratio & Spectral Complexity (Shannon Entropy)
         total_mag = float(np.sum(fft_4096))
         centroid = float(np.sum(self.freqs_4096 * fft_4096) / max(1e-5, total_mag))
         centroid_norm = float(np.clip(centroid / 4500.0, 0.0, 1.0))
@@ -892,6 +893,19 @@ class MusicAnalyzer:
         arith_mean = float(np.mean(fft_4096) + 1e-6)
         flatness = geo_mean / arith_mean
         harmonic_ratio = float(max(0.0, min(1.0, 1.0 - flatness)))
+
+        # Spectral Complexity: Normalized Shannon entropy across frequency bands
+        b_sum = float(np.sum(norm_bands))
+        if b_sum > 1e-9:
+            shares = norm_bands / b_sum
+            active_shares = shares[shares > 1e-9]
+            if active_shares.size > 1:
+                complexity = float(-np.sum(active_shares * np.log(active_shares)) / np.log(float(len(norm_bands))))
+            else:
+                complexity = 0.0
+        else:
+            complexity = 0.0
+        complexity = float(max(0.0, min(1.0, complexity)))
 
         # Transient metrics with rolling scale-invariant normalization
         snare_mask = (self.freqs_4096 >= 200) & (self.freqs_4096 < 2000)
@@ -941,6 +955,7 @@ class MusicAnalyzer:
             energy_trend=energy_trend,
             centroid=centroid,
             centroid_norm=centroid_norm,
+            complexity=round(complexity, 3),
             intensity=intensity,
             tension=tension,
             impact=impact,
@@ -1020,7 +1035,7 @@ class AudioCaptureCoordinator:
     def __init__(
         self,
         samplerate: int = 44100,
-        blocksize: int = 1024,
+        blocksize: int = 512,
         preferred_device: str | None = None,
         sensitivity: float = 1.0,
         lookahead_ms: float = 40.0,
@@ -1040,6 +1055,7 @@ class AudioCaptureCoordinator:
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
         self._subscribers: set = set()
+        self.new_frame_event = threading.Event()
 
         t_now = time.perf_counter()
         self._latest_slot: Tuple[MusicState, Dict[str, float]] = (
@@ -1080,6 +1096,9 @@ class AudioCaptureCoordinator:
 
     def _worker(self):
         from src.music_reactive import get_audio_input_source
+        from src.master_volume import get_master_volume_probe
+
+        vol_probe = get_master_volume_probe()
         mic = get_audio_input_source(self.samplerate, self.blocksize, self.preferred_device)
         if not mic:
             return
@@ -1091,7 +1110,8 @@ class AudioCaptureCoordinator:
                     while self._running:
                         t_recv = time.perf_counter()
                         data = rec.record(numframes=self.blocksize)
-                        samples = data[:, 0]
+                        raw_samples = data[:, 0]
+                        samples = vol_probe.compensate_samples(raw_samples)
                         rms = float(np.sqrt(np.mean(samples ** 2)))
                         if rms < 0.0005:
                             silent_chunks += 1
@@ -1118,5 +1138,6 @@ class AudioCaptureCoordinator:
                                 "analysis_ms": (t_done - t_recv) * 1000.0,
                             },
                         )
+                        self.new_frame_event.set()
             except Exception:
                 time.sleep(0.3)

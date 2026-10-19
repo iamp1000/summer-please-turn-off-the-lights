@@ -98,7 +98,7 @@ function getThemeForLabel(rawLabel) {
   if (label.includes("sakura") || label.includes("blossom") || label.includes("pink") || label.includes("cherry") || label.includes("rose")) {
     return "sakura";
   }
-  if (label.includes("golden") || label.includes("sunset") || label.includes("sun") || label.includes("amber") || label.includes("reading") || label.includes("dinner")) {
+  if (label.includes("golden") || label.includes("sunset") || label.includes("sun") || label.includes("amber") || label.includes("reading") || label.includes("dinner") || label.includes("chill") || label.includes("lofi")) {
     return "golden_hour";
   }
   if (label.includes("pulse") || label.includes("cyber") || label.includes("synth") || label.includes("vapor") || label.includes("edm") || label.includes("neon") || label.includes("party")) {

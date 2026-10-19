@@ -1,6 +1,6 @@
 from __future__ import annotations
 import secrets
-from typing import Dict, Optional, List, Tuple
+from typing import Dict, Optional, List, Tuple, Any
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -56,6 +56,10 @@ class ModeConfig(BaseModel):
     color_temp: Optional[int] = Field(None, ge=1800, le=7000)
     hue: Optional[int] = Field(None, ge=0, le=360)
     saturation: Optional[int] = Field(None, ge=0, le=100)
+    segments: Optional[List[List[int]]] = None
+    regions: Optional[List[Dict[str, Any]]] = None
+    stops: Optional[List[List[int]]] = None
+    layout: Optional[str] = "center_out"
 
 
 class EffectConfig(BaseModel):
@@ -74,10 +78,12 @@ class EffectConfig(BaseModel):
 class AudioConfig(BaseModel):
     model_config = {"extra": "forbid"}
     device: Optional[str] = None
+    blocksize: Optional[int] = Field(default=512, ge=128, le=4096)
     sensitivity: Optional[float] = 1.0
     style: Optional[str] = "auto"
     accents: Optional[List[str]] = Field(default_factory=lambda: ["beat_flash", "hat_sparkle", "build_tension", "drop_bloom"])
     output_delay_ms: Optional[int] = 0
+    latency_lookahead_ms: Optional[float] = Field(default=40.0, ge=0.0, le=250.0)
     l900_mode: Optional[str] = "style" # "style" or "composite"
 
 

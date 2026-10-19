@@ -160,13 +160,13 @@ class L930Controller:
         curve_exp = calib.get("curve_exponent", 1.8) if isinstance(calib, dict) else getattr(calib, "curve_exponent", 1.8)
         wb = calib.get("white_balance", [1.0, 0.96, 0.90]) if isinstance(calib, dict) else getattr(calib, "white_balance", [1.0, 0.96, 0.90])
         min_b = calib.get("min_brightness", 0) if isinstance(calib, dict) else getattr(calib, "min_brightness", 0)
-        trans_ms = calib.get("transition_ms", 200) if isinstance(calib, dict) else getattr(calib, "transition_ms", 200)
+        trans_ms = calib.get("transition_ms", 0) if isinstance(calib, dict) else getattr(calib, "transition_ms", 0)
         self.default_transition_ms = trans_ms
-        self.music_transition_ms = calib.get("music_transition_ms", 200) if isinstance(calib, dict) else 200
+        self.music_transition_ms = calib.get("music_transition_ms", 0) if isinstance(calib, dict) else 0
         self.movie_transition_ms = calib.get("movie_transition_ms", 800) if isinstance(calib, dict) else 800
-        self._max_updates_per_s = float(calib.get("max_updates_per_s", 5.0) if isinstance(calib, dict) else 5.0)
+        self._max_updates_per_s = float(calib.get("max_updates_per_s", 8.0) if isinstance(calib, dict) else 8.0)
         self._movie_max_updates_per_s = float(calib.get("movie_max_updates_per_s", 2.0) if isinstance(calib, dict) else 2.0)
-        self._min_zone_delta = float(calib.get("min_zone_delta", 3.0) if isinstance(calib, dict) else 3.0)
+        self._min_zone_delta = float(calib.get("min_zone_delta", 1.5) if isinstance(calib, dict) else 1.5)
 
         from src.pipeline import RenderPipeline
         self._render_pipeline = RenderPipeline(
@@ -197,8 +197,8 @@ class L930Controller:
     def _init_sender(self, loop: asyncio.AbstractEventLoop):
         self._loop = loop
         if self.frame_sender is None:
-            max_ups = getattr(self, "_max_updates_per_s", 5.0)
-            min_delta = getattr(self, "_min_zone_delta", 3.0)
+            max_ups = getattr(self, "_max_updates_per_s", 8.0)
+            min_delta = getattr(self, "_min_zone_delta", 1.5)
             self.frame_sender = LatestFrameSender(
                 dev_id=self.dev_id,
                 transmit_fn=self.transmit_frame,
@@ -531,6 +531,25 @@ class L930Controller:
                     self._is_on = True
                 await self._device.set_brightness(max(1, brightness))
                 await self._device.set_hue_saturation(hue, saturation)
+                self._last_successful_response = time.time()
+            except Exception as e:
+                asyncio.create_task(self._handle_failure(e))
+
+    async def set_segments(self, segments: list[list[int]], brightness: int = 100, transition: int = 600, priority: int = 0):
+        """Pushes a custom 50-zone spatial canvas with transition smoothing."""
+        self.clear_frames()
+        if priority > 0 and self._lock.locked():
+            return
+        effect = make_50_zone_effect(segments, master_brightness=max(0, min(100, brightness)), transition=transition, pre_corrected=False)
+        async with self._lock:
+            try:
+                await self._ensure_connected()
+                if not self._is_on and brightness > 0:
+                    await self._device.turn_on()
+                    self._is_on = True
+                await self._device.set_light_effect(effect)
+                self.last_segments = segments
+                self.last_b = brightness
                 self._last_successful_response = time.time()
             except Exception as e:
                 asyncio.create_task(self._handle_failure(e))

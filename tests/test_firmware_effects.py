@@ -106,3 +106,120 @@ def test_firmware_payload_generation():
         assert isinstance(fx, type(engine._build_effect_payload("tide")))
         assert len(fx.id) == 32 or fx.id.startswith("TapoStrip_")
         assert fx.type in ("sequence", "random", "pulse", "static")
+
+
+def test_lava_lamp_smoothness_and_continuity():
+    """Verify lava_lamp renders smoothly without discontinuous brightness or hue jumps."""
+    engine = L930EffectsEngine(controller=None, loop_runner=None, app_state={})
+    engine.set_parameters(palette_name="sunset", speed=1.0)
+
+    # 1. Validate structure and bounds
+    frame1 = engine._render_lava_lamp(t=1.0)
+    assert len(frame1) == 50
+    for h, s, v in frame1:
+        assert 0 <= h <= 360
+        assert 0 <= s <= 100
+        assert 15 <= v <= 100
+
+    # 2. Continuous time stepping: small dt must yield small smooth delta, not abrupt threshold jumps
+    frame2 = engine._render_lava_lamp(t=1.05)
+    for i in range(50):
+        h1, s1, v1 = frame1[i]
+        h2, s2, v2 = frame2[i]
+        # Brightness delta over 50ms should be continuous (< 8%)
+        assert abs(v2 - v1) < 8, f"Zone {i} has abrupt brightness leap: {v1} -> {v2}"
+        # Hue delta should also be smooth
+        diff_h = (abs(h2 - h1) + 180) % 360 - 180
+        assert abs(diff_h) < 15, f"Zone {i} has abrupt hue jump: {h1} -> {h2}"
+
+
+def test_flicker_speed_scaling_and_palette_preservation():
+    """Verify flicker effect scales transition range with speed while preserving warm fire hues."""
+    engine = L930EffectsEngine(controller=None, loop_runner=None, app_state={})
+
+    # 1. Base 1.0x speed
+    engine.set_parameters(speed=1.0, palette_name="fire")
+    fx1 = engine._build_effect_payload("flicker")
+    assert fx1 is not None
+    assert fx1.type == "random"
+    assert fx1.transition_range == [375, 500]
+    assert fx1.hue_range == [30, 40]  # Authentic fire hues
+    assert len(fx1.id) == 32
+
+    # 2. 0.5x speed (should be twice as slow: [750, 1000] ms)
+    engine.set_parameters(speed=0.5)
+    fx_slow = engine._build_effect_payload("flicker")
+    assert fx_slow.transition_range == [750, 1000]
+    assert fx_slow.hue_range == [30, 40]
+    assert fx_slow.id != fx1.id  # New ID to signal firmware to re-arm
+
+    # 3. 2.0x speed (should be twice as fast: [188, 250] ms)
+    engine.set_parameters(speed=2.0)
+    fx_fast = engine._build_effect_payload("flicker")
+    assert fx_fast.transition_range == [188, 250]
+    assert fx_fast.id != fx1.id and fx_fast.id != fx_slow.id
+
+
+def test_fastled_ported_effects_juggle_sinelon_confetti():
+    """Verify FastLED-inspired effects: juggle, sinelon, and confetti."""
+    engine = L930EffectsEngine(controller=None, loop_runner=None, app_state={})
+    assert "juggle" in EFFECT_CATALOG
+    assert "sinelon" in EFFECT_CATALOG
+    assert "confetti" in EFFECT_CATALOG
+
+    # 1. Juggle (8 harmonic orbs across 50 zones)
+    f_juggle = engine._compute("juggle", t=1.0)
+    assert len(f_juggle) == 50
+    for h, s, v in f_juggle:
+        assert 0 <= h <= 360
+        assert 0 <= s <= 100
+        assert 0 <= v <= 100
+    # At least some zones must have bright orbs
+    assert max(c[2] for c in f_juggle) >= 50
+
+    # 2. Sinelon (sweeping beacon with decay trail)
+    f_sinelon = engine._compute("sinelon", t=1.5)
+    assert len(f_sinelon) == 50
+    for h, s, v in f_sinelon:
+        assert 0 <= h <= 360
+        assert 0 <= s <= 100
+        assert 0 <= v <= 100
+    assert max(c[2] for c in f_sinelon) >= 50
+
+    # 3. Confetti (shimmering speckles)
+    f_confetti = engine._compute("confetti", t=2.0)
+    assert len(f_confetti) == 50
+    for h, s, v in f_confetti:
+        assert 0 <= h <= 360
+        assert 0 <= s <= 100
+        assert 0 <= v <= 100
+    assert max(c[2] for c in f_confetti) >= 20
+
+
+def test_2d_geometric_effects():
+    """Verify 2D spatial geometry effects (radial_ripple and spiral_vortex)."""
+    engine = L930EffectsEngine(controller=None, loop_runner=None, app_state={})
+    assert "radial_ripple" in EFFECT_CATALOG
+    assert "spiral_vortex" in EFFECT_CATALOG
+
+    # 1. Radial ripple
+    f_ripple = engine._compute("radial_ripple", t=1.0)
+    assert len(f_ripple) == 50
+    for h, s, v in f_ripple:
+        assert 0 <= h <= 360
+        assert 0 <= s <= 100
+        assert 0 <= v <= 100
+    # Dynamic range across 50 zones
+    assert max(c[2] for c in f_ripple) > min(c[2] for c in f_ripple)
+
+    # 2. Spiral vortex
+    f_vortex = engine._compute("spiral_vortex", t=2.5)
+    assert len(f_vortex) == 50
+    for h, s, v in f_vortex:
+        assert 0 <= h <= 360
+        assert 0 <= s <= 100
+        assert 0 <= v <= 100
+    assert max(c[2] for c in f_vortex) > 50
+
+
+

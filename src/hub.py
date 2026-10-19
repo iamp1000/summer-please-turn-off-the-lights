@@ -23,7 +23,7 @@ from src.audio_dsp import AudioCaptureCoordinator
 
 
 class DeviceContext:
-    def __init__(self, dev_id: str, cfg: dict, controller: Any, loop_runner: BackgroundLoop, modes_cfg: dict, effects_cfg: dict, audio_device: str | None = None, frame_bus: Any = None, arbiter: Any = None, audio_coordinator: Any = None):
+    def __init__(self, dev_id: str, cfg: dict, controller: Any, loop_runner: BackgroundLoop, modes_cfg: dict, effects_cfg: dict | None = None, audio_device: str | None = None, frame_bus: Any = None, arbiter: Any = None, audio_coordinator: Any = None):
         self.dev_id = dev_id
         self.cfg = cfg
         self.name = cfg.get("name", dev_id)
@@ -92,11 +92,15 @@ class LightHub:
         devs_cfg = raw_config.get("tapo", {}).get("devices", {})
         modes_cfg = raw_config.get("modes", {})
         effects_cfg = raw_config.get("effects", {})
-        self.audio_device = raw_config.get("audio", {}).get("device", "auto")
+        audio_cfg = raw_config.get("audio", {})
+        self.audio_device = audio_cfg.get("device", "auto")
+        bs = int(audio_cfg.get("blocksize", 512))
+        lookahead = float(audio_cfg.get("latency_lookahead_ms", 40.0))
         self.audio_coordinator = AudioCaptureCoordinator(
             samplerate=44100,
-            blocksize=1024,
+            blocksize=bs,
             preferred_device=self.audio_device,
+            lookahead_ms=lookahead,
         )
 
         for dev_id, d_cfg in devs_cfg.items():
@@ -173,16 +177,28 @@ class LightHub:
             "effects_catalog": EFFECT_CATALOG,
             "palettes": ["auto", "sunset", "forest", "fire", "pastel", "tide", "dusk", "ember", "warm_mono"],
             "visualizer_styles": [
+                {"id": "party", "name": "🎉 Party"},
+                {"id": "chill", "name": "☕ Chill"},
+                {"id": "edm", "name": "💥 EDM"},
                 {"id": "movie", "name": "🎬 Movie"},
-                {"id": "pulse", "name": "💥 Pulse"},
+                {"id": "pulse", "name": "⚡ Pulse"},
                 {"id": "spectrum", "name": "📊 Spectrum"},
-                {"id": "flow", "name": "🌌 Flow"},
+                {"id": "flow", "name": "🌊 Flow"},
+                {"id": "bass_bounce", "name": "🏀 Bounce"},
+                {"id": "center_burst", "name": "💫 Burst"},
+                {"id": "twinkle", "name": "✨ Twinkle"},
             ],
             "visualizer_modes": [
+                {"id": "party", "name": "🎉 Party"},
+                {"id": "chill", "name": "☕ Chill"},
+                {"id": "edm", "name": "💥 EDM"},
                 {"id": "movie", "name": "🎬 Movie"},
-                {"id": "pulse", "name": "💥 Pulse"},
+                {"id": "pulse", "name": "⚡ Pulse"},
                 {"id": "spectrum", "name": "📊 Spectrum"},
-                {"id": "flow", "name": "🌌 Flow"},
+                {"id": "flow", "name": "🌊 Flow"},
+                {"id": "bass_bounce", "name": "🏀 Bounce"},
+                {"id": "center_burst", "name": "💫 Burst"},
+                {"id": "twinkle", "name": "✨ Twinkle"},
             ],
             "visualizer_accents": [],
             "audio_device": self.audio_device,
@@ -192,15 +208,29 @@ class LightHub:
             "zone_preview": self.get_zone_preview(),
         }
 
-    def get_zone_preview(self) -> Optional[List[List[int]]]:
-        for dev_id, ctx in self.devices.items():
+    def get_zone_preview(self, dev_id: Optional[str] = None) -> Optional[List[List[int]]]:
+        target_devs = [self.devices[dev_id]] if (dev_id and dev_id in self.devices) else list(self.devices.values())
+        for ctx in target_devs:
+            did = ctx.dev_id
             if ctx.model == "L930":
                 if hasattr(self, "frame_bus") and self.frame_bus:
-                    packet = self.frame_bus.get_latest_frame(dev_id)
+                    packet = self.frame_bus.get_latest_frame(did)
                     if packet and packet.segments:
                         return packet.segments
-                if hasattr(ctx.controller, "last_segments"):
+                if hasattr(ctx.controller, "last_segments") and ctx.controller.last_segments:
                     return ctx.controller.last_segments
+                if hasattr(ctx, "fx_engine") and hasattr(ctx.fx_engine, "_active_effect_name") and ctx.fx_engine._active_effect_name:
+                    t = time.time() - getattr(ctx.fx_engine, "_start_time", 0.0)
+                    return ctx.fx_engine._compute(ctx.fx_engine._active_effect_name, t)
+            else:
+                if hasattr(self, "frame_bus") and self.frame_bus:
+                    packet = self.frame_bus.get_latest_frame(did)
+                    if packet and packet.hsv:
+                        return [list(packet.hsv)] * 50
+                h = getattr(ctx.controller, "last_h", 0)
+                s = getattr(ctx.controller, "last_s", 0)
+                b = getattr(ctx.controller, "last_b", 50) if ctx.state.get("power", True) else 0
+                return [[h, s, b]] * 50
         return None
 
     def set_composite_mode(self, mode: str):
@@ -348,10 +378,12 @@ class LightHub:
             h = mode_data.get("hue", 0)
             s = mode_data.get("saturation", 0)
             if ctx.model == "L930":
+                from src.modes import build_mode_segments
+                segs = build_mode_segments(mode_data, num_zones=50)
                 self.frame_bus.publish(FramePacket(
                     dev_id=ctx.dev_id,
                     producer=OutputProducer.STATIC,
-                    segments=[[h, s, b]] * 50,
+                    segments=segs,
                     brightness=b,
                 ))
             else:
