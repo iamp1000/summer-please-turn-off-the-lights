@@ -69,7 +69,8 @@ const EXPERIENCE_METADATA = {
   hydro_acoustic: { tags: "Fluid · Underwater bass", desc: "Deep sub-aquatic acoustic pressure waves propagating smoothly.", tab: "music", cat: "advanced" },
   bpm_resonator: { tags: "Tempo · Phase-locked", desc: "Harmonic resonance metronome locked strictly to detected tempo.", tab: "music", cat: "advanced" },
   party: { tags: "Celebration · Dynamic color", desc: "Vibrant fast-paced party celebration color rotation.", tab: "music", cat: "core" },
-  movie: { tags: "Cinematic · Subdued ambiance", desc: "Low-glare cinema bias lighting adapting to dynamic sound tracks.", tab: "music", cat: "core" }
+  movie: { tags: "Cinematic · Subdued ambiance", desc: "Low-glare cinema bias lighting adapting to dynamic sound tracks.", tab: "music", cat: "core" },
+  reactive_aurora: { tags: "Atmospheric · Reactive curtain", desc: "Bass gently drives curtain movement, mids shape body & color, transients create sparkling crest highlights.", tab: "music", cat: "core" }
 };
 
 function drawCardBanner(canvas, effId) {
@@ -144,6 +145,7 @@ function drawCardBanner(canvas, effId) {
       ctx.shadowBlur = 0;
       break;
     }
+    case "reactive_aurora":
     case "aurora": {
       // Vertical purple & emerald-cyan ribbons with star dust (User mockup match)
       const grad = ctx.createLinearGradient(0, 0, 0, h);
@@ -1655,7 +1657,7 @@ function renderUI() {
   if (currentExperienceTab === "music") {
     // Music visualizer modes
     const musicModes = [
-      "pulse", "flow", "chill", "edm", "spectrum", "bass_bounce", "center_burst",
+      "reactive_aurora", "pulse", "flow", "chill", "edm", "spectrum", "bass_bounce", "center_burst",
       "twinkle", "director", "acoustic_string", "hydro_acoustic", "bpm_resonator",
       "party", "movie"
     ];

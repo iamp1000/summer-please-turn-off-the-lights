@@ -618,3 +618,52 @@ def test_create_style_instances_custom_vibes():
     assert instances["party"].name == "Party"
     assert instances["chill"].name == "Chill"
     assert instances["edm"].name == "EDM"
+    assert "aurora" in instances
+    assert "reactive_aurora" in instances
+    assert instances["aurora"].name == "Reactive Aurora"
+
+
+def test_reactive_aurora_style():
+    """Verify Reactive Aurora responds to bass, mids, transients, and respects quiet passages."""
+    from src.visual_styles import ReactiveAuroraStyle, get_visual_style
+    from src.audio_dsp import MusicState, Section
+
+    aurora = ReactiveAuroraStyle()
+
+    # 1. Silence check -> returns all black
+    silent_state = MusicState(section=Section.SILENT, energy=0.0)
+    silent_frame = aurora.render(silent_state, dt=0.05, num_zones=50)
+    assert all(v == 0 for h, s, v in silent_frame), "Silent music must remain atmospheric and dark"
+
+    # 2. Bass drives curtain movement
+    aurora1 = ReactiveAuroraStyle()
+    aurora2 = ReactiveAuroraStyle()
+    low_bass_state = MusicState(section=Section.VERSE, silent=False, energy=0.4, bass=0.05, mid=0.3)
+    high_bass_state = MusicState(section=Section.VERSE, silent=False, energy=0.4, bass=0.90, mid=0.3)
+
+    aurora1.render(low_bass_state, dt=0.5, num_zones=50)
+    aurora2.render(high_bass_state, dt=0.5, num_zones=50)
+    assert aurora2._phase1 > aurora1._phase1, "Bass must accelerate curtain movement"
+
+    # 3. Mids influence body and color (emerald vs violet shift)
+    aurora_low_mid = ReactiveAuroraStyle()
+    aurora_high_mid = ReactiveAuroraStyle()
+    state_emerald = MusicState(section=Section.VERSE, silent=False, energy=0.5, mid=0.05)
+    state_violet = MusicState(section=Section.VERSE, silent=False, energy=0.5, mid=0.95)
+
+    f_emerald = aurora_low_mid.render(state_emerald, dt=0.5, num_zones=50)
+    f_violet = aurora_high_mid.render(state_violet, dt=0.5, num_zones=50)
+
+    avg_h_emerald = sum(h for h, s, v in f_emerald) / 50.0
+    avg_h_violet = sum(h for h, s, v in f_violet) / 50.0
+    assert avg_h_emerald != avg_h_violet, "Mids must shift color balance"
+
+    # 4. Transients create localized crest highlights without flashing the entire strip
+    aurora_trans = ReactiveAuroraStyle()
+    trans_state = MusicState(section=Section.VERSE, silent=False, energy=0.5, transient=0.9, onset=0.9)
+    f_trans = aurora_trans.render(trans_state, dt=0.05, num_zones=50)
+    v_values = [v for h, s, v in f_trans]
+
+    assert max(v_values) > min(v_values) + 20, "Transient must create distinct peak highlights"
+    assert min(v_values) < 50, "Quiet/valley zones must not flash when transients hit"
+

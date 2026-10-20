@@ -1975,11 +1975,127 @@ class BpmResonatorStyle(VisualStyle):
         return frame
 
 
+class ReactiveAuroraStyle(VisualStyle):
+    """
+    Reactive Aurora — an expressive music-reactive style.
+
+    - Bass gently drives the curtain's lateral drift and movement.
+    - Mids influence the curtain's body, harmonic thickness, and color balance (emerald <-> violet).
+    - Detected transient events create brief sparkling highlights at the ribbon crests.
+    - Quiet passages remain atmospheric and gentle; louder passages become more expressive
+      without flashing the whole strip.
+    """
+    name = "Reactive Aurora"
+
+    def __init__(self):
+        super().__init__()
+        self._phase1: float = 0.0
+        self._phase2: float = 0.0
+        self._smooth_bass: float = 0.0
+        self._smooth_mid: float = 0.0
+        self._smooth_energy: float = 0.0
+        self._highlight_env: float = 0.0
+        self._crest_pos: float = 25.0
+        self._measured_latency_s: float = 0.0
+
+    def set_params(self, measured_latency_s: Optional[float] = None, **kwargs: Any):
+        super().set_params(**kwargs)
+        if measured_latency_s is not None:
+            self._measured_latency_s = float(measured_latency_s)
+
+    def render(self, state: MusicState, dt: float, num_zones: int, **kwargs: Any) -> List[Tuple[int, int, int]]:
+        if self.is_silent_state(state):
+            self._smooth_energy = 0.0
+            self._highlight_env = 0.0
+            return [(0, 0, 0)] * num_zones
+
+        energy = float(getattr(state, "energy", 0.15))
+        bass = float(getattr(state, "bass", 0.0))
+        mid = float(getattr(state, "mid", 0.0))
+        kick = float(getattr(state, "kick", 0.0))
+        transient = float(getattr(state, "transient", 0.0))
+        onset = float(getattr(state, "onset", 0.0))
+
+        # Smooth inputs with continuous exponential filters
+        eff_bass = max(bass, kick * 0.9)
+        self._smooth_bass = exp_smooth_fast(self._smooth_bass, eff_bass, dt, 0.18)
+        self._smooth_mid = exp_smooth_fast(self._smooth_mid, mid, dt, 0.22)
+        self._smooth_energy = exp_smooth_fast(self._smooth_energy, max(0.08, energy), dt, 0.35)
+
+        # 1. Bass gently drives the curtain's lateral drift and phase advection
+        drift_speed = (0.35 + self._smooth_bass * 1.8) * self.speed
+        self._phase1 += dt * drift_speed * 1.4
+        self._phase2 += dt * drift_speed * 0.9
+
+        # Evaluate phase with latency compensation (forward prediction for Wi-Fi transit)
+        eval_phase1 = self._phase1 + (self._measured_latency_s * drift_speed * 1.4)
+        eval_phase2 = self._phase2 + (self._measured_latency_s * drift_speed * 0.9)
+
+        # 2. Mids influence the curtain's body (thickness) and color
+        body_thickness = 0.85 + 0.65 * self._smooth_mid
+        color_shift = self._smooth_mid  # 0.0 (emerald) to 1.0 (violet/magenta)
+
+        # 3. Detected transient events create brief localized highlights at ribbon crests
+        transient_hit = max(transient, onset * 0.8)
+        if transient_hit > 0.35:
+            target_hl = min(1.0, transient_hit * 1.2)
+            if target_hl > self._highlight_env:
+                self._highlight_env = target_hl
+
+        # Smooth highlight decay (~120ms decay)
+        self._highlight_env = exp_smooth_fast(self._highlight_env, 0.0, dt, 0.12)
+
+        # Base Aurora hues: Emerald 145, Cyan 185, Violet 280
+        emerald_hue = 145.0
+        violet_hue = 280.0
+        cyan_hue = 185.0
+
+        frame: List[Tuple[int, int, int]] = []
+        for i in range(num_zones):
+            x = (i / float(max(1, num_zones - 1))) * 2.0 * math.pi
+
+            # Dual undulating curtain ribbons
+            w1 = math.sin(x * body_thickness - eval_phase1)
+            w2 = math.cos(x * (body_thickness * 1.6) + eval_phase2 * 0.8)
+
+            # Spatial ribbon envelope (peaked wave with dark valleys)
+            ribbon = (w1 * 0.65 + w2 * 0.35 + 1.0) * 0.5  # 0.0 to 1.0
+
+            # Quiet passages remain atmospheric; louder passages expand in spatial richness
+            base_v = 10.0 + 18.0 * self._smooth_energy
+            modulated_v = base_v + ribbon * (25.0 + 45.0 * self._smooth_energy)
+
+            # Localized transient highlight at ribbon crests (shimmering sparkling highlights)
+            crest_factor = max(0.0, (ribbon - 0.4) / 0.6) ** 2.0
+            sparkle = 0.85 + 0.15 * math.sin(float(i) * 4.2 + self._phase1 * 6.0)
+            hl_boost = self._highlight_env * crest_factor * sparkle * 38.0
+
+            v = int(np.clip((modulated_v + hl_boost) * self.intensity, 5, 100))
+
+            # Color: influenced by mids
+            ribbon_hue_offset = (w1 * 25.0 + w2 * 15.0)
+            if color_shift > 0.5:
+                blend = (color_shift - 0.5) * 2.0
+                base_h = violet_hue * blend + cyan_hue * (1.0 - blend)
+            else:
+                blend = color_shift * 2.0
+                base_h = emerald_hue * (1.0 - blend) + cyan_hue * blend
+
+            h = int((base_h + ribbon_hue_offset + 360.0) % 360.0)
+
+            # Saturation dips on highlights for ethereal white-hot shimmer at crests
+            s = int(np.clip(92.0 - hl_boost * 0.4, 45, 100))
+
+            frame.append((h, s, v))
+
+        return frame
+
+
 # ── Backward Compatibility Shims & Aliases ───────────────────────────────────
 
 ShockwaveStyle = PulseStyle
 MirrorEQStyle = SpectrumStyle
-AuroraStyle = FlowStyle
+AuroraStyle = ReactiveAuroraStyle
 CometStyle = FlowStyle
 FireStyle = PulseStyle
 PlasmaStyle = FlowStyle
@@ -2043,6 +2159,7 @@ def create_style_instances() -> Dict[str, VisualStyle]:
     lofi_vinyl = LofiVinylStyle()
     melodic_contour = MelodicContourStyle()
     bpm_resonator = BpmResonatorStyle()
+    reactive_aurora = ReactiveAuroraStyle()
 
     registry: Dict[str, VisualStyle] = {
         # Custom Vibe & Genre Engines
@@ -2080,6 +2197,8 @@ def create_style_instances() -> Dict[str, VisualStyle]:
         "pulse": pulse,
         "spectrum": spectrum,
         "flow": flow,
+        "aurora": reactive_aurora,
+        "reactive_aurora": reactive_aurora,
 
         # Segmented VU Mode & Aliases
         "segmented": segmented,
@@ -2089,7 +2208,6 @@ def create_style_instances() -> Dict[str, VisualStyle]:
         # Migration & Backward Compatibility Aliases:
         "shockwave": pulse,
         "mirror_eq": spectrum,
-        "aurora": flow,
         "auto": pulse,
         "director": pulse,
         "hybrid": pulse,
