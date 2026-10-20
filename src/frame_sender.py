@@ -261,16 +261,15 @@ class LatestFrameSender:
             else:
                 self._pacing_delay = min(0.100, self._pacing_delay * 1.5)
 
-            # ── Enforce True Frame-Rate Cap based on elapsed time ──
+            # ── Enforce the send budget even under continuous frame pressure ──
+            # dt is the time already spent transmitting this frame. Waiting the
+            # remainder makes the interval between request starts at least
+            # 1 / rate_cap. Do not cap this wait when a pending frame exists:
+            # doing so bypasses the rate limiter precisely during animations.
             if self.max_updates_per_s > 0:
                 target_interval = 1.0 / max(0.5, self._aimd_rate_cap)
-                # If a new frame is already waiting, we only need to wait the remaining interval since previous send
-                # or the pacing delay, whichever is larger, without sleeping unnecessarily
                 remaining = target_interval - dt
-                if self._pending_frame is not None:
-                    wait_time = max(self._pacing_delay, min(remaining, 0.100))
-                else:
-                    wait_time = max(self._pacing_delay, remaining)
+                wait_time = max(self._pacing_delay, remaining)
             else:
                 wait_time = self._pacing_delay
 
