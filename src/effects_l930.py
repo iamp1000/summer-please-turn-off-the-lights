@@ -429,7 +429,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'alias_of': 'starfield',
         'default_params': {'particle_density': 1.8},
         'deprecated': True,
-        'supported_controls': ['speed', 'brightness', 'palette', 'particle_density'],
+        'supported_controls': ['speed', 'brightness', 'particle_density'],
     },
     'confetti': {
         'kind': 'firmware',
@@ -440,7 +440,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'alias_of': 'prism_sparks',
         'default_params': {'particle_density': 2.0},
         'deprecated': True,
-        'supported_controls': ['speed', 'brightness', 'palette', 'particle_density'],
+        'supported_controls': ['speed', 'brightness', 'particle_density'],
     },
     'dual_wipe': {
         'kind': 'firmware',
@@ -1846,7 +1846,7 @@ class L930EffectsEngine:
     def _render_multi_pod_sonar(self, t: float) -> List[List[int]]:
         """Sonar sweep variation (absorbed into radar_sweep engine with tail multiplier)."""
         old_t = getattr(self, "_tail_length", 1.0)
-        self._tail_length = 2.0
+        self._tail_length = old_t * 1.8
         try:
             return self._render_radar_sweep(t)
         finally:
@@ -1932,7 +1932,7 @@ class L930EffectsEngine:
     def _render_confetti_burst(self, t: float) -> List[List[int]]:
         """Confetti burst variation (absorbed into prism_sparks particle engine with elevated density)."""
         old_d = getattr(self, "_particle_density", 1.0)
-        self._particle_density = 2.0
+        self._particle_density = old_d * 1.8
         try:
             return self._render_prism_sparks(t)
         finally:
@@ -2070,26 +2070,26 @@ class L930EffectsEngine:
         return segs
 
     def _render_breathe(self, t: float) -> List[List[int]]:
-        """Deliberate inhale/exhale envelope with slow relaxing color-temperature shift."""
+        """Deliberate inhale/exhale envelope with slow relaxing color-temperature shift modulated by selected palette."""
         sp = max(0.2, self._speed)
         # 10 second respiratory cycle: 4s inhale, 1s hold, 5s exhale
         cycle = 10.0 / sp
         phase = (t % cycle) / cycle
         if phase < 0.40:
-            # Inhale: expanding, warming up
             p = phase / 0.40
             env = 0.5 - 0.5 * math.cos(p * math.pi)
         elif phase < 0.50:
-            # Inhale hold
             env = 1.0
         else:
-            # Exhale: slow smooth relaxation
             p = (phase - 0.50) / 0.50
             env = 0.5 + 0.5 * math.cos(p * math.pi)
 
-        # Color temperature shift: soft cooler indigo/rose (260) -> warm incandescent amber (32)
-        h = int(260 - env * 228)  # 260 -> 32
-        s = int(50 + env * 42)
+        pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "sunset")
+        c0 = pal[0]
+        c1 = pal[1] if len(pal) > 1 else (c0[0], max(10, c0[1] - 30), c0[2])
+
+        h = int((c0[0] * (1.0 - env) + c1[0] * env) % 360)
+        s = int(c0[1] * (1.0 - env * 0.3) + c1[1] * (env * 0.3))
         v = int(max(6, min(100, 10 + env * 85)))
         return [[h, s, v]] * NUM_SEGMENTS
 
@@ -2267,13 +2267,12 @@ class L930EffectsEngine:
 
     def _render_lightning(self, t: float) -> List[List[int]]:
         """Thunderstorm simulation with sharp strikes, flash strength scaling, and trailing amber thunder roll."""
-        sp = self._speed
+        sp = max(0.2, self._speed)
         flash_mult = max(0.2, getattr(self, "_flash_strength", 1.0))
-        cycle = 7.0 / max(0.2, sp)
-        sub_t = t % cycle
+        sub_t = (t * sp) % 7.0
         segs = [[230, 95, 2]] * NUM_SEGMENTS
 
-        # Strike timings within cycle
+        # Strike timings within 7.0s base cycle
         strikes = [
             (0.80, 0.12, 1.0 * flash_mult, 15, 35),
             (0.95, 0.08, 0.7 * flash_mult, 10, 45),
@@ -2475,8 +2474,8 @@ class L930EffectsEngine:
         """Glitter cascade variation (absorbed into starfield with elevated density and flash)."""
         old_d = getattr(self, "_particle_density", 1.0)
         old_f = getattr(self, "_flash_strength", 1.0)
-        self._particle_density = 2.0
-        self._flash_strength = 1.8
+        self._particle_density = old_d * 1.8
+        self._flash_strength = old_f * 1.5
         try:
             return self._render_autonomous_starfield(t)
         finally:
@@ -2512,14 +2511,21 @@ class L930EffectsEngine:
     def _render_coordinated_lightning(self, t: float) -> List[List[int]]:
         """Coordinated storm variation (absorbed into lightning engine with flash multiplier)."""
         old_f = getattr(self, "_flash_strength", 1.0)
-        self._flash_strength = 2.0
+        self._flash_strength = old_f * 1.8
         try:
             return self._render_lightning(t)
         finally:
             self._flash_strength = old_f
 
-    def _compute(self, name: str, t: float = 0.0) -> List[List[int]]:
+    def _compute(self, name: str, t: float = 0.0, apply_brightness: bool = False) -> List[List[int]]:
         """Realistic preview generator and backward compatibility computation for all catalog effects and aliases."""
+        segs = self._compute_raw(name, t)
+        if apply_brightness:
+            b_scale = max(0.01, min(1.0, self._brightness / 100.0))
+            return [[h, s, max(1, min(100, int(round(v * b_scale))))] for h, s, v in segs]
+        return segs
+
+    def _compute_raw(self, name: str, t: float = 0.0) -> List[List[int]]:
         eff = resolve_effect_alias(name)
 
         if eff == "lava_lamp":
@@ -2599,18 +2605,41 @@ class L930EffectsEngine:
         elif eff in ("rainbow", "infinite_prism"):
             return self._render_rainbow(t)
         elif eff == "flicker":
-            # Candle flicker: localized warm candle micro-surges
-            return [[32, 90, max(5, min(100, int(45 + 35 * math.sin(t * 3.0 + i * 7.7))))] for i in range(NUM_SEGMENTS)]
+            # Candle flicker: localized warm candle micro-surges with speed, brightness, and palette
+            sp = max(0.2, self._speed)
+            pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "sunset")
+            base_h, base_s = pal[0][0], pal[0][1]
+            return [[base_h, base_s, max(5, min(100, int(45 + 35 * math.sin(t * 3.0 * sp + i * 7.7))))] for i in range(NUM_SEGMENTS)]
         elif eff == "sunrise":
-            # Sunrise: progressive dawn peach-gold expansion from center
-            prog = (math.sin(t * 0.4 * self._speed) + 1.0) * 0.5
-            return [[int(20 + 25 * prog), int(95 - 40 * prog), int(max(10, min(100, 20 + prog * 80)))] for _ in range(NUM_SEGMENTS)]
+            # Sunrise: progressive dawn peach-gold expansion from center outwards
+            sp = max(0.2, self._speed)
+            prog = (math.sin(t * 0.4 * sp) + 1.0) * 0.5
+            half = (NUM_SEGMENTS - 1) / 2.0
+            segs = []
+            for i in range(NUM_SEGMENTS):
+                dist = abs(i - half) / half
+                local_prog = max(0.0, min(1.0, prog * 1.5 - dist * 0.5))
+                h = int(20 + 25 * local_prog)
+                s = int(95 - 40 * local_prog)
+                v = int(max(10, min(100, 20 + local_prog * 80)))
+                segs.append([h, s, v])
+            return segs
         elif eff == "sunset":
-            # Sunset: twilight plum to warm coral fade
-            prog = (math.cos(t * 0.35 * self._speed) + 1.0) * 0.5
-            return [[int(330 - 50 * prog), int(85 + 15 * prog), int(max(8, min(85, 15 + prog * 70)))] for _ in range(NUM_SEGMENTS)]
+            # Sunset: twilight plum horizon edges fading into warm coral core
+            sp = max(0.2, self._speed)
+            prog = (math.cos(t * 0.35 * sp) + 1.0) * 0.5
+            half = (NUM_SEGMENTS - 1) / 2.0
+            segs = []
+            for i in range(NUM_SEGMENTS):
+                dist = abs(i - half) / half
+                local_prog = max(0.0, min(1.0, prog * 1.4 - (1.0 - dist) * 0.4))
+                h = int(330 - 50 * local_prog)
+                s = int(85 + 15 * local_prog)
+                v = int(max(8, min(85, 15 + local_prog * 70)))
+                segs.append([h, s, v])
+            return segs
 
         if eff in EFFECT_CATALOG and "alias_of" in EFFECT_CATALOG[eff]:
-            return self._compute(EFFECT_CATALOG[eff]["alias_of"], t)
+            return self._compute_raw(EFFECT_CATALOG[eff]["alias_of"], t)
 
         return [[30, 80, 60]] * NUM_SEGMENTS
