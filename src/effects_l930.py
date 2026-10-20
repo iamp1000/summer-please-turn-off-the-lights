@@ -534,9 +534,10 @@ class L930EffectsEngine:
         self._start_time = time.monotonic()
 
         if kind == "firmware":
-            # An explicit effect change should be immediate. The two-second
-            # throttle remains for parameter-slider redeploys, not user selection.
-            self._deploy_firmware_effect(key, force=True)
+            # An explicit effect change should be immediate. Only report success
+            # after the controller confirms that the device accepted the effect.
+            if not self._deploy_firmware_effect(key, force=True):
+                return False
         elif kind == "streamed_slow":
             # Start slow streaming worker (<= 2 updates/s)
             self._start_stream_worker()
@@ -566,14 +567,14 @@ class L930EffectsEngine:
 
     # ── Firmware Effect Deployment ────────────────────────────────────────────
 
-    def _deploy_firmware_effect(self, name: str, force: bool = False):
+    def _deploy_firmware_effect(self, name: str, force: bool = False) -> bool:
         fx = self._build_effect_payload(name)
         if fx is None:
             self._last_error = f"No firmware payload could be built for L930 effect {name!r}"
             logger.error("[L930EffectsEngine] %s", self._last_error)
             self._active_effect_name = None
             self._active_kind = None
-            return
+            return False
 
         gen = self._effect_generation
         with self._fw_lock:
@@ -591,7 +592,7 @@ class L930EffectsEngine:
                 delay = max(0.1, 2.0 - (now - self._last_firmware_upload))
                 self._pending_fw_timer = threading.Timer(delay, self._flush_pending_firmware_upload)
                 self._pending_fw_timer.start()
-                return
+                return True
 
             self._last_firmware_upload = now
             self._pending_fw_upload = None
@@ -602,7 +603,22 @@ class L930EffectsEngine:
                     pass
                 self._pending_fw_timer = None
 
-        self._loop_runner.run(self._ctrl.set_native_effect(fx, priority=0))
+        try:
+            future = self._loop_runner.run(self._ctrl.set_native_effect(fx, priority=0))
+            # BackgroundLoop.run returns a Future: wait for the hardware ACK so
+            # we can distinguish "accepted" from merely "queued in asyncio".
+            result_method = getattr(future, "result", None)
+            result = result_method(timeout=10.0) if callable(result_method) else future
+            if result is False:
+                raise RuntimeError(f"Controller rejected firmware effect {name!r}")
+            self._last_error = None
+            return True
+        except Exception as exc:
+            self._last_error = f"Failed to deploy L930 firmware effect {name!r}: {exc}"
+            logger.error("[L930EffectsEngine] %s", self._last_error)
+            self._active_effect_name = None
+            self._active_kind = None
+            return False
 
     def _flush_pending_firmware_upload(self):
         with self._fw_lock:
