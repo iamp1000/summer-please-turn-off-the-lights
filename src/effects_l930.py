@@ -2514,5 +2514,40 @@ class L930EffectsEngine:
             return [[int(330 - 50 * prog), int(85 + 15 * prog), int(max(8, min(85, 15 + prog * 70)))] for _ in range(NUM_SEGMENTS)]
         elif eff in ("ocean", "ocean_waves"):
             return [[int(185 + 15 * math.sin(t * 0.8 + i * 0.2)), 90, int(35 + 25 * math.cos(t * 0.6 + i * 0.15))] for i in range(NUM_SEGMENTS)]
+        elif eff == "bioluminescent_abyss":
+            segs = []
+            for i in range(NUM_SEGMENTS):
+                flt = math.sin(t * 1.5 + i * 0.4)
+                if flt > 0.75:
+                    h = 175 if (i % 2 == 0) else 190
+                    v = int(20 + 70 * ((flt - 0.75) / 0.25))
+                else:
+                    h, v = 230, 4
+                segs.append([h, 95, v])
+            return segs
+        elif eff == "campfire_hearth":
+            segs = []
+            for i in range(NUM_SEGMENTS):
+                flt = math.sin(t * 3.0 + i * 0.8) + math.cos(t * 5.2 - i * 0.5)
+                norm_flt = max(0.0, min(1.0, (flt + 2.0) / 4.0))
+                segs.append([int(12 + norm_flt * 28), 95, int(25 + norm_flt * 70)])
+            return segs
+        elif eff == "dual_wipe":
+            pos = (t * 25.0 * max(0.2, self._speed)) % 25.0
+            segs = []
+            pal_dw = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "dusk")
+            c1_h = pal_dw[0][0] if pal_dw else 280
+            c2_h = pal_dw[1][0] if len(pal_dw) > 1 else 180
+            for i in range(NUM_SEGMENTS):
+                if i < 25:
+                    d = abs(i - pos)
+                    segs.append([c1_h, 85, int(max(10, 100 - d * 18))])
+                else:
+                    d = abs((49 - i) - pos)
+                    segs.append([c2_h, 90, int(max(10, 100 - d * 18))])
+            return segs
+        elif eff == "infinite_prism":
+            sp_eff = max(0.2, self._speed)
+            return [[int((i * (360.0 / 8.0) + t * 60.0 * sp_eff) % 360), 100, 100] for i in range(NUM_SEGMENTS)]
         return [[30, 80, 60]] * NUM_SEGMENTS
 
