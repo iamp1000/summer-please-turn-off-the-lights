@@ -875,3 +875,87 @@ def test_stale_stream_frames_discarded_on_generation_bump():
     engine._effect_generation = 6
     engine._stream_run(stop_event, generation=5)
     assert len(ctrl.submitted) == 0
+
+
+def test_advertised_controls_consumed_by_firmware_and_renderers():
+    """Verify that all advertised controls (particle_density, tail_length, wave_width, flash_strength) actually alter behavior."""
+    engine = L930EffectsEngine(None, None, {})
+
+    # 1. particle_density: embers, fireflies, prism_sparks, starfield, raindrop
+    engine.set_parameters(particle_density=0.5)
+    fw_embers_low = engine._build_effect_payload("embers")
+    rd_low = engine._render_raindrop(1.0)
+
+    engine.set_parameters(particle_density=2.5)
+    fw_embers_high = engine._build_effect_payload("embers")
+    rd_high = engine._render_raindrop(1.0)
+
+    assert fw_embers_low.id != fw_embers_high.id, "particle_density must change firmware effect ID"
+    assert fw_embers_low.fadeoff != fw_embers_high.fadeoff, "particle_density must change firmware fadeoff"
+    assert rd_low != rd_high, "particle_density must change raindrop render output"
+
+    # 2. tail_length: lantern_sweep, sinelon, comet
+    engine.set_parameters(tail_length=0.5)
+    fw_lantern_short = engine._build_effect_payload("lantern_sweep")
+    ls_short = engine._render_lantern_sweep(1.0)
+
+    engine.set_parameters(tail_length=2.5)
+    fw_lantern_long = engine._build_effect_payload("lantern_sweep")
+    ls_long = engine._render_lantern_sweep(1.0)
+
+    assert fw_lantern_short.id != fw_lantern_long.id, "tail_length must change lantern_sweep effect ID"
+    assert fw_lantern_short.spread != fw_lantern_long.spread, "tail_length must change lantern_sweep spread"
+    assert ls_short != ls_long, "tail_length must change lantern_sweep render output"
+
+    # 3. wave_width: aurora, gravity_slosh, planar_wind, bpm_resonator
+    engine.set_parameters(wave_width=0.5)
+    aurora_narrow = engine._render_aurora(1.0)
+    wind_narrow = engine._render_planar_wind(1.0)
+
+    engine.set_parameters(wave_width=2.5)
+    aurora_wide = engine._render_aurora(1.0)
+    wind_wide = engine._render_planar_wind(1.0)
+
+    assert aurora_narrow != aurora_wide, "wave_width must change aurora render output"
+    assert wind_narrow != wind_wide, "wave_width must change planar_wind render output"
+
+    # 4. flash_strength: cyber_chase, lightning, neon_heartbeat
+    engine.set_parameters(flash_strength=0.5)
+    hb_soft = engine._render_anatomical_heartbeat(0.12)
+    fw_chase_soft = engine._build_effect_payload("cyber_chase")
+
+    engine.set_parameters(flash_strength=2.5)
+    hb_hard = engine._render_anatomical_heartbeat(0.12)
+    fw_chase_hard = engine._build_effect_payload("cyber_chase")
+
+    assert hb_soft != hb_hard, "flash_strength must change heartbeat render output"
+    assert fw_chase_soft.id != fw_chase_hard.id, "flash_strength must change cyber_chase effect ID"
+
+
+def test_all_catalog_effects_and_aliases_have_distinct_non_flat_previews():
+    """Verify that every single catalog effect and native alias produces a non-flat, realistic preview."""
+    from src.effects_l930 import EFFECT_CATALOG, NATIVE_ALIASES
+    engine = L930EffectsEngine(None, None, {})
+    flat_fallback = [[30, 80, 60]] * 50
+
+    all_names = list(EFFECT_CATALOG.keys()) + list(NATIVE_ALIASES.keys())
+    for name in all_names:
+        frame = engine._compute(name, t=1.2)
+        assert len(frame) == 50, f"Preview for {name} does not have 50 zones"
+        assert frame != flat_fallback, f"Preview for {name} fell back to flat default frame"
+        # Verify valid HSV values
+        for h, s, v in frame:
+            assert 0 <= h <= 360, f"Invalid hue in {name}: {h}"
+            assert 0 <= s <= 100, f"Invalid sat in {name}: {s}"
+            assert 0 <= v <= 100, f"Invalid val in {name}: {v}"
+
+    # Specific check for previously missing preview branches
+    bio_frame = engine._compute("bioluminescent_abyss", t=1.0)
+    hearth_frame = engine._compute("campfire_hearth", t=1.0)
+    dual_frame = engine._compute("dual_wipe", t=1.0)
+    prism_frame = engine._compute("infinite_prism", t=1.0)
+
+    assert bio_frame != flat_fallback
+    assert hearth_frame != flat_fallback
+    assert dual_frame != flat_fallback
+    assert prism_frame != flat_fallback

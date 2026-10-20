@@ -118,7 +118,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'category': 'core',
         'desc': 'Near-black navy background with isolated stars brightening, holding, and fading independently',
         'default_palette': 'tide',
-        'supported_controls': ['speed', 'brightness'],
+        'supported_controls': ['speed', 'brightness', 'particle_density'],
     },
     'embers': {
         'kind': 'firmware',
@@ -914,6 +914,8 @@ class L930EffectsEngine:
 
         elif name == "lantern_sweep":
             # Slow Cylon-style light that glides back and forth with glowing tail
+            tl = max(0.2, min(3.0, self._tail_length))
+            spread = max(2, min(25, int(round(5 * tl))))
             c = pal[0] if pal else (32, 45, 90)
             seq = [
                 [c[0], c[1], 100],
@@ -924,29 +926,39 @@ class L930EffectsEngine:
                 [c[0], c[1], 60],
             ]
             trans = int(min(6000, 500 * sp_factor))
-            return build_firmware_sequence_effect(
-                name="LanternSweep", sequence=seq, spread=5, direction=1, transition=trans, brightness=b
+            fx = build_firmware_sequence_effect(
+                name="LanternSweep", sequence=seq, spread=spread, direction=1, transition=trans, brightness=b
             )
+            fx.id = make_effect_id(f"lantern_sweep_s{int(round(self._speed * 100))}_b{b}_tl{int(round(tl * 100))}")
+            return fx
 
         elif name == "comet":
             # Bright comet head with cooling tail
+            tl = max(0.2, min(3.0, self._tail_length))
+            spread = max(2, min(25, int(round(4 * tl))))
             c_head = [180, 20, 100]  # White-cyan hot head
             tail_colors = pal[:4] if pal else [[280, 80, 60], [240, 80, 30]]
             seq = [c_head] + [list(c) for c in tail_colors]
             trans = int(min(6000, 400 * sp_factor))
-            return build_firmware_sequence_effect(
-                name="Comet", sequence=seq, spread=4, direction=1, transition=trans, brightness=b
+            fx = build_firmware_sequence_effect(
+                name="Comet", sequence=seq, spread=spread, direction=1, transition=trans, brightness=b
             )
+            fx.id = make_effect_id(f"comet_s{int(round(self._speed * 100))}_b{b}_tl{int(round(tl * 100))}")
+            return fx
 
         elif name == "cyber_chase":
-            # Two color pulses passing through each other
+            # Two color pulses passing through each other with configurable flash strength
+            fs = max(0.2, min(3.0, self._flash_strength))
+            b_high = max(10, min(100, int(round(100 * fs))))
             c1 = pal[0] if len(pal) > 0 else (320, 100, 100)
             c2 = pal[1] if len(pal) > 1 else (185, 100, 100)
-            seq = [c1, (0, 0, 10), c2, (0, 0, 10)]
+            seq = [[c1[0], c1[1], b_high], (0, 0, 10), [c2[0], c2[1], b_high], (0, 0, 10)]
             trans = int(min(6000, 600 * sp_factor))
-            return build_firmware_sequence_effect(
+            fx = build_firmware_sequence_effect(
                 name="CyberChase", sequence=seq, spread=8, direction=1, transition=trans, brightness=b
             )
+            fx.id = make_effect_id(f"cyber_chase_s{int(round(self._speed * 100))}_b{b}_fs{int(round(fs * 100))}")
+            return fx
 
         elif name == "juggle":
             # 8-color cycling sequence
@@ -960,6 +972,8 @@ class L930EffectsEngine:
             )
 
         elif name == "sinelon":
+            tl = max(0.2, min(3.0, self._tail_length))
+            spread = max(2, min(25, int(round(8 * tl))))
             c = pal[0] if pal else (320, 100, 100)
             seq = [
                 [c[0], c[1], 100],
@@ -968,21 +982,26 @@ class L930EffectsEngine:
                 [c[0], c[1], 5],
             ]
             trans = int(min(6000, 400 * sp_factor))
-            return build_firmware_sequence_effect(
-                name="Sinelon", sequence=seq, spread=8, direction=2, transition=trans, brightness=b
+            fx = build_firmware_sequence_effect(
+                name="Sinelon", sequence=seq, spread=spread, direction=2, transition=trans, brightness=b
             )
+            fx.id = make_effect_id(f"sinelon_s{int(round(self._speed * 100))}_b{b}_tl{int(round(tl * 100))}")
+            return fx
 
         elif name == "confetti":
-            t0 = max(80, min(6000, int(round(300 * sp_factor))))
-            t1 = max(t0, min(6000, int(round(1000 * sp_factor))))
+            dens = max(0.2, min(3.0, self._particle_density))
+            seed = max(1, min(600, int(round(77 * dens))))
+            fade = max(80, min(6000, int(round(600 * sp_factor / dens))))
+            t0 = max(80, min(6000, int(round(300 * sp_factor / math.sqrt(dens)))))
+            t1 = max(t0, min(6000, int(round(1000 * sp_factor / math.sqrt(dens)))))
             fx = build_firmware_random_effect(
                 name="Confetti", hue_range=(0, 359),
                 saturation_range=(70, 100), brightness_range=(20, 100),
-                transition_range=(t0, t1), random_seed=77,
-                fadeoff=max(120, int(round(600 * sp_factor))),
+                transition_range=(t0, t1), random_seed=seed,
+                fadeoff=fade,
                 backgrounds=[[pal[0][0], pal[0][1], 2]], brightness=b,
             )
-            fx.id = make_effect_id(f"confetti_s{int(round(self._speed * 100))}_b{b}_{self._palette_name}")
+            fx.id = make_effect_id(f"confetti_s{int(round(self._speed * 100))}_b{b}_d{int(round(dens * 100))}_{self._palette_name}")
             return fx
 
         elif name == "radial_ripple":
@@ -1113,84 +1132,113 @@ class L930EffectsEngine:
 
         # 3. Firmware Random Effects
         elif name == "starfield":
-            # Sparse soft twinkles on dark navy background (WLED Fairy)
-            return build_firmware_random_effect(
+            # Sparse soft twinkles on dark navy background with configurable particle density
+            dens = max(0.2, min(3.0, self._particle_density))
+            seed = max(1, min(600, int(round(42 * dens))))
+            fade = max(150, min(6000, int(round(800 / dens))))
+            t0 = max(100, min(6000, int(round(400 * sp_factor / math.sqrt(dens)))))
+            t1 = max(t0, min(6000, int(round(1500 * sp_factor / math.sqrt(dens)))))
+            fx = build_firmware_random_effect(
                 name="Starfield",
                 hue_range=(200, 230),
                 saturation_range=(10, 40),
                 brightness_range=(10, 100),
-                transition_range=(400, 1500),
-                random_seed=42,
-                fadeoff=800,
+                transition_range=(t0, t1),
+                random_seed=seed,
+                fadeoff=fade,
                 backgrounds=[[235, 90, 8]],
                 brightness=b,
             )
+            fx.id = make_effect_id(f"starfield_s{int(round(self._speed * 100))}_b{b}_d{int(round(dens * 100))}")
+            return fx
 
         elif name == "embers":
-            # Dim warm glow with slow random flicker for sleeping
-            return build_firmware_random_effect(
+            # Dim warm glow with slow random flicker consuming particle density
+            dens = max(0.2, min(3.0, self._particle_density))
+            seed = max(1, min(600, int(round(100 * dens))))
+            fade = max(150, min(6000, int(round(1200 / dens))))
+            t0 = max(100, min(6000, int(round(600 * sp_factor / math.sqrt(dens)))))
+            t1 = max(t0, min(6000, int(round(2000 * sp_factor / math.sqrt(dens)))))
+            fx = build_firmware_random_effect(
                 name="Embers",
                 hue_range=(15, 35),
                 saturation_range=(85, 100),
                 brightness_range=(5, 45),
-                transition_range=(600, 2000),
-                random_seed=100,
-                fadeoff=1200,
+                transition_range=(t0, t1),
+                random_seed=seed,
+                fadeoff=fade,
                 backgrounds=[[10, 100, 15]],
                 brightness=b,
             )
+            fx.id = make_effect_id(f"embers_s{int(round(self._speed * 100))}_b{b}_d{int(round(dens * 100))}")
+            return fx
 
         elif name == "fireflies":
-            # Green-gold bioluminescent points blinking independently against a dark field
-            t0 = max(150, min(6000, int(round(350 * sp_factor))))
-            t1 = max(t0, min(6000, int(round(950 * sp_factor))))
-            return build_firmware_random_effect(
+            # Green-gold bioluminescent points blinking independently consuming particle density
+            dens = max(0.2, min(3.0, self._particle_density))
+            seed = max(1, min(600, int(round(333 * dens))))
+            fade = max(150, min(6000, int(round(750 * sp_factor / dens))))
+            t0 = max(100, min(6000, int(round(350 * sp_factor / math.sqrt(dens)))))
+            t1 = max(t0, min(6000, int(round(950 * sp_factor / math.sqrt(dens)))))
+            fx = build_firmware_random_effect(
                 name="Fireflies",
                 hue_range=(75, 130),
                 saturation_range=(75, 100),
                 brightness_range=(5, 95),
                 transition_range=(t0, t1),
-                random_seed=333,
-                fadeoff=max(200, int(round(750 * sp_factor))),
+                random_seed=seed,
+                fadeoff=fade,
                 backgrounds=[[100, 90, 2]],
                 brightness=b,
             )
+            fx.id = make_effect_id(f"fireflies_s{int(round(self._speed * 100))}_b{b}_d{int(round(dens * 100))}")
+            return fx
 
         elif name == "prism_sparks":
-            # Saturated rainbow sparkles popping with independent IC timing
-            t0 = max(100, min(6000, int(round(200 * sp_factor))))
-            t1 = max(t0, min(6000, int(round(600 * sp_factor))))
-            return build_firmware_random_effect(
+            # Saturated rainbow sparkles popping with independent IC timing and particle density
+            dens = max(0.2, min(3.0, self._particle_density))
+            seed = max(1, min(600, int(round(444 * dens))))
+            fade = max(100, min(6000, int(round(450 * sp_factor / dens))))
+            t0 = max(80, min(6000, int(round(200 * sp_factor / math.sqrt(dens)))))
+            t1 = max(t0, min(6000, int(round(600 * sp_factor / math.sqrt(dens)))))
+            fx = build_firmware_random_effect(
                 name="PrismSparks",
                 hue_range=(0, 360),
                 saturation_range=(85, 100),
                 brightness_range=(10, 100),
                 transition_range=(t0, t1),
-                random_seed=444,
-                fadeoff=max(150, int(round(450 * sp_factor))),
+                random_seed=seed,
+                fadeoff=fade,
                 backgrounds=[[0, 0, 0]],
                 brightness=b,
             )
+            fx.id = make_effect_id(f"prism_sparks_s{int(round(self._speed * 100))}_b{b}_d{int(round(dens * 100))}")
+            return fx
 
         elif name == "bioluminescent_abyss":
-            t0 = max(200, min(6000, int(round(600 * sp_factor))))
-            t1 = max(t0, min(6000, int(round(1800 * sp_factor))))
-            return build_firmware_random_effect(
+            dens = max(0.2, min(3.0, self._particle_density))
+            seed = max(1, min(600, int(round(512 * dens))))
+            fade = max(150, min(6000, int(round(1200 * sp_factor / dens))))
+            t0 = max(100, min(6000, int(round(600 * sp_factor / math.sqrt(dens)))))
+            t1 = max(t0, min(6000, int(round(1800 * sp_factor / math.sqrt(dens)))))
+            fx = build_firmware_random_effect(
                 name="BioAbyss",
                 hue_range=(160, 195),
                 saturation_range=(85, 100),
                 brightness_range=(10, 85),
                 transition_range=(t0, t1),
-                random_seed=512,
-                fadeoff=max(300, int(round(1200 * sp_factor))),
+                random_seed=seed,
+                fadeoff=fade,
                 backgrounds=[[230, 95, 3]],
                 brightness=b,
             )
+            fx.id = make_effect_id(f"bioabyss_s{int(round(self._speed * 100))}_b{b}_d{int(round(dens * 100))}")
+            return fx
 
         elif name == "campfire_hearth":
             t0 = max(150, min(6000, int(round(400 * sp_factor))))
             t1 = max(t0, min(6000, int(round(1200 * sp_factor))))
-            return build_firmware_random_effect(
+            fx = build_firmware_random_effect(
                 name="CampHearth",
                 hue_range=(10, 42),
                 saturation_range=(85, 100),
@@ -1201,6 +1249,8 @@ class L930EffectsEngine:
                 backgrounds=[[12, 100, 5]],
                 brightness=b,
             )
+            fx.id = make_effect_id(f"camphearth_s{int(round(self._speed * 100))}_b{b}")
+            return fx
 
         elif name == "dual_wipe":
             c1 = pal[0] if pal else (280, 85, 90)
@@ -1683,7 +1733,8 @@ class L930EffectsEngine:
             w_dub = (math.exp(-0.5 * ((i - 10.0) / 4.5) ** 2) + math.exp(-0.5 * ((i - 39.0) / 4.5) ** 2)) * dub_env
 
             base_b = 8
-            total_b = int(max(base_b, min(100, base_b + w_lub * 85.0 + w_dub * 70.0)))
+            fs = max(0.2, min(3.0, getattr(self, "_flash_strength", 1.0)))
+            total_b = int(max(base_b, min(100, base_b + (w_lub * 85.0 + w_dub * 70.0) * fs)))
             if w_dub > w_lub:
                 h, s = c_dub[0], c_dub[1]
             else:
@@ -1757,16 +1808,17 @@ class L930EffectsEngine:
         return segs
 
     def _render_autonomous_embers(self, t: float) -> List[List[int]]:
-        """Autonomous warm glowing embers with per-IC random flicker."""
+        """Autonomous warm glowing embers with per-IC random flicker consuming particle density."""
         pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "ember")
+        dens = max(0.2, min(3.0, getattr(self, "_particle_density", 1.0)))
         segs = []
         sp = self._speed
         for i in range(NUM_SEGMENTS):
             flicker = math.sin(t * (1.8 + (i % 5) * 0.4) * sp + i * 23.9)
-            norm = (flicker + 1.0) * 0.5
+            norm = max(0.0, min(1.0, (flicker + 1.0) * 0.5 * math.sqrt(dens)))
             from src.visual_styles import sample_palette_oklab
             h, s, _ = sample_palette_oklab(pal, norm * 0.4)
-            b = int(max(6, min(45, 12 + norm * 30)))
+            b = int(max(4, min(100, (12 + norm * 30) * min(1.5, math.sqrt(dens)))))
             segs.append([h, s, b])
         return segs
 
@@ -1861,8 +1913,9 @@ class L930EffectsEngine:
             dist = abs(i - pos)
             head_glow = math.exp(-0.5 * (dist / 1.5) ** 2)
             trailing_offset = (pos - i) if vel > 0 else (i - pos)
+            tl = max(0.2, min(3.0, getattr(self, "_tail_length", 1.0)))
             if trailing_offset > 0:
-                trail_glow = math.exp(-trailing_offset / 5.5) * 0.65
+                trail_glow = math.exp(-trailing_offset / (5.5 * tl)) * 0.65
             else:
                 trail_glow = 0.0
 
@@ -2041,12 +2094,15 @@ class L930EffectsEngine:
         return [[h, s, v]] * NUM_SEGMENTS
 
     def _render_fireflies(self, t: float) -> List[List[int]]:
-        """Loose clusters of green-gold lights with asynchronous bloom, short peak, and long fade."""
+        """Loose clusters of green-gold lights with asynchronous bloom, short peak, and long fade consuming particle density."""
         sp = self._speed
+        dens = max(0.2, min(3.0, getattr(self, "_particle_density", 1.0)))
         segs = []
         # Two wandering swarm cluster centers
         c1 = 16.0 + 10.0 * math.sin(t * 0.35 * sp)
         c2 = 34.0 + 11.0 * math.cos(t * 0.28 * sp + 1.5)
+        thresh = max(0.40, min(0.90, 0.82 - 0.12 * math.sqrt(dens)))
+        min_cluster = max(0.04, 0.15 / math.sqrt(dens))
         for i in range(NUM_SEGMENTS):
             dist1 = abs(i - c1)
             dist2 = abs(i - c2)
@@ -2056,14 +2112,13 @@ class L930EffectsEngine:
             f = 0.8 + (i * 17 % 13) * 0.12 * sp
             phase = i * 23.7
             osc = math.sin(t * f + phase)
-            if osc > 0.72 and cluster_prob > 0.15:
-                # Asymmetric envelope: sharp bloom, long decay
-                bloom = (osc - 0.72) / 0.28
-                h = int(82 + (i % 5) * 8)  # Green-gold chartreuse
+            if osc > thresh and cluster_prob > min_cluster:
+                bloom = (osc - thresh) / (1.0 - thresh)
+                h = int(82 + (i % 5) * 8)
                 s = 92
-                v = int(max(8, min(100, 15 + bloom * 80 * min(1.0, cluster_prob))))
+                v = int(max(8, min(100, 15 + bloom * 80 * min(1.0, cluster_prob * math.sqrt(dens)))))
             else:
-                h, s, v = 110, 85, 2  # Dark forest background
+                h, s, v = 110, 85, 2
             segs.append([h, s, v])
         return segs
 
@@ -2123,34 +2178,34 @@ class L930EffectsEngine:
         return segs
 
     def _render_lantern_sweep(self, t: float) -> List[List[int]]:
-        """Warm moving core with wide golden halo and gentle lingering tail, eased at ends."""
+        """Warm moving core with wide golden halo and gentle lingering tail consuming tail length."""
         sp = self._speed
-        # Eased back-and-forth movement using sine shaping
+        tl = max(0.2, min(3.0, getattr(self, "_tail_length", 1.0)))
         pos = 24.5 + 23.5 * math.sin(t * 1.1 * sp)
         segs = []
         for i in range(NUM_SEGMENTS):
             dist = abs(i - pos)
-            # Warm core (dist < 2.0) and wide golden halo (dist < 8.0)
             core = math.exp(-0.5 * (dist / 1.6) ** 2)
-            halo = math.exp(-0.5 * (dist / 6.0) ** 2) * 0.55
+            halo = math.exp(-0.5 * (dist / (6.0 * tl)) ** 2) * 0.55
             intensity = min(1.0, core + halo)
 
-            h = int(32 + (1.0 - core) * 12)  # 32 incandescent gold -> 44 soft warm amber
+            h = int(32 + (1.0 - core) * 12)
             s = int(85 + core * 15)
             v = int(max(4, min(100, 6 + intensity * 94)))
             segs.append([h, s, v])
         return segs
 
     def _render_aurora(self, t: float) -> List[List[int]]:
-        """Broad, slow-moving green, teal, and violet curtains with long overlapping transitions."""
+        """Broad, slow-moving green, teal, and violet curtains consuming wave width."""
         sp = self._speed
+        ww = max(0.3, min(3.0, getattr(self, "_wave_width", 1.0)))
         segs = []
         for i in range(NUM_SEGMENTS):
             x = i / float(NUM_SEGMENTS - 1)
             # Overlapping atmospheric curtain ribbons
-            c1 = math.sin(x * 2.2 * math.pi + t * 0.25 * sp)
-            c2 = math.cos(x * 3.1 * math.pi - t * 0.18 * sp + 1.2)
-            c3 = math.sin(x * 1.5 * math.pi + t * 0.32 * sp + 2.4)
+            c1 = math.sin(x * (2.2 / ww) * math.pi + t * 0.25 * sp)
+            c2 = math.cos(x * (3.1 / ww) * math.pi - t * 0.18 * sp + 1.2)
+            c3 = math.sin(x * (1.5 / ww) * math.pi + t * 0.32 * sp + 2.4)
 
             # Dominant wavelength selection
             if c1 > c2 and c1 > c3:
@@ -2186,22 +2241,26 @@ class L930EffectsEngine:
         return segs
 
     def _render_raindrop(self, t: float) -> List[List[int]]:
-        """Dark background punctuated by isolated drops that travel and fade at varied intervals."""
+        """Dark background punctuated by isolated drops consuming particle density."""
         sp = self._speed
-        segs = [[220, 90, 3]] * NUM_SEGMENTS  # Dark background
-        # 4 staggered raindrops traveling downward
-        drops = [
+        dens = max(0.2, min(3.0, getattr(self, "_particle_density", 1.0)))
+        segs = [[220, 90, 3]] * NUM_SEGMENTS
+        all_drops = [
             ((t * 14.0 * sp + 2.0) % (NUM_SEGMENTS + 8.0) - 4.0, 0.9),
             ((t * 11.0 * sp + 18.0) % (NUM_SEGMENTS + 12.0) - 6.0, 0.75),
             ((t * 16.0 * sp + 31.0) % (NUM_SEGMENTS + 10.0) - 5.0, 0.85),
             ((t * 9.5 * sp + 44.0) % (NUM_SEGMENTS + 15.0) - 7.0, 0.65),
+            ((t * 13.0 * sp + 8.0) % (NUM_SEGMENTS + 9.0) - 4.5, 0.80),
+            ((t * 17.5 * sp + 25.0) % (NUM_SEGMENTS + 11.0) - 5.5, 0.90),
         ]
+        num_drops = max(1, min(len(all_drops), int(round(4 * dens))))
+        drops = all_drops[:num_drops]
         out = [list(c) for c in segs]
         for head, str_val in drops:
             for i in range(NUM_SEGMENTS):
                 behind = head - i
                 if 0.0 <= behind <= 3.5:
-                    decay = (1.0 - behind / 3.5) ** 1.5 * str_val
+                    decay = (1.0 - behind / 3.5) ** 1.5 * str_val * min(1.0, math.sqrt(dens))
                     v = int(max(out[i][2], min(100, 10 + decay * 88)))
                     out[i] = [195, max(15, int(90 - decay * 55)), v]
         return out
@@ -2332,8 +2391,9 @@ class L930EffectsEngine:
         for i in range(NUM_SEGMENTS):
             x, y = topo.coords[i]
             # Height relative to liquid surface level: surface tilts with slosh
+            ww = max(0.3, min(3.0, getattr(self, "_wave_width", 1.0)))
             surface_y = slosh * x * 0.65
-            submerged = max(0.0, min(1.0, (surface_y - y + 0.6) / 0.8))
+            submerged = max(0.0, min(1.0, (surface_y - y + 0.6) / (0.8 * ww)))
 
             if submerged > 0.05:
                 h, s, _ = sample_palette_oklab(pal, submerged, cyclic=False)
@@ -2373,9 +2433,10 @@ class L930EffectsEngine:
 
         segs = []
         phase = (t * 0.6 * sp) % 1.0
+        ww = max(0.3, min(3.0, getattr(self, "_wave_width", 1.0)))
         for i in range(NUM_SEGMENTS):
             p = proj[i]
-            wave = 0.5 + 0.5 * math.sin((p - phase) * 3.0 * 2.0 * math.pi)
+            wave = 0.5 + 0.5 * math.sin((p - phase) * (3.0 / ww) * 2.0 * math.pi)
             h, s, _ = sample_palette_oklab(pal, (p + phase * 0.5) % 1.0, cyclic=True)
             v = int(max(10, min(100, 15 + (wave ** 1.8) * 85)))
             segs.append([h, s, v])
@@ -2433,13 +2494,14 @@ class L930EffectsEngine:
         b3 = math.sin(t * (100.0 / 60.0 * 2.0 * math.pi) * sp)
         b4 = math.sin(t * (120.0 / 60.0 * 2.0 * math.pi) * sp)
 
+        ww = max(0.3, min(3.0, getattr(self, "_wave_width", 1.0)))
         segs = []
         for i in range(NUM_SEGMENTS):
             x = i / float(NUM_SEGMENTS - 1)
-            wave = math.sin(x * 3.0 * math.pi + b1) * 0.35 + \
-                   math.cos(x * 5.0 * math.pi + b2) * 0.25 + \
-                   math.sin(x * 7.0 * math.pi + b3) * 0.20 + \
-                   math.cos(x * 2.0 * math.pi + b4) * 0.20
+            wave = math.sin(x * (3.0 / ww) * math.pi + b1) * 0.35 + \
+                   math.cos(x * (5.0 / ww) * math.pi + b2) * 0.25 + \
+                   math.sin(x * (7.0 / ww) * math.pi + b3) * 0.20 + \
+                   math.cos(x * (2.0 / ww) * math.pi + b4) * 0.20
 
             norm_w = (wave + 1.0) * 0.5
             h, s, _ = sample_palette_oklab(pal, norm_w, cyclic=True)
@@ -2457,17 +2519,18 @@ class L930EffectsEngine:
             self._flash_strength = old_f
 
     def _compute(self, name: str, t: float = 0.0) -> List[List[int]]:
-        """Backward compatibility simulation computation for test suites."""
-        eff = name.lower()
+        """Realistic preview generator and backward compatibility computation for all catalog effects and aliases."""
+        eff = resolve_effect_alias(name)
+
         if eff == "lava_lamp":
             return self._render_lava_lamp(t)
         elif eff == "dusk":
             return self._render_standing_wave_dusk(t)
         elif eff in ("golden_hour", "ambient_drift", "sakura", "northern_lights"):
             return self._render_standing_wave_golden_hour(t)
-        elif eff in ("hearth", "fireplace", "fire_crawl"):
+        elif eff in ("campfire_hearth", "hearth", "fireplace", "fire_crawl"):
             return self._render_hearth_fire2012(t)
-        elif eff == "cyber_chase":
+        elif eff in ("cyber_chase", "dual_wipe"):
             return self._render_collider_chase(t)
         elif eff == "juggle":
             return self._render_harmonic_juggle(t)
@@ -2487,7 +2550,7 @@ class L930EffectsEngine:
             return self._render_multi_pod_sonar(t)
         elif eff == "meteor_shower":
             return self._render_meteor_shower(t)
-        elif eff == "tide":
+        elif eff in ("tide", "ocean", "ocean_waves"):
             return self._render_tide(t)
         elif eff == "drift":
             return self._render_drift(t)
@@ -2519,7 +2582,7 @@ class L930EffectsEngine:
             return self._render_lantern_sweep(t)
         elif eff == "aurora":
             return self._render_aurora(t)
-        elif eff == "deep_ocean":
+        elif eff in ("deep_ocean", "bioluminescent_abyss"):
             return self._render_deep_ocean(t)
         elif eff == "raindrop":
             return self._render_raindrop(t)
@@ -2533,7 +2596,7 @@ class L930EffectsEngine:
             return self._render_candy_cane(t)
         elif eff == "haunted_mansion":
             return self._render_haunted_mansion(t)
-        elif eff == "rainbow":
+        elif eff in ("rainbow", "infinite_prism"):
             return self._render_rainbow(t)
         elif eff == "flicker":
             # Candle flicker: localized warm candle micro-surges
@@ -2546,20 +2609,8 @@ class L930EffectsEngine:
             # Sunset: twilight plum to warm coral fade
             prog = (math.cos(t * 0.35 * self._speed) + 1.0) * 0.5
             return [[int(330 - 50 * prog), int(85 + 15 * prog), int(max(8, min(85, 15 + prog * 70)))] for _ in range(NUM_SEGMENTS)]
-        elif eff in ("ocean", "ocean_waves"):
-            # Merged with tide (retains full Pacifica wave and crest model)
-            return self._render_tide(t)
-        elif eff == "bioluminescent_abyss":
-            # Merged into deep_ocean (retains cyan/emerald bioluminescent glow and deep marine floor)
-            return self._render_deep_ocean(t)
-        elif eff == "campfire_hearth":
-            # Absorbs hearth (retains realistic Fire2012 heat diffusion and flickering embers)
-            return self._render_hearth_fire2012(t)
-        elif eff == "dual_wipe":
-            # Merged into cyber_chase (retains bi-directional dual convergence and collision flare)
-            return self._render_collider_chase(t)
-        elif eff == "infinite_prism":
-            # Merged into rainbow (retains seamless continuous spectral circulation)
-            return self._render_rainbow(t)
-        return [[30, 80, 60]] * NUM_SEGMENTS
 
+        if eff in EFFECT_CATALOG and "alias_of" in EFFECT_CATALOG[eff]:
+            return self._compute(EFFECT_CATALOG[eff]["alias_of"], t)
+
+        return [[30, 80, 60]] * NUM_SEGMENTS
