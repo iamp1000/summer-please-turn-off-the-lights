@@ -1285,12 +1285,12 @@ class TapoGUI:
             full_st = self.hub.get_full_state()
             catalog = full_st.get("effects_catalog", {})
 
-            # Group items by Ambient, Motion, Seasonal & Novelty
-            groups = {"Ambient": [], "Motion": [], "Seasonal & Novelty": []}
-            for eff_name, meta in catalog.items():
-                grp = meta.get("group", "Motion")
-                if grp in groups:
-                    groups[grp].append(eff_name)
+            # Curated shelf: Core (22), Advanced (10), Seasonal (3)
+            groups = {
+                "Core Effects": [k for k, v in catalog.items() if v.get("category") == "core"],
+                "Advanced Effects": [k for k, v in catalog.items() if v.get("category") == "advanced"],
+                "Seasonal & Novelty": [k for k, v in catalog.items() if v.get("category") == "seasonal"],
+            }
 
             for grp_name, eff_names in groups.items():
                 if not eff_names:
@@ -1300,7 +1300,7 @@ class TapoGUI:
                 grp_hdr_frame = ctk.CTkFrame(self.fx_grid_frame, fg_color="transparent")
                 grp_hdr_frame.pack(fill="x", pady=(6, 4))
 
-                hdr_text = f"▼  {grp_name.upper()}" if not is_novelty else "▶  SEASONAL & NOVELTY (COLLAPSED)"
+                hdr_text = f"▼  {grp_name.upper()} ({len(eff_names)})" if not is_novelty else f"▶  SEASONAL & NOVELTY ({len(eff_names)}) (COLLAPSED)"
                 grp_lbl = ctk.CTkLabel(
                     grp_hdr_frame, text=hdr_text,
                     font=ctk.CTkFont(size=8, weight="bold"),
@@ -1317,13 +1317,13 @@ class TapoGUI:
                 if is_novelty:
                     # Initially collapse novelty group
                     grid.pack_forget()
-                    def _toggle_novelty(lbl=grp_lbl, g=grid):
+                    def _toggle_novelty(lbl=grp_lbl, g=grid, n=len(eff_names)):
                         if g.winfo_ismapped():
                             g.pack_forget()
-                            lbl.configure(text="▶  SEASONAL & NOVELTY (COLLAPSED)")
+                            lbl.configure(text=f"▶  SEASONAL & NOVELTY ({n}) (COLLAPSED)")
                         else:
                             g.pack(fill="x", pady=(0, 6))
-                            lbl.configure(text="▼  SEASONAL & NOVELTY")
+                            lbl.configure(text=f"▼  SEASONAL & NOVELTY ({n})")
                     grp_hdr_frame.bind("<Button-1>", lambda e, fn=_toggle_novelty: fn())
                     grp_lbl.bind("<Button-1>", lambda e, fn=_toggle_novelty: fn())
 
@@ -1367,10 +1367,12 @@ class TapoGUI:
                 name = key[4:]
                 meta = catalog.get(name, {})
                 haystack = f"{name} {meta.get('desc', '')} {meta.get('group', '')}".lower()
+                cat = meta.get("category", "")
+                grp_target = "Core Effects" if cat == "core" else ("Advanced Effects" if cat == "advanced" else ("Seasonal & Novelty" if cat == "seasonal" else ""))
                 if query in haystack:
                     button.grid()
-                    if meta.get("group"):
-                        matching_groups.add(meta["group"])
+                    if grp_target:
+                        matching_groups.add(grp_target)
                 else:
                     button.grid_remove()
 

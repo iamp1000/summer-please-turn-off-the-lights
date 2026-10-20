@@ -61,331 +61,419 @@ NATIVE_PRESETS: Dict[str, LightEffectPreset] = {
 
 # Effect classification registry
 EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
-    # ── Ambient Group ────────────────────────────────────────────────────────
-    "tide": {
-        "kind": "firmware",
-        "group": "Ambient",
-        "desc": "Overlapping ocean waves with different speeds and thin seafoam crests on dark teal",
-        "default_palette": "tide",
-        "supported_controls": ["speed", "brightness", "palette"],
+    # ── 1. Core Effects (22) ─────────────────────────────────────────────────
+    'tide': {
+        'kind': 'firmware',
+        'group': 'Ambient',
+        'category': 'core',
+        'desc': 'Overlapping ocean waves with different speeds and thin seafoam crests on dark teal',
+        'default_palette': 'tide',
+        'supported_controls': ['speed', 'brightness', 'palette'],
     },
-    "drift": {
-        "kind": "firmware",
-        "group": "Ambient",
-        "desc": "Slow hue advection traveling across strip with subtle overlapping color clouds",
-        "default_palette": "dusk",
-        "supported_controls": ["speed", "brightness", "palette"],
+    'drift': {
+        'kind': 'firmware',
+        'group': 'Ambient',
+        'category': 'core',
+        'desc': 'Slow hue advection traveling across strip with subtle overlapping color clouds',
+        'default_palette': 'dusk',
+        'supported_controls': ['speed', 'brightness', 'palette'],
     },
-    "dusk": {
-        "kind": "streamed_slow",
-        "group": "Ambient",
-        "desc": "Slow non-repeating twilight progression: amber to dusty rose to mauve to deep violet",
-        "default_palette": "dusk",
-        "supported_controls": ["speed", "brightness"],
+    'breathe': {
+        'kind': 'firmware',
+        'group': 'Ambient',
+        'category': 'core',
+        'desc': 'Deliberate inhale/exhale envelope with slow relaxing color-temperature shift',
+        'default_palette': 'warm_mono',
+        'supported_controls': ['speed', 'brightness', 'palette'],
     },
-    "breathe": {
-        "kind": "firmware",
-        "group": "Ambient",
-        "desc": "Deliberate inhale/exhale envelope with slow relaxing color-temperature shift",
-        "default_palette": "warm_mono",
-        "supported_controls": ["speed", "brightness", "palette"],
+    'starfield': {
+        'kind': 'firmware',
+        'group': 'Ambient',
+        'category': 'core',
+        'desc': 'Near-black navy background with isolated stars brightening, holding, and fading independently',
+        'default_palette': 'tide',
+        'supported_controls': ['speed', 'brightness'],
     },
-    "starfield": {
-        "kind": "firmware",
-        "group": "Ambient",
-        "desc": "Near-black navy background with isolated stars brightening, holding, and fading independently",
-        "default_palette": "tide",
-        "supported_controls": ["speed", "brightness"],
+    'embers': {
+        'kind': 'firmware',
+        'group': 'Ambient',
+        'category': 'core',
+        'desc': 'Near-black background with dark-red coal beds and isolated orange embers glowing at varied rates',
+        'default_palette': 'ember',
+        'supported_controls': ['speed', 'brightness', 'particle_density'],
     },
-    "embers": {
-        "kind": "firmware",
-        "group": "Ambient",
-        "desc": "Near-black background with dark-red coal beds and isolated orange embers glowing at varied rates",
-        "default_palette": "ember",
-        "supported_controls": ["speed", "brightness", "particle_density"],
+    'fireflies': {
+        'kind': 'firmware',
+        'group': 'Ambient',
+        'category': 'core',
+        'desc': 'Loose clusters of green-gold lights with asynchronous bloom, short peak, and long fade',
+        'default_palette': 'forest',
+        'supported_controls': ['speed', 'brightness', 'particle_density'],
     },
-    "fireflies": {
-        "kind": "firmware",
-        "group": "Ambient",
-        "desc": "Loose clusters of green-gold lights with asynchronous bloom, short peak, and long fade",
-        "default_palette": "forest",
-        "supported_controls": ["speed", "brightness", "particle_density"],
+    'lava_lamp': {
+        'kind': 'streamed_slow',
+        'group': 'Ambient',
+        'category': 'core',
+        'desc': 'Viscous molten metaballs stretching, merging, and separating with dark gaps',
+        'default_palette': 'sunset',
+        'supported_controls': ['speed', 'brightness', 'palette'],
     },
-    "prism_sparks": {
-        "kind": "firmware",
-        "group": "Motion",
-        "desc": "Black background with sparse, high-saturation RGB sparks with varied lifetimes",
-        "default_palette": "dusk",
-        "supported_controls": ["speed", "brightness", "particle_density"],
+    'golden_hour': {
+        'kind': 'streamed_slow',
+        'group': 'Ambient',
+        'category': 'core',
+        'desc': 'Warm amber-to-rose horizon with slow moving bands and rare golden glints',
+        'default_palette': 'sunset',
+        'supported_controls': ['speed', 'brightness', 'palette'],
     },
-    "lava_lamp": {
-        "kind": "streamed_slow",
-        "group": "Ambient",
-        "desc": "Viscous molten metaballs stretching, merging, and separating with dark gaps",
-        "default_palette": "sunset",
-        "supported_controls": ["speed", "brightness", "palette"],
+    'sunrise': {
+        'kind': 'firmware',
+        'group': 'Ambient',
+        'category': 'core',
+        'desc': 'Progressive dawn: low warm glow, peach/gold, moving to soft daylight',
+        'supported_controls': ['speed', 'brightness'],
     },
-    "golden_hour": {
-        "kind": "streamed_slow",
-        "group": "Ambient",
-        "desc": "Warm amber-to-rose horizon with slow moving bands and rare golden glints",
-        "default_palette": "sunset",
-        "supported_controls": ["speed", "brightness", "palette"],
+    'sunset': {
+        'kind': 'firmware',
+        'group': 'Ambient',
+        'category': 'core',
+        'desc': 'Reverse daylight progression through coral, rose, plum, and deep violet',
+        'supported_controls': ['speed', 'brightness'],
     },
-    "sunrise": {
-        "kind": "firmware",
-        "group": "Ambient",
-        "desc": "Progressive dawn: low warm glow, peach/gold, moving to soft daylight",
-        "supported_controls": ["speed", "brightness"],
+    'flicker': {
+        'kind': 'firmware',
+        'group': 'Ambient',
+        'category': 'core',
+        'desc': 'Understated candle/ember with localized warm surges and uneven flame intensity',
+        'default_palette': 'fire',
+        'supported_controls': ['speed', 'brightness', 'palette'],
     },
-    "sunset": {
-        "kind": "firmware",
-        "group": "Ambient",
-        "desc": "Reverse daylight progression through coral, rose, plum, and deep violet",
-        "supported_controls": ["speed", "brightness"],
+    'campfire_hearth': {
+        'kind': 'firmware',
+        'group': 'Ambient',
+        'category': 'core',
+        'desc': 'Multi-zone warm orange, deep crimson, and flickering gold glowing independently',
+        'default_palette': 'fire',
+        'supported_controls': ['speed', 'brightness'],
     },
-    "flicker": {
-        "kind": "firmware",
-        "group": "Ambient",
-        "desc": "Understated candle/ember with localized warm surges and uneven flame intensity",
-        "default_palette": "fire",
-        "supported_controls": ["speed", "brightness", "palette"],
+    'comet': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'core',
+        'desc': 'One or two decisive bright comet heads with long, cooling chromatic tails',
+        'default_palette': 'sunset',
+        'supported_controls': ['speed', 'brightness', 'palette', 'tail_length'],
     },
-    "bioluminescent_abyss": {
-        "kind": "firmware",
-        "group": "Ambient",
-        "desc": "Deep midnight navy field with intermittent cyan and emerald organisms glowing autonomously",
-        "default_palette": "tide",
-        "supported_controls": ["speed", "brightness"],
+    'sinelon': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'core',
+        'desc': 'Single sweeping beacon with phosphorescent decay trail',
+        'default_palette': 'dusk',
+        'supported_controls': ['speed', 'brightness', 'palette', 'tail_length'],
     },
-    "campfire_hearth": {
-        "kind": "firmware",
-        "group": "Ambient",
-        "desc": "Multi-zone warm orange, deep crimson, and flickering gold glowing independently",
-        "default_palette": "fire",
-        "supported_controls": ["speed", "brightness"],
+    'cyber_chase': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'core',
+        'desc': 'Two opposing colored pulses colliding at center with bright mixed flash and passing through',
+        'default_palette': 'dusk',
+        'supported_controls': ['speed', 'brightness', 'palette', 'flash_strength'],
     },
-    "glitter_cascade": {
-        "kind": "streamed_slow",
-        "group": "Ambient",
-        "desc": "Slow drifting base palette overlaid with high-luminance micro-sparkles",
-        "default_palette": "sunset",
-        "supported_controls": ["speed", "brightness", "palette", "particle_density"],
+    'radial_ripple': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'core',
+        'desc': '2D expanding concentric rings with bright crest and fading trail from arch apex',
+        'default_palette': 'tide',
+        'supported_controls': ['speed', 'brightness', 'palette', 'wave_width'],
     },
-
-    # ── Motion Group ─────────────────────────────────────────────────────────
-    "hearth": {
-        "kind": "streamed_slow",
-        "group": "Motion",
-        "desc": "Three visibly separate fire beds with uneven flame tongues, hot tips, and dark gaps",
-        "default_palette": "fire",
-        "supported_controls": ["speed", "brightness"],
+    'aurora': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'core',
+        'desc': 'Broad, slow-moving green, teal, and violet curtains with long overlapping transitions',
+        'default_palette': 'forest',
+        'supported_controls': ['speed', 'brightness', 'wave_width'],
     },
-    "comet": {
-        "kind": "streamed_slow",
-        "group": "Motion",
-        "desc": "One or two decisive bright comet heads with long, cooling chromatic tails",
-        "default_palette": "sunset",
-        "supported_controls": ["speed", "brightness", "palette", "tail_length"],
+    'deep_ocean': {
+        'kind': 'firmware',
+        'group': 'Motion',
+        'category': 'core',
+        'desc': 'Deep navy with subtle teal pressure waves and cyan bioluminescent highlights',
+        'default_palette': 'tide',
+        'supported_controls': ['speed', 'brightness'],
     },
-    "meteor_shower": {
-        "kind": "streamed_slow",
-        "group": "Motion",
-        "desc": "Narrow one-way streaks with cold-white cores and long blue tails at irregular intervals",
-        "default_palette": "tide",
-        "supported_controls": ["speed", "brightness", "tail_length"],
+    'raindrop': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'core',
+        'desc': 'Dark background punctuated by isolated drops that travel and fade at varied intervals',
+        'default_palette': 'tide',
+        'supported_controls': ['speed', 'brightness', 'particle_density'],
     },
-    "cyber_chase": {
-        "kind": "streamed_slow",
-        "group": "Motion",
-        "desc": "Two opposing colored pulses colliding at center with bright mixed flash and passing through",
-        "default_palette": "dusk",
-        "supported_controls": ["speed", "brightness", "palette", "flash_strength"],
+    'lightning': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'core',
+        'desc': 'Mostly dark with sharp white-blue flashes, irregular pauses, and uneven decays',
+        'default_palette': 'tide',
+        'supported_controls': ['speed', 'brightness', 'flash_strength'],
     },
-    "juggle": {
-        "kind": "streamed_slow",
-        "group": "Motion",
-        "desc": "3 to 5 distinct glowing orbs with different speeds, spacing, and trajectories",
-        "default_palette": "sunset",
-        "supported_controls": ["speed", "brightness", "palette"],
+    'rainbow': {
+        'kind': 'streamed_slow',
+        'group': 'Seasonal & Novelty',
+        'category': 'core',
+        'desc': 'Continuous seamless circulating rainbow gradient without abrupt jumps',
+        'default_palette': 'sunset',
+        'supported_controls': ['speed', 'brightness'],
     },
-    "sinelon": {
-        "kind": "streamed_slow",
-        "group": "Motion",
-        "desc": "Single sweeping beacon with phosphorescent decay trail",
-        "default_palette": "dusk",
-        "supported_controls": ["speed", "brightness", "palette", "tail_length"],
-    },
-    "confetti": {
-        "kind": "firmware",
-        "group": "Motion",
-        "desc": "Short-lived saturated particles in sparse bursts with quiet dark gaps",
-        "default_palette": "sunset",
-        "supported_controls": ["speed", "brightness", "palette", "particle_density"],
-    },
-    "radial_ripple": {
-        "kind": "streamed_slow",
-        "group": "Motion",
-        "desc": "2D expanding concentric rings with bright crest and fading trail from headboard arch apex",
-        "default_palette": "tide",
-        "supported_controls": ["speed", "brightness", "palette", "wave_width"],
-    },
-    "spiral_vortex": {
-        "kind": "streamed_slow",
-        "group": "Motion",
-        "desc": "2D polar angle vortex spinning smoothly with layered chromatic bands",
-        "default_palette": "sunset",
-        "supported_controls": ["speed", "brightness", "palette"],
-    },
-    "gravity_slosh": {
-        "kind": "streamed_slow",
-        "group": "Motion",
-        "desc": "2D U-tube gravity slosh falling from arch apex and rebounding at bottom corners",
-        "default_palette": "tide",
-        "supported_controls": ["speed", "brightness", "palette", "wave_width"],
-    },
-    "lissajous_orbit": {
-        "kind": "streamed_slow",
-        "group": "Motion",
-        "desc": "Invisible 2D Lissajous orbit with soft Euclidean proximity glow",
-        "default_palette": "sunset",
-        "supported_controls": ["speed", "brightness", "palette"],
-    },
-    "planar_wind": {
-        "kind": "streamed_slow",
-        "group": "Motion",
-        "desc": "45-degree planar wavefront slicing diagonally across 2D physical room space",
-        "default_palette": "forest",
-        "supported_controls": ["speed", "brightness", "palette", "wave_width"],
-    },
-    "radar_sweep": {
-        "kind": "streamed_slow",
-        "group": "Motion",
-        "desc": "Focused angular beam rotating around room center with exponential decay trail",
-        "default_palette": "forest",
-        "supported_controls": ["speed", "brightness", "palette", "tail_length"],
-    },
-    "bpm_resonator": {
-        "kind": "streamed_slow",
-        "group": "Motion",
-        "desc": "FastLED beatsin8 multi-harmonic sine waves mixing additively in OKLab space",
-        "default_palette": "dusk",
-        "supported_controls": ["speed", "brightness", "palette", "wave_width"],
-    },
-    "dual_wipe": {
-        "kind": "firmware",
-        "group": "Motion",
-        "desc": "Dual-head bi-directional wipe meeting at center and reversing",
-        "default_palette": "dusk",
-        "supported_controls": ["speed", "brightness", "palette"],
-    },
-    "vaporwave_neon": {
-        "kind": "streamed_slow",
-        "group": "Motion",
-        "desc": "Thick magenta, cyan, and violet bands with deep gaps and slow scanline",
-        "default_palette": "dusk",
-        "supported_controls": ["speed", "brightness"],
-    },
-    "sonar_sweep": {
-        "kind": "streamed_slow",
-        "group": "Motion",
-        "desc": "Single sweep head, exponential fading trail, and one faint acoustic echo",
-        "default_palette": "forest",
-        "supported_controls": ["speed", "brightness", "palette", "tail_length"],
-    },
-    "neon_heartbeat": {
-        "kind": "streamed_slow",
-        "group": "Motion",
-        "desc": "Anatomical lub-dub-pause rhythm with strong primary pulse and smaller secondary bloom",
-        "default_palette": "sunset",
-        "supported_controls": ["speed", "brightness", "palette", "flash_strength"],
-    },
-    "lantern_sweep": {
-        "kind": "streamed_slow",
-        "group": "Motion",
-        "desc": "Warm moving core with wide golden halo and gentle lingering tail, eased at ends",
-        "default_palette": "warm_mono",
-        "supported_controls": ["speed", "brightness", "tail_length"],
-    },
-    "aurora": {
-        "kind": "streamed_slow",
-        "group": "Motion",
-        "desc": "Broad, slow-moving green, teal, and violet curtains with long overlapping transitions",
-        "default_palette": "forest",
-        "supported_controls": ["speed", "brightness", "wave_width"],
-    },
-    "deep_ocean": {
-        "kind": "firmware",
-        "group": "Motion",
-        "desc": "Deep navy with subtle teal pressure waves and cyan bioluminescent highlights",
-        "default_palette": "tide",
-        "supported_controls": ["speed", "brightness"],
-    },
-    "ocean": {
-        "kind": "firmware",
-        "group": "Motion",
-        "desc": "Native aqua and deep ocean swells running autonomously on firmware",
-        "supported_controls": ["speed", "brightness"],
-    },
-    "raindrop": {
-        "kind": "streamed_slow",
-        "group": "Motion",
-        "desc": "Dark background punctuated by isolated drops that travel and fade at varied intervals",
-        "default_palette": "tide",
-        "supported_controls": ["speed", "brightness", "particle_density"],
-    },
-    "lightning": {
-        "kind": "streamed_slow",
-        "group": "Motion",
-        "desc": "Mostly dark with sharp white-blue flashes, irregular pauses, and uneven decays",
-        "default_palette": "tide",
-        "supported_controls": ["speed", "brightness", "flash_strength"],
-    },
-    "coordinated_lightning": {
-        "kind": "streamed_slow",
-        "group": "Motion",
-        "desc": "Coordinated storm: sharp lightning strikes across segments with amber thunder roll",
-        "default_palette": "tide",
-        "supported_controls": ["speed", "brightness", "flash_strength"],
+    'prism_sparks': {
+        'kind': 'firmware',
+        'group': 'Motion',
+        'category': 'core',
+        'desc': 'Black background with sparse, high-saturation RGB sparks with varied lifetimes',
+        'default_palette': 'dusk',
+        'supported_controls': ['speed', 'brightness', 'particle_density'],
     },
 
-    # ── Seasonal & Novelty (Collapsed) ───────────────────────────────────────
-    "police": {
-        "kind": "streamed_slow",
-        "group": "Seasonal & Novelty",
-        "desc": "Crisp red and blue alternating sections with tiny dark gaps between flashes",
-        "default_palette": "sunset",
-        "supported_controls": ["speed", "brightness"],
+    # ── 2. Advanced Effects (10) ─────────────────────────────────────────────
+    'meteor_shower': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'advanced',
+        'desc': 'Narrow one-way streaks with cold-white cores and long blue tails at irregular intervals',
+        'default_palette': 'tide',
+        'supported_controls': ['speed', 'brightness', 'tail_length'],
     },
-    "candy_cane": {
-        "kind": "streamed_slow",
-        "group": "Seasonal & Novelty",
-        "desc": "Wide alternating red and white bands visibly moving along strip with clean edges",
-        "default_palette": "sunset",
-        "supported_controls": ["speed", "brightness"],
+    'juggle': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'advanced',
+        'desc': '3 to 5 distinct glowing orbs with different speeds, spacing, and trajectories',
+        'default_palette': 'sunset',
+        'supported_controls': ['speed', 'brightness', 'palette'],
     },
-    "haunted_mansion": {
-        "kind": "streamed_slow",
-        "group": "Seasonal & Novelty",
-        "desc": "Near-black base with rare emerald glows, eerie violet pools, and sudden flashes",
-        "default_palette": "forest",
-        "supported_controls": ["speed", "brightness"],
+    'spiral_vortex': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'advanced',
+        'desc': '2D polar angle vortex spinning smoothly with layered chromatic bands',
+        'default_palette': 'sunset',
+        'supported_controls': ['speed', 'brightness', 'palette'],
     },
-    "rainbow": {
-        "kind": "streamed_slow",
-        "group": "Seasonal & Novelty",
-        "desc": "Continuous seamless circulating rainbow gradient without abrupt jumps",
-        "default_palette": "sunset",
-        "supported_controls": ["speed", "brightness"],
+    'gravity_slosh': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'advanced',
+        'desc': '2D U-tube gravity slosh falling from arch apex and rebounding at bottom corners',
+        'default_palette': 'tide',
+        'supported_controls': ['speed', 'brightness', 'palette', 'wave_width'],
     },
-    "infinite_prism": {
-        "kind": "firmware",
-        "group": "Seasonal & Novelty",
-        "desc": "8-stage seamless cyclic gradient shifting across the color spectrum",
-        "default_palette": "sunset",
-        "supported_controls": ["speed", "brightness"],
+    'lissajous_orbit': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'advanced',
+        'desc': 'Invisible 2D Lissajous orbit with soft Euclidean proximity glow',
+        'default_palette': 'sunset',
+        'supported_controls': ['speed', 'brightness', 'palette'],
+    },
+    'planar_wind': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'advanced',
+        'desc': '45-degree planar wavefront slicing diagonally across 2D physical room space',
+        'default_palette': 'forest',
+        'supported_controls': ['speed', 'brightness', 'palette', 'wave_width'],
+    },
+    'radar_sweep': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'advanced',
+        'desc': 'Focused angular beam rotating around room center with exponential decay trail',
+        'default_palette': 'forest',
+        'supported_controls': ['speed', 'brightness', 'palette', 'tail_length'],
+    },
+    'vaporwave_neon': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'advanced',
+        'desc': 'Thick magenta, cyan, and violet bands with deep gaps and slow scanline',
+        'default_palette': 'dusk',
+        'supported_controls': ['speed', 'brightness'],
+    },
+    'neon_heartbeat': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'advanced',
+        'desc': 'Anatomical lub-dub-pause rhythm with strong primary pulse and smaller secondary bloom',
+        'default_palette': 'sunset',
+        'supported_controls': ['speed', 'brightness', 'palette', 'flash_strength'],
+    },
+    'lantern_sweep': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'advanced',
+        'desc': 'Warm moving core with wide golden halo and gentle lingering tail, eased at ends',
+        'default_palette': 'warm_mono',
+        'supported_controls': ['speed', 'brightness', 'tail_length'],
+    },
+
+    # ── 3. Seasonal & Novelty Effects (3) ────────────────────────────────────
+    'police': {
+        'kind': 'streamed_slow',
+        'group': 'Seasonal & Novelty',
+        'category': 'seasonal',
+        'desc': 'Crisp red and blue alternating sections with tiny dark gaps between flashes',
+        'default_palette': 'sunset',
+        'supported_controls': ['speed', 'brightness'],
+    },
+    'candy_cane': {
+        'kind': 'streamed_slow',
+        'group': 'Seasonal & Novelty',
+        'category': 'seasonal',
+        'desc': 'Wide alternating red and white bands visibly moving along strip with clean edges',
+        'default_palette': 'sunset',
+        'supported_controls': ['speed', 'brightness'],
+    },
+    'haunted_mansion': {
+        'kind': 'streamed_slow',
+        'group': 'Seasonal & Novelty',
+        'category': 'seasonal',
+        'desc': 'Near-black base with rare emerald glows, eerie violet pools, and sudden flashes',
+        'default_palette': 'forest',
+        'supported_controls': ['speed', 'brightness'],
+    },
+
+    # ── 4. Merged Entries / Aliases (10) ─────────────────────────────────────
+    'dusk': {
+        'kind': 'streamed_slow',
+        'group': 'Ambient',
+        'category': 'alias',
+        'desc': 'Merged into golden_hour: slow twilight progression from amber to deep violet',
+        'default_palette': 'dusk',
+        'alias_of': 'golden_hour',
+        'default_params': {'palette': 'dusk'},
+        'deprecated': True,
+        'supported_controls': ['speed', 'brightness'],
+    },
+    'ocean': {
+        'kind': 'firmware',
+        'group': 'Motion',
+        'category': 'alias',
+        'desc': 'Merged into tide: native ocean swells and traveling crest waves',
+        'default_palette': 'tide',
+        'alias_of': 'tide',
+        'default_params': {'palette': 'tide'},
+        'deprecated': True,
+        'supported_controls': ['speed', 'brightness'],
+    },
+    'bioluminescent_abyss': {
+        'kind': 'firmware',
+        'group': 'Ambient',
+        'category': 'alias',
+        'desc': 'Merged into deep_ocean: midnight ocean trench with emerald/cyan glowing blooms',
+        'default_palette': 'tide',
+        'alias_of': 'deep_ocean',
+        'default_params': {'palette': 'tide'},
+        'deprecated': True,
+        'supported_controls': ['speed', 'brightness'],
+    },
+    'hearth': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'alias',
+        'desc': 'Merged into campfire_hearth: dynamic warm coal bed and flickering fire tongues',
+        'default_palette': 'fire',
+        'alias_of': 'campfire_hearth',
+        'default_params': {'palette': 'fire'},
+        'deprecated': True,
+        'supported_controls': ['speed', 'brightness'],
+    },
+    'glitter_cascade': {
+        'kind': 'streamed_slow',
+        'group': 'Ambient',
+        'category': 'alias',
+        'desc': 'Merged into starfield: slow drifting base palette with dense micro-sparkles',
+        'default_palette': 'sunset',
+        'alias_of': 'starfield',
+        'default_params': {'particle_density': 1.8},
+        'deprecated': True,
+        'supported_controls': ['speed', 'brightness', 'palette', 'particle_density'],
+    },
+    'confetti': {
+        'kind': 'firmware',
+        'group': 'Motion',
+        'category': 'alias',
+        'desc': 'Merged into prism_sparks: short-lived saturated festive particle bursts',
+        'default_palette': 'sunset',
+        'alias_of': 'prism_sparks',
+        'default_params': {'particle_density': 2.0},
+        'deprecated': True,
+        'supported_controls': ['speed', 'brightness', 'palette', 'particle_density'],
+    },
+    'dual_wipe': {
+        'kind': 'firmware',
+        'group': 'Motion',
+        'category': 'alias',
+        'desc': 'Merged into cyber_chase: dual-head bi-directional wipe meeting at center',
+        'default_palette': 'dusk',
+        'alias_of': 'cyber_chase',
+        'default_params': {'flash_strength': 1.5},
+        'deprecated': True,
+        'supported_controls': ['speed', 'brightness', 'palette'],
+    },
+    'sonar_sweep': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'alias',
+        'desc': 'Merged into radar_sweep: sweep head with exponential echo decay trail',
+        'default_palette': 'forest',
+        'alias_of': 'radar_sweep',
+        'default_params': {'tail_length': 2.0},
+        'deprecated': True,
+        'supported_controls': ['speed', 'brightness', 'palette', 'tail_length'],
+    },
+    'coordinated_lightning': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'alias',
+        'desc': 'Merged into lightning: multi-stage coordinated lightning storm with thunder roll',
+        'default_palette': 'tide',
+        'alias_of': 'lightning',
+        'default_params': {'flash_strength': 2.0},
+        'deprecated': True,
+        'supported_controls': ['speed', 'brightness', 'flash_strength'],
+    },
+    'infinite_prism': {
+        'kind': 'firmware',
+        'group': 'Seasonal & Novelty',
+        'category': 'alias',
+        'desc': 'Merged into rainbow: multi-stage seamless spectral gradient cycle',
+        'default_palette': 'sunset',
+        'alias_of': 'rainbow',
+        'default_params': {'speed': 1.5},
+        'deprecated': True,
+        'supported_controls': ['speed', 'brightness'],
+    },
+
+    # ── 5. Moved to Music-Reactive (1) ───────────────────────────────────────
+    'bpm_resonator': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'reactive',
+        'desc': 'FastLED beatsin8 multi-harmonic synthesis (moved to music-reactive styles)',
+        'default_palette': 'dusk',
+        'alias_of': 'radial_ripple',
+        'supported_controls': ['speed', 'brightness', 'palette', 'wave_width'],
     },
 }
+
+CORE_EFFECTS: List[str] = [k for k, v in EFFECT_CATALOG.items() if v.get('category') == 'core']
+ADVANCED_EFFECTS: List[str] = [k for k, v in EFFECT_CATALOG.items() if v.get('category') == 'advanced']
+SEASONAL_EFFECTS: List[str] = [k for k, v in EFFECT_CATALOG.items() if v.get('category') == 'seasonal']
+ACTIVE_EFFECTS: List[str] = CORE_EFFECTS + ADVANCED_EFFECTS + SEASONAL_EFFECTS
+
 
 CUSTOM_EFFECTS = list(EFFECT_CATALOG.keys())
 
@@ -517,17 +605,32 @@ class L930EffectsEngine:
             self._ctrl.clear_frames()
 
         self._last_error = None
+
+        meta = EFFECT_CATALOG[key]
+        if "alias_of" in meta:
+            alias_meta = meta
+            key = meta["alias_of"]
+            meta = EFFECT_CATALOG.get(key, meta)
+            for p_name, p_val in alias_meta.get("default_params", {}).items():
+                if p_name == "palette" and palette_name is None:
+                    palette_name = p_val
+                elif p_name == "speed" and speed is None:
+                    speed = p_val
+                elif p_name == "brightness" and brightness is None:
+                    brightness = p_val
+                elif hasattr(self, f"_{p_name}"):
+                    setattr(self, f"_{p_name}", p_val)
+
         if palette_name and palette_name.strip().lower() in PALETTES:
             self._palette_name = palette_name.strip().lower()
-        elif "default_palette" in EFFECT_CATALOG[key]:
-            self._palette_name = EFFECT_CATALOG[key]["default_palette"]
+        elif "default_palette" in meta:
+            self._palette_name = meta["default_palette"]
 
         if speed is not None:
             self._speed = max(0.2, min(3.0, float(speed)))
         if brightness is not None:
             self._brightness = max(1, min(100, int(brightness)))
 
-        meta = EFFECT_CATALOG[key]
         kind = meta["kind"]
         self._active_effect_name = key
         self._active_kind = kind
@@ -1065,6 +1168,9 @@ class L930EffectsEngine:
             return build_firmware_sequence_effect(
                 name="InfPrism", sequence=seq, spread=8, direction=1, transition=trans, brightness=b
             )
+
+        if name in EFFECT_CATALOG and "alias_of" in EFFECT_CATALOG[name]:
+            return self._build_effect_payload(EFFECT_CATALOG[name]["alias_of"])
 
         return None
 

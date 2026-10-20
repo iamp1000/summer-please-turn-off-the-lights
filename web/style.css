@@ -714,6 +714,44 @@ body {
 .effects-empty { margin: 12px 2px 4px; color: var(--text-muted); font-size: 12px; }
 .effects-empty[hidden] { display: none; }
 
+/* ── EFFECTS FILTER TABS ──────────────────────────────────────────────── */
+.effects-filter-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 10px 0 12px;
+  background: rgba(0, 0, 0, 0.28);
+  padding: 4px;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+.effect-tab-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-family: var(--font-main);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
+  text-align: center;
+}
+
+.effect-tab-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.effect-tab-btn.active {
+  background: var(--theme-accent);
+  color: #ffffff;
+  box-shadow: 0 0 12px var(--theme-accent-glow);
+}
+
 /* ── DYNAMIC EFFECTS & PRESETS GRIDS ─────────────────────────────────────── */
 .effects-grid, .presets-grid {
   display: grid;

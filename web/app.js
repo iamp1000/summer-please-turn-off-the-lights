@@ -9,6 +9,7 @@ let state = {
 };
 
 let currentDevId = "strip1";
+let currentEffectCategory = "core";
 let ws = null;
 let reconnectTimer = null;
 
@@ -1189,45 +1190,52 @@ function renderUI() {
     </div>
   `;
 
+  const filterTabsEl = document.getElementById("effectsFilterTabs");
+  if (filterTabsEl) {
+    filterTabsEl.style.display = isL930 ? "flex" : "none";
+    filterTabsEl.querySelectorAll(".effect-tab-btn").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.category === currentEffectCategory);
+    });
+  }
+
   if (isL930 && state.effects_catalog) {
     const catalog = state.effects_catalog;
-    const groups = { "Ambient": [], "Motion": [], "Seasonal & Novelty": [] };
-    Object.keys(catalog).forEach(k => {
-      const g = catalog[k].group || "Motion";
-      if (groups[g]) groups[g].push(k);
-    });
+    let effectKeys = Object.keys(catalog);
 
-    Object.keys(groups).forEach(gName => {
-      const items = groups[gName];
-      if (!items.length) return;
-      const isNovelty = (gName === "Seasonal & Novelty");
-      const visibleItems = items.filter(eff => {
+    if (effectSearchQuery) {
+      effectKeys = effectKeys.filter(eff => {
         const meta = catalog[eff] || {};
-        return `${eff} ${formatName(eff)} ${meta.desc || ""} ${meta.group || ""}`.toLowerCase().includes(effectSearchQuery);
+        return `${eff} ${formatName(eff)} ${meta.desc || ""} ${meta.group || ""} ${meta.alias_of || ""}`.toLowerCase().includes(effectSearchQuery);
       });
-      if (!visibleItems.length) return;
+    } else {
+      if (currentEffectCategory === "core") {
+        effectKeys = effectKeys.filter(k => catalog[k]?.category === "core");
+      } else if (currentEffectCategory === "advanced") {
+        effectKeys = effectKeys.filter(k => catalog[k]?.category === "advanced");
+      } else if (currentEffectCategory === "seasonal") {
+        effectKeys = effectKeys.filter(k => catalog[k]?.category === "seasonal");
+      } else {
+        effectKeys = effectKeys.filter(k => catalog[k]?.category !== "alias" && catalog[k]?.category !== "reactive");
+      }
+    }
+
+    visibleEffectCount = effectKeys.length;
+    effectKeys.forEach(eff => {
+      const isAct = (activeDev.active_label === eff) ? "active" : "";
+      const color = EFFECT_COLORS[eff] || "#7c6ef5";
+      const meta = catalog[eff] || {};
+      const isAlias = Boolean(meta.alias_of);
+      const kindLabel = isAlias
+        ? `ALIAS → ${formatName(meta.alias_of)}`
+        : (meta.kind === "firmware" ? "ON-DEVICE" : "PROCEDURAL");
       fxHtml += `
-        <div style="grid-column: 1 / -1; margin-top: 6px; font-size: 10px; font-weight: 800; color: #a1a1aa; text-transform: uppercase; cursor: pointer;" onclick="toggleGroup('${gName}')">
-          ${isNovelty && !effectSearchQuery ? '▶ ' + gName + ' (COLLAPSED)' : '▼ ' + gName}
-        </div>
+        <button class="item-btn effect-item ${isAct}"
+                title="${meta.desc || formatName(eff)} · ${kindLabel}"
+                onclick="applyEffect('${eff}')">
+          <span class="item-dot" style="background: ${color};"></span>
+          <span class="effect-item-copy"><span>${formatName(eff)}</span><small>${kindLabel}</small></span>
+        </button>
       `;
-      visibleEffectCount += visibleItems.length;
-      visibleItems.forEach(eff => {
-        const isAct = (activeDev.active_label === eff) ? "active" : "";
-        const color = EFFECT_COLORS[eff] || "#7c6ef5";
-        const meta = catalog[eff] || {};
-        const kindLabel = meta.kind === "firmware" ? "ON-DEVICE" : "PROCEDURAL";
-        const groupClass = gName.replace(/[^a-zA-Z0-9_-]/g, "");
-        fxHtml += `
-          <button class="item-btn effect-item ${isAct} grp-${groupClass}"
-                  style="${isNovelty && !effectSearchQuery ? 'display: none;' : ''}"
-                  title="${meta.desc || formatName(eff)} · ${kindLabel}"
-                  onclick="applyEffect('${eff}')">
-            <span class="item-dot" style="background: ${color};"></span>
-            <span class="effect-item-copy"><span>${formatName(eff)}</span><small>${kindLabel}</small></span>
-          </button>
-        `;
-      });
     });
   } else {
     const visibleItems = effectsList.filter(eff =>
@@ -1279,6 +1287,11 @@ function applyMode(name) {
   document.body.setAttribute("data-theme", theme);
   bgEngine.setTheme(theme);
   apiPost(`/api/device/${currentDevId}/mode`, { mode: name });
+}
+
+function setEffectCategory(cat) {
+  currentEffectCategory = cat;
+  renderUI();
 }
 
 function applyEffect(name) {

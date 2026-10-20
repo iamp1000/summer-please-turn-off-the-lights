@@ -516,3 +516,117 @@ def test_firmware_deployment_failure_is_returned_to_caller():
     assert "Controller rejected firmware effect 'drift'" in engine._last_error
     assert engine._active_effect_name is None
     assert engine._active_kind is None
+
+
+def test_effect_catalog_curation_structure():
+    """Verify curated breakdown: 22 Core, 10 Advanced, 3 Seasonal, 10 Aliases, 1 Reactive."""
+    from src.effects_l930 import CORE_EFFECTS, ADVANCED_EFFECTS, SEASONAL_EFFECTS, ACTIVE_EFFECTS, EFFECT_CATALOG
+
+    assert len(EFFECT_CATALOG) == 46, f"Expected 46 total catalog entries, got {len(EFFECT_CATALOG)}"
+    assert len(CORE_EFFECTS) == 22, f"Expected 22 core effects, got {len(CORE_EFFECTS)}"
+    assert len(ADVANCED_EFFECTS) == 10, f"Expected 10 advanced effects, got {len(ADVANCED_EFFECTS)}"
+    assert len(SEASONAL_EFFECTS) == 3, f"Expected 3 seasonal effects, got {len(SEASONAL_EFFECTS)}"
+    assert len(ACTIVE_EFFECTS) == 35, f"Expected 35 active effects, got {len(ACTIVE_EFFECTS)}"
+
+    expected_advanced = {
+        "meteor_shower", "juggle", "spiral_vortex", "gravity_slosh", "lissajous_orbit",
+        "planar_wind", "radar_sweep", "vaporwave_neon", "neon_heartbeat", "lantern_sweep"
+    }
+    assert set(ADVANCED_EFFECTS) == expected_advanced
+
+    expected_seasonal = {"police", "candy_cane", "haunted_mansion"}
+    assert set(SEASONAL_EFFECTS) == expected_seasonal
+
+    aliases = {k: v for k, v in EFFECT_CATALOG.items() if v.get("category") == "alias"}
+    assert len(aliases) == 10
+    for alias_name, meta in aliases.items():
+        assert meta.get("deprecated") is True
+        target = meta.get("alias_of")
+        assert target in EFFECT_CATALOG, f"Alias {alias_name} points to invalid target {target}"
+        assert EFFECT_CATALOG[target].get("category") in ("core", "advanced"), f"Alias target {target} should be core or advanced"
+
+    assert EFFECT_CATALOG["bpm_resonator"]["category"] == "reactive"
+
+
+def test_transparent_alias_resolution_in_engine():
+    """Verify engine resolves aliases and automatically injects default parameter presets."""
+    import asyncio
+    from src.effects_l930 import L930EffectsEngine
+
+    class FakeController:
+        async def set_native_effect(self, effect, priority=0):
+            return None
+
+    class FakeLoopRunner:
+        def run(self, awaitable):
+            return asyncio.run(awaitable)
+
+    engine = L930EffectsEngine(FakeController(), FakeLoopRunner(), app_state={})
+
+    # 1. dusk -> golden_hour with dusk palette
+    assert engine.start("dusk") is True
+    assert engine._active_effect_name == "golden_hour"
+    assert engine._palette_name == "dusk"
+    assert engine._active_kind == "streamed_slow"
+    engine.stop()
+
+    # 2. ocean -> tide
+    assert engine.start("ocean") is True
+    assert engine._active_effect_name == "tide"
+    assert engine._active_kind == "firmware"
+    engine.stop()
+
+    # 3. confetti -> prism_sparks with particle_density 2.0
+    assert engine.start("confetti") is True
+    assert engine._active_effect_name == "prism_sparks"
+    assert engine._particle_density == 2.0
+    assert engine._active_kind == "firmware"
+    engine.stop()
+
+    # 4. hearth -> campfire_hearth with fire palette
+    assert engine.start("hearth") is True
+    assert engine._active_effect_name == "campfire_hearth"
+    assert engine._palette_name == "fire"
+    engine.stop()
+
+    # 5. sonar_sweep -> radar_sweep with tail_length 2.0
+    assert engine.start("sonar_sweep") is True
+    assert engine._active_effect_name == "radar_sweep"
+    assert engine._tail_length == 2.0
+    engine.stop()
+
+    # 6. coordinated_lightning -> lightning with flash_strength 2.0
+    assert engine.start("coordinated_lightning") is True
+    assert engine._active_effect_name == "lightning"
+    assert engine._flash_strength == 2.0
+    engine.stop()
+
+    # 7. infinite_prism -> rainbow with speed 1.5
+    assert engine.start("infinite_prism") is True
+    assert engine._active_effect_name == "rainbow"
+    assert engine._speed == 1.5
+    engine.stop()
+
+
+def test_hub_full_state_includes_curated_categories(monkeypatch):
+    """Verify hub full state exposes curated lists."""
+    from src.hub import LightHub
+    from src.event_loop import BackgroundLoop
+
+    monkeypatch.setenv("TAPO_EMAIL", "test@domain.com")
+    monkeypatch.setenv("TAPO_PASSWORD", "secret123")
+    loop_runner = BackgroundLoop()
+    loop_runner.start()
+    try:
+        hub = LightHub({}, loop_runner)
+        st = hub.get_full_state()
+        assert "core_effects" in st
+        assert "advanced_effects" in st
+        assert "seasonal_effects" in st
+        assert "active_effects" in st
+        assert len(st["core_effects"]) == 22
+        assert len(st["advanced_effects"]) == 10
+        assert len(st["seasonal_effects"]) == 3
+        assert len(st["active_effects"]) == 35
+    finally:
+        loop_runner.stop()

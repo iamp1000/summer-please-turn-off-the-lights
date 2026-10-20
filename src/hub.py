@@ -12,7 +12,7 @@ from src.device_l930 import L930Controller
 from src.event_loop import BackgroundLoop
 from src.modes import ModeManager
 from src.effects import AnimationEngine
-from src.effects_l930 import L930EffectsEngine, EFFECT_CATALOG
+from src.effects_l930 import L930EffectsEngine, EFFECT_CATALOG, CORE_EFFECTS, ADVANCED_EFFECTS, SEASONAL_EFFECTS, ACTIVE_EFFECTS
 from src.music_reactive import MusicReactive, list_available_audio_devices
 from src.music_reactive_l930 import MusicReactiveL930
 from src.screen_sync import ScreenSync
@@ -175,6 +175,10 @@ class LightHub:
             ],
             "effects_l930": list(EFFECT_CATALOG.keys()),
             "effects_catalog": EFFECT_CATALOG,
+            "core_effects": CORE_EFFECTS,
+            "advanced_effects": ADVANCED_EFFECTS,
+            "seasonal_effects": SEASONAL_EFFECTS,
+            "active_effects": ACTIVE_EFFECTS,
             "palettes": ["auto", "sunset", "forest", "fire", "pastel", "tide", "dusk", "ember", "warm_mono"],
             "visualizer_styles": [
                 {"id": "party", "name": "🎉 Party"},
