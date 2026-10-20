@@ -168,3 +168,58 @@ def test_subband_absolute_calibration():
 
     assert state.mid > 0.30, f"Expected strong mid signal for 500Hz tone, got {state.mid}"
     assert state.bass < 0.25, f"Expected lower bass signal for 500Hz tone, got {state.bass}"
+
+
+def test_music_state_fields_contracts_and_transient_dynamics():
+    """
+    Explicitly tests MusicState field contracts asserting:
+    - raw_flux, bass, mid, transient, and onset are populated and bounded.
+    - Zero/silence gating completely zeroes onset, transient, and energy.
+    - Sharp percussive bursts elevate raw_flux, transient, and onset.
+    - Sustained tones preserve energy while onset decays to prevent continuous false triggering.
+    """
+    analyzer = MusicAnalyzer(samplerate=44100, blocksize=512)
+
+    # 1. Digital silence
+    silence = np.zeros(512, dtype=np.float32)
+    state = None
+    for i in range(25):
+        state = analyzer.process_samples(silence, now=i * (512 / 44100.0))
+
+    assert state is not None
+    assert state.silent is True
+    assert state.energy == 0.0
+    assert state.onset == 0.0
+    assert state.transient == 0.0
+    assert state.raw_flux == 0.0
+    assert 0.0 <= state.bass <= 1.0
+    assert 0.0 <= state.mid <= 1.0
+
+    # 2. Sudden sharp transient attack (percussive burst)
+    rng = np.random.default_rng(42)
+    burst = (rng.uniform(-0.8, 0.8, 512)).astype(np.float32)
+    state_burst = analyzer.process_samples(burst, now=25 * (512 / 44100.0))
+
+    assert not state_burst.silent
+    assert state_burst.raw_flux > 0.0
+    assert state_burst.transient > 0.15
+    assert state_burst.onset > 0.15
+
+    # 3. Sustained tone adaptation (onset decays, energy stays active)
+    for i in range(26, 65):
+        t_block = (i * 512 + np.arange(512)) / 44100.0
+        tone = (0.50 * np.sin(2.0 * np.pi * 440.0 * t_block)).astype(np.float32)
+        state_sustained = analyzer.process_samples(tone, now=i * (512 / 44100.0))
+
+    assert state_sustained.energy > 0.30, "Sustained tone must maintain calibrated energy"
+    assert state_sustained.onset < 0.20, "Normalized onset must decay during sustained steady tones"
+
+    # 4. Sudden high-frequency snare/hat transient over sustained background
+    spike = tone.copy()
+    spike += (rng.uniform(-0.9, 0.9, 512)).astype(np.float32)
+    state_spike = analyzer.process_samples(spike, now=65 * (512 / 44100.0))
+
+    assert state_spike.raw_flux > state_sustained.raw_flux
+    assert state_spike.onset > 0.30, "Transient spike on top of sustained tone must re-trigger onset"
+    assert state_spike.transient > state_sustained.transient
+
