@@ -12,7 +12,9 @@
 
 ### *Make your lights move with your music. Keep control local.*
 
-A Windows desktop app and audio-reactive lighting engine for TP-Link Tapo smart light strips. Sync your lighting to music, movies, and ambient effects—directly over your local area network without cloud round-trips for real-time updates.
+A Windows desktop app and audio-reactive lighting engine for TP-Link Tapo smart light strips. Sync your lighting to music, movies, and ambient effects over your local network.
+
+Summer has been assigned lighting duty. Rick built the lab, Morty is not allowed near the power strip, and this project is the attempt to make the chaos reproducible.
 
 [Features](#-feature-highlights) • [Compatibility](#-compatibility) • [Quick Start](#-quick-start) • [Showcase](#-modes-showcase) • [Troubleshooting](#-troubleshooting) • [Architecture](#-architecture--performance) • [Effects Catalog](#-complete-effects-catalog) • [Contributing](#-contributing--development)
 
@@ -54,7 +56,7 @@ Ensure you have **Git** and **Python 3.13** installed on Windows.
 
 ### 2. Clone the Repository
 ```powershell
-git clone https://github.com/iamp1000/summer-please-turn-off-the-lights.git
+git clone https://github.com/iamp1000/summer-turn-the-light-off-.git
 cd summer-please-turn-off-the-lights
 ```
 
@@ -216,7 +218,7 @@ flowchart TD
 
 ### Measured Diagnostics Telemetry
 
-Performance benchmarks measured across local Wi-Fi test sessions:
+Performance benchmarks below come from local Wi-Fi test sessions. Treat them as diagnostics from the tested setup, not guarantees across every router, Windows build, or Tapo firmware version:
 
 | Metric | Tapo L900 (Single-Zone) | Tapo L930 (50-Zone Addressable) |
 | :--- | :--- | :--- |
