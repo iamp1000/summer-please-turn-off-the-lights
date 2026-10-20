@@ -78,3 +78,41 @@ async def test_frame_sender_clear_on_power_off():
 
     # Nothing should be transmitted because clear() purged the single-slot buffer
     assert {"id": 99} not in transmitted_frames
+
+
+@pytest.mark.asyncio
+async def test_frame_sender_rate_cap_holds_with_continuous_pending_frames():
+    """A full pending slot must never bypass the configured request-start rate cap."""
+    diag = DeviceDiagnostics(dev_id="test_strip")
+    send_times = []
+
+    async def fake_transmit(frame):
+        send_times.append(time.perf_counter())
+        await asyncio.sleep(0.010)
+        return True
+
+    sender = LatestFrameSender(
+        dev_id="test_strip",
+        transmit_fn=fake_transmit,
+        diagnostics=diag,
+        loop=asyncio.get_running_loop(),
+        max_updates_per_s=2.0,
+        min_zone_delta=0,
+    )
+    sender.start()
+
+    # Keep replacing the one-slot buffer while the sender is rate-limited.
+    producer_end = time.perf_counter() + 0.78
+    frame_id = 0
+    while time.perf_counter() < producer_end:
+        sender.submit_frame({"id": frame_id})
+        frame_id += 1
+        await asyncio.sleep(0.005)
+
+    # Allow any already-pending frame to pass the 2 Hz send deadline.
+    await asyncio.sleep(0.40)
+    sender.stop()
+
+    assert len(send_times) >= 3
+    intervals = [b - a for a, b in zip(send_times, send_times[1:])]
+    assert min(intervals) >= 0.46, f"send budget was bypassed: intervals={intervals!r}"
