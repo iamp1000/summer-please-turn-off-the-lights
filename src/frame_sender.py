@@ -48,6 +48,7 @@ class LatestFrameSender:
         # Frame delta tracking
         self._last_sent_segments: Optional[List[List[int]]] = None
         self._last_sent_hsb: Optional[Tuple[int, int, int]] = None
+        self._last_transmit_start: float = 0.0
 
     def set_send_budget(self, max_updates_per_s: float):
         """Dynamically adjusts max updates per second (e.g. 5 for music, 2 for movie)."""
@@ -205,6 +206,7 @@ class LatestFrameSender:
 
             # Transmit frame and measure latency
             t_http_sent = time.perf_counter()
+            self._last_transmit_start = t_http_sent
             success = False
             try:
                 success = await self._transmit_fn(frame)
@@ -261,14 +263,11 @@ class LatestFrameSender:
             else:
                 self._pacing_delay = min(0.100, self._pacing_delay * 1.5)
 
-            # ── Enforce the send budget even under continuous frame pressure ──
-            # dt is the time already spent transmitting this frame. Waiting the
-            # remainder makes the interval between request starts at least
-            # 1 / rate_cap. Do not cap this wait when a pending frame exists:
-            # doing so bypasses the rate limiter precisely during animations.
+            # ── Enforce True Frame-Rate Cap based on elapsed time since transmission started ──
             if self.max_updates_per_s > 0:
                 target_interval = 1.0 / max(0.5, self._aimd_rate_cap)
-                remaining = target_interval - dt
+                elapsed_since_start = time.perf_counter() - self._last_transmit_start
+                remaining = target_interval - elapsed_since_start
                 wait_time = max(self._pacing_delay, remaining)
             else:
                 wait_time = self._pacing_delay
