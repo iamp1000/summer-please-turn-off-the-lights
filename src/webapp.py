@@ -216,8 +216,13 @@ def create_app(hub) -> FastAPI:
 
     @app.post("/api/device/{dev_id}/effect", dependencies=[Depends(verify_auth)])
     def apply_effect(dev_id: str, req: EffectRequest):
-        hub.apply_effect(dev_id, req.effect)
-        return {"status": "ok"}
+        try:
+            hub.apply_effect(dev_id, req.effect)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        return {"status": "ok", "effect": req.effect}
 
     @app.post("/api/device/{dev_id}/effect_params", dependencies=[Depends(verify_auth)])
     def set_effect_params(dev_id: str, req: EffectParamsRequest):
