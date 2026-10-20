@@ -113,3 +113,25 @@ def test_synthetic_signals_suite():
     # 5. White Noise Bursts
     noise = SyntheticTrackGenerator.generate_white_noise_bursts(duration=3.0, burst_interval=0.5)
     assert len(noise) == 3 * 44100
+
+
+def test_music_analyzer_exposes_detected_onsets_as_visible_bounded_envelope():
+    """A threshold-qualified onset must survive beyond one audio block for renderers."""
+    analyzer = MusicAnalyzer(samplerate=44100, blocksize=512)
+    rng = np.random.default_rng(1234)
+    states = []
+
+    # Initialize the detector and its noise floor with a short silent bed.
+    for i in range(12):
+        states.append(analyzer.process_samples(np.zeros(512, dtype=np.float32), now=i * 512 / 44100))
+
+    # A broadband transient should produce an onset event and a short decay tail.
+    for i in range(12, 24):
+        burst = rng.normal(0.0, 0.08, 512).astype(np.float32)
+        states.append(analyzer.process_samples(burst, now=i * 512 / 44100))
+
+    onset_values = [state.onset for state in states]
+    assert all(0.0 <= value <= 1.0 for value in onset_values)
+    assert max(onset_values) > 0.40, f"Onset envelope never reached a reactive level: {max(onset_values):.3f}"
+    assert any(0.02 < value < 0.40 for value in onset_values), "Onset decay tail was not preserved"
+    assert all(state.raw_flux >= 0.0 for state in states)
