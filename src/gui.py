@@ -1285,22 +1285,23 @@ class TapoGUI:
             full_st = self.hub.get_full_state()
             catalog = full_st.get("effects_catalog", {})
 
-            # Curated shelf: Core (22), Advanced (10), Seasonal (3)
+            # Curated shelf: Core (22), Advanced (10), Seasonal (2), Novelty (1)
             groups = {
                 "Core Effects": [k for k, v in catalog.items() if v.get("category") == "core"],
                 "Advanced Effects": [k for k, v in catalog.items() if v.get("category") == "advanced"],
-                "Seasonal & Novelty": [k for k, v in catalog.items() if v.get("category") == "seasonal"],
+                "Seasonal": [k for k, v in catalog.items() if v.get("category") == "seasonal"],
+                "Novelty (⚠️ Rapid Flashing)": [k for k, v in catalog.items() if v.get("category") == "novelty"],
             }
 
             for grp_name, eff_names in groups.items():
                 if not eff_names:
                     continue
 
-                is_novelty = (grp_name == "Seasonal & Novelty")
+                is_occasional = grp_name in ("Seasonal", "Novelty (⚠️ Rapid Flashing)")
                 grp_hdr_frame = ctk.CTkFrame(self.fx_grid_frame, fg_color="transparent")
                 grp_hdr_frame.pack(fill="x", pady=(6, 4))
 
-                hdr_text = f"▼  {grp_name.upper()} ({len(eff_names)})" if not is_novelty else f"▶  SEASONAL & NOVELTY ({len(eff_names)}) (COLLAPSED)"
+                hdr_text = f"▼  {grp_name.upper()} ({len(eff_names)})" if not is_occasional else f"▶  {grp_name.upper()} ({len(eff_names)}) (COLLAPSED)"
                 grp_lbl = ctk.CTkLabel(
                     grp_hdr_frame, text=hdr_text,
                     font=ctk.CTkFont(size=8, weight="bold"),
@@ -1314,18 +1315,18 @@ class TapoGUI:
                 self._effect_group_grids[grp_name] = grid
                 self._effect_group_labels[grp_name] = grp_lbl
 
-                if is_novelty:
-                    # Initially collapse novelty group
+                if is_occasional:
+                    # Initially collapse occasional groups out of default shelf
                     grid.pack_forget()
-                    def _toggle_novelty(lbl=grp_lbl, g=grid, n=len(eff_names)):
+                    def _toggle_occasional(lbl=grp_lbl, g=grid, gn=grp_name, n=len(eff_names)):
                         if g.winfo_ismapped():
                             g.pack_forget()
-                            lbl.configure(text=f"▶  SEASONAL & NOVELTY ({n}) (COLLAPSED)")
+                            lbl.configure(text=f"▶  {gn.upper()} ({n}) (COLLAPSED)")
                         else:
                             g.pack(fill="x", pady=(0, 6))
-                            lbl.configure(text=f"▼  SEASONAL & NOVELTY ({n})")
-                    grp_hdr_frame.bind("<Button-1>", lambda e, fn=_toggle_novelty: fn())
-                    grp_lbl.bind("<Button-1>", lambda e, fn=_toggle_novelty: fn())
+                            lbl.configure(text=f"▼  {gn.upper()} ({n})")
+                    grp_hdr_frame.bind("<Button-1>", lambda e, fn=_toggle_occasional: fn())
+                    grp_lbl.bind("<Button-1>", lambda e, fn=_toggle_occasional: fn())
 
                 for idx, name in enumerate(eff_names):
                     r, c = divmod(idx, 2)
@@ -1368,7 +1369,13 @@ class TapoGUI:
                 meta = catalog.get(name, {})
                 haystack = f"{name} {meta.get('desc', '')} {meta.get('group', '')}".lower()
                 cat = meta.get("category", "")
-                grp_target = "Core Effects" if cat == "core" else ("Advanced Effects" if cat == "advanced" else ("Seasonal & Novelty" if cat == "seasonal" else ""))
+                grp_target = (
+                    "Core Effects" if cat == "core"
+                    else "Advanced Effects" if cat == "advanced"
+                    else "Seasonal" if cat == "seasonal"
+                    else "Novelty (⚠️ Rapid Flashing)" if cat == "novelty"
+                    else ""
+                )
                 if query in haystack:
                     button.grid()
                     if grp_target:
@@ -1384,10 +1391,10 @@ class TapoGUI:
                         group_grid.pack(fill="x", pady=(0, 6))
                     if group_label:
                         group_label.configure(text=f"▼  {group_name.upper()}")
-                elif group_name == "Seasonal & Novelty":
+                elif group_name in ("Seasonal", "Novelty (⚠️ Rapid Flashing)"):
                     group_grid.pack_forget()
                     if group_label:
-                        group_label.configure(text="▶  SEASONAL & NOVELTY (COLLAPSED)")
+                        group_label.configure(text=f"▶  {group_name.upper()} (COLLAPSED)")
         except Exception:
             pass
 

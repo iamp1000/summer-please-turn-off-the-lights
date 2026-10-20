@@ -1905,6 +1905,76 @@ class MelodicContourStyle(VisualStyle):
         return frame
 
 
+class BpmResonatorStyle(VisualStyle):
+    """
+    BPM Resonator:
+    True beat-synchronized multi-harmonic standing and traveling wave resonator.
+    Timing is driven directly by detected musical tempo (bpm), continuous PLL beat phase (beat_phase),
+    and bar downbeats (bar_pos).
+    Sub-harmonics (0.5x half-time), fundamentals (1x beat), and upper harmonics (2x, 4x sixteenths)
+    interfere constructively across zones, with kick and bass transients exciting resonant ripples.
+    """
+    name: str = "BPM Resonator"
+
+    def __init__(self):
+        super().__init__()
+        self.name = "BPM Resonator"
+        self._local_phase: float = 0.0
+        self._resonator_energy: float = 0.0
+
+    def render(self, state: MusicState, dt: float, num_zones: int, **kwargs) -> List[Tuple[int, int, int]]:
+        pal = self.get_palette(state)
+        bpm = float(getattr(state, "bpm", 120.0) or 120.0)
+        beat_phase = float(getattr(state, "beat_phase", 0.0))
+        bar_pos = int(getattr(state, "bar_pos", 0))
+        kick = float(getattr(state, "kick", 0.0))
+        bass = float(getattr(state, "bass", 0.0))
+        energy = float(getattr(state, "energy", 0.0))
+        transient = float(getattr(state, "transient", 0.0))
+
+        tempo_freq = (bpm / 60.0) * self.speed
+        bpm_conf = float(getattr(state, "bpm_confidence", 0.0))
+        if bpm_conf > 0.2:
+            phi_beat = (bar_pos + beat_phase) * 0.25 * 2.0 * math.pi
+        else:
+            self._local_phase = (self._local_phase + dt * tempo_freq * 2.0 * math.pi) % (8.0 * math.pi)
+            phi_beat = self._local_phase
+
+        target_resonance = max(energy, kick * 1.2, bass * 1.0)
+        tau = 0.08 if target_resonance > self._resonator_energy else 0.45
+        self._resonator_energy = exp_smooth_fast(self._resonator_energy, target_resonance, dt, tau)
+
+        # Multi-harmonic standing wave frequencies
+        h1 = math.sin(phi_beat * 1.0)
+        h_sub = math.cos(phi_beat * 0.5)
+        h2 = math.sin(phi_beat * 2.0)
+        h4 = math.cos(phi_beat * 4.0)
+
+        frame: List[Tuple[int, int, int]] = []
+        for i in range(num_zones):
+            x = i / float(max(1, num_zones - 1))
+            w_fund = math.sin(x * 2.0 * math.pi + h1) * 0.35
+            w_sub = math.cos(x * math.pi + h_sub) * 0.30
+            w_fast = math.sin(x * 4.0 * math.pi + h2) * 0.20
+            w_ripple = math.cos(x * 8.0 * math.pi + h4 * 0.5) * 0.15
+
+            wave = (w_fund + w_sub + w_fast + w_ripple + 1.0) * 0.5
+
+            downbeat_accent = 1.25 if (bar_pos == 0 and beat_phase < 0.25) else 1.0
+            val_norm = wave * (0.35 + 0.65 * self._resonator_energy) * downbeat_accent
+            v = int(np.clip((10.0 + val_norm * 90.0) * self.intensity, 4, 100))
+
+            pal_t = (wave * 0.6 + phi_beat / (2.0 * math.pi) * 0.15 + transient * 0.25) % 1.0
+            h, s, _ = sample_palette_oklab(pal, pal_t, cyclic=True)
+            if kick > 0.6 and abs(i - (num_zones / 2.0)) < 6:
+                s = max(10, int(s * 0.6))
+                v = min(100, int(v * 1.2))
+
+            frame.append((h, s, v))
+
+        return frame
+
+
 # ── Backward Compatibility Shims & Aliases ───────────────────────────────────
 
 ShockwaveStyle = PulseStyle
@@ -1972,6 +2042,7 @@ def create_style_instances() -> Dict[str, VisualStyle]:
     hydro_acoustic = HydroAcousticStyle()
     lofi_vinyl = LofiVinylStyle()
     melodic_contour = MelodicContourStyle()
+    bpm_resonator = BpmResonatorStyle()
 
     registry: Dict[str, VisualStyle] = {
         # Custom Vibe & Genre Engines
@@ -1993,6 +2064,8 @@ def create_style_instances() -> Dict[str, VisualStyle]:
         "melodic_contour": melodic_contour,
         "melodic": melodic_contour,
         "contour": melodic_contour,
+        "bpm_resonator": bpm_resonator,
+        "resonator": bpm_resonator,
 
         # LumiSync Spatial Reaction Styles
         "bass_bounce": bass_bounce,

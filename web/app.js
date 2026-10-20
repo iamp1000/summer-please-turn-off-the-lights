@@ -1214,6 +1214,8 @@ function renderUI() {
         effectKeys = effectKeys.filter(k => catalog[k]?.category === "advanced");
       } else if (currentEffectCategory === "seasonal") {
         effectKeys = effectKeys.filter(k => catalog[k]?.category === "seasonal");
+      } else if (currentEffectCategory === "novelty") {
+        effectKeys = effectKeys.filter(k => catalog[k]?.category === "novelty");
       } else {
         effectKeys = effectKeys.filter(k => catalog[k]?.category !== "alias" && catalog[k]?.category !== "reactive");
       }
@@ -1225,15 +1227,19 @@ function renderUI() {
       const color = EFFECT_COLORS[eff] || "#7c6ef5";
       const meta = catalog[eff] || {};
       const isAlias = Boolean(meta.alias_of);
+      const isWarn = Boolean(meta.warning);
       const kindLabel = isAlias
         ? `ALIAS → ${formatName(meta.alias_of)}`
         : (meta.kind === "firmware" ? "ON-DEVICE" : "PROCEDURAL");
+      const warnBadge = isWarn
+        ? `<span class="novelty-warning-badge">⚠️ RAPID FLASHING</span>`
+        : `<small>${kindLabel}</small>`;
       fxHtml += `
         <button class="item-btn effect-item ${isAct}"
-                title="${meta.desc || formatName(eff)} · ${kindLabel}"
+                title="${meta.desc || formatName(eff)}${isWarn ? ' · ' + meta.warning : ''} · ${kindLabel}"
                 onclick="applyEffect('${eff}')">
           <span class="item-dot" style="background: ${color};"></span>
-          <span class="effect-item-copy"><span>${formatName(eff)}</span><small>${kindLabel}</small></span>
+          <span class="effect-item-copy"><span>${formatName(eff)}</span>${warnBadge}</span>
         </button>
       `;
     });
@@ -1295,6 +1301,13 @@ function setEffectCategory(cat) {
 }
 
 function applyEffect(name) {
+  const meta = (state.effects_catalog || {})[name] || {};
+  if (meta.warning && !sessionStorage.getItem(`warned_${name}`)) {
+    if (!confirm(`⚠️ Warning: ${meta.warning}\n\nDo you want to proceed?`)) {
+      return;
+    }
+    sessionStorage.setItem(`warned_${name}`, "true");
+  }
   const theme = getThemeForLabel(name);
   document.body.setAttribute("data-theme", theme);
   bgEngine.setTheme(theme);

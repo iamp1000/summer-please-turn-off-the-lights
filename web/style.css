@@ -752,6 +752,19 @@ body {
   box-shadow: 0 0 12px var(--theme-accent-glow);
 }
 
+.novelty-warning-badge {
+  display: inline-block;
+  background: rgba(239, 68, 68, 0.18);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  font-size: 8px;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 4px;
+  margin-top: 2px;
+  letter-spacing: 0.04em;
+}
+
 /* ── DYNAMIC EFFECTS & PRESETS GRIDS ─────────────────────────────────────── */
 .effects-grid, .presets-grid {
   display: grid;

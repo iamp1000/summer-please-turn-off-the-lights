@@ -519,13 +519,15 @@ def test_firmware_deployment_failure_is_returned_to_caller():
 
 
 def test_effect_catalog_curation_structure():
-    """Verify curated breakdown: 22 Core, 10 Advanced, 3 Seasonal, 10 Aliases, 1 Reactive."""
-    from src.effects_l930 import CORE_EFFECTS, ADVANCED_EFFECTS, SEASONAL_EFFECTS, ACTIVE_EFFECTS, EFFECT_CATALOG
+    """Verify curated breakdown: 22 Core, 10 Advanced, 2 Seasonal, 1 Novelty, 10 Aliases, 1 Reactive."""
+    from src.effects_l930 import CORE_EFFECTS, ADVANCED_EFFECTS, SEASONAL_EFFECTS, NOVELTY_EFFECTS, OCCASIONAL_EFFECTS, ACTIVE_EFFECTS, EFFECT_CATALOG
 
     assert len(EFFECT_CATALOG) == 46, f"Expected 46 total catalog entries, got {len(EFFECT_CATALOG)}"
     assert len(CORE_EFFECTS) == 22, f"Expected 22 core effects, got {len(CORE_EFFECTS)}"
     assert len(ADVANCED_EFFECTS) == 10, f"Expected 10 advanced effects, got {len(ADVANCED_EFFECTS)}"
-    assert len(SEASONAL_EFFECTS) == 3, f"Expected 3 seasonal effects, got {len(SEASONAL_EFFECTS)}"
+    assert len(SEASONAL_EFFECTS) == 2, f"Expected 2 seasonal effects, got {len(SEASONAL_EFFECTS)}"
+    assert len(NOVELTY_EFFECTS) == 1, f"Expected 1 novelty effect, got {len(NOVELTY_EFFECTS)}"
+    assert len(OCCASIONAL_EFFECTS) == 3, f"Expected 3 occasional effects, got {len(OCCASIONAL_EFFECTS)}"
     assert len(ACTIVE_EFFECTS) == 35, f"Expected 35 active effects, got {len(ACTIVE_EFFECTS)}"
 
     expected_advanced = {
@@ -534,8 +536,11 @@ def test_effect_catalog_curation_structure():
     }
     assert set(ADVANCED_EFFECTS) == expected_advanced
 
-    expected_seasonal = {"police", "candy_cane", "haunted_mansion"}
+    expected_seasonal = {"candy_cane", "haunted_mansion"}
     assert set(SEASONAL_EFFECTS) == expected_seasonal
+    assert NOVELTY_EFFECTS == ["police"]
+    assert "warning" in EFFECT_CATALOG["police"]
+    assert "Rapid flashing" in EFFECT_CATALOG["police"]["warning"]
 
     aliases = {k: v for k, v in EFFECT_CATALOG.items() if v.get("category") == "alias"}
     assert len(aliases) == 10
@@ -623,11 +628,17 @@ def test_hub_full_state_includes_curated_categories(monkeypatch):
         assert "core_effects" in st
         assert "advanced_effects" in st
         assert "seasonal_effects" in st
+        assert "novelty_effects" in st
+        assert "occasional_effects" in st
         assert "active_effects" in st
         assert len(st["core_effects"]) == 22
         assert len(st["advanced_effects"]) == 10
-        assert len(st["seasonal_effects"]) == 3
+        assert len(st["seasonal_effects"]) == 2
+        assert len(st["novelty_effects"]) == 1
+        assert len(st["occasional_effects"]) == 3
         assert len(st["active_effects"]) == 35
+        # Ensure bpm_resonator is exposed in visualizer styles
+        assert any(s["id"] == "bpm_resonator" for s in st.get("visualizer_styles", []))
     finally:
         loop_runner.stop()
 
@@ -697,3 +708,36 @@ def test_merged_effect_behavior_preservation():
     f_prism = engine._compute("infinite_prism", t=1.0)
     f_rainbow = engine._render_rainbow(t=1.0)
     assert f_prism == f_rainbow
+
+
+def test_bpm_resonator_music_reactive_style_synchronization():
+    """Verify BpmResonatorStyle timing is driven by musical tempo, beat phase, bar downbeats, and audio transients."""
+    from src.visual_styles import create_style_instances, BpmResonatorStyle
+    from src.audio_dsp import MusicState
+
+    styles = create_style_instances()
+    assert "bpm_resonator" in styles
+    style = styles["bpm_resonator"]
+    assert isinstance(style, BpmResonatorStyle)
+
+    # 1. Base tempo response at 120 BPM on Beat 0, phase 0.0
+    st_beat0 = MusicState(bpm=120.0, bpm_confidence=0.8, beat_phase=0.0, bar_pos=0, energy=0.7, kick=0.9)
+    frame0 = style.render(st_beat0, dt=0.033, num_zones=50)
+    assert len(frame0) == 50
+    for h, s, v in frame0:
+        assert 0 <= h <= 360
+        assert 0 <= s <= 100
+        assert 0 <= v <= 100
+
+    # Downbeat accent on bar_pos 0 should make frame luminous
+    assert max(v for _, _, v in frame0) >= 60
+
+    # 2. Phase progression at half-beat (phase 0.5) should change standing wave patterns
+    st_beat_half = MusicState(bpm=120.0, bpm_confidence=0.8, beat_phase=0.5, bar_pos=0, energy=0.7, kick=0.1)
+    frame_half = style.render(st_beat_half, dt=0.033, num_zones=50)
+    assert frame0 != frame_half
+
+    # 3. Bar position shift (bar_pos 2 vs 0) modulates the downbeat envelope
+    st_bar2 = MusicState(bpm=120.0, bpm_confidence=0.8, beat_phase=0.0, bar_pos=2, energy=0.7, kick=0.1)
+    frame_bar2 = style.render(st_bar2, dt=0.033, num_zones=50)
+    assert frame0 != frame_bar2

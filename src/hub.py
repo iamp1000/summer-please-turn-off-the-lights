@@ -12,7 +12,7 @@ from src.device_l930 import L930Controller
 from src.event_loop import BackgroundLoop
 from src.modes import ModeManager
 from src.effects import AnimationEngine
-from src.effects_l930 import L930EffectsEngine, EFFECT_CATALOG, CORE_EFFECTS, ADVANCED_EFFECTS, SEASONAL_EFFECTS, ACTIVE_EFFECTS
+from src.effects_l930 import L930EffectsEngine, EFFECT_CATALOG, CORE_EFFECTS, ADVANCED_EFFECTS, SEASONAL_EFFECTS, NOVELTY_EFFECTS, OCCASIONAL_EFFECTS, ACTIVE_EFFECTS
 from src.music_reactive import MusicReactive, list_available_audio_devices
 from src.music_reactive_l930 import MusicReactiveL930
 from src.screen_sync import ScreenSync
@@ -178,6 +178,8 @@ class LightHub:
             "core_effects": CORE_EFFECTS,
             "advanced_effects": ADVANCED_EFFECTS,
             "seasonal_effects": SEASONAL_EFFECTS,
+            "novelty_effects": NOVELTY_EFFECTS,
+            "occasional_effects": OCCASIONAL_EFFECTS,
             "active_effects": ACTIVE_EFFECTS,
             "palettes": ["auto", "sunset", "forest", "fire", "pastel", "tide", "dusk", "ember", "warm_mono"],
             "visualizer_styles": [
@@ -188,6 +190,7 @@ class LightHub:
                 {"id": "hydro_acoustic", "name": "💧 Hydro Acoustic"},
                 {"id": "lofi_vinyl", "name": "📻 Lofi Vinyl"},
                 {"id": "melodic_contour", "name": "🎼 Melodic Ribbon"},
+                {"id": "bpm_resonator", "name": "🎛️ BPM Resonator"},
                 {"id": "movie", "name": "🎬 Movie"},
                 {"id": "pulse", "name": "⚡ Pulse"},
                 {"id": "spectrum", "name": "📊 Spectrum"},
@@ -195,6 +198,7 @@ class LightHub:
                 {"id": "bass_bounce", "name": "🏀 Bounce"},
                 {"id": "center_burst", "name": "💫 Burst"},
                 {"id": "twinkle", "name": "✨ Twinkle"},
+                {"id": "bpm_resonator", "name": "🎛️ BPM Resonator"},
             ],
             "visualizer_modes": [
                 {"id": "party", "name": "🎉 Party"},

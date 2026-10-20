@@ -320,17 +320,10 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
     },
 
     # ── 3. Seasonal & Novelty Effects (3) ────────────────────────────────────
-    'police': {
-        'kind': 'streamed_slow',
-        'group': 'Seasonal & Novelty',
-        'category': 'seasonal',
-        'desc': 'Crisp red and blue alternating sections with tiny dark gaps between flashes',
-        'default_palette': 'sunset',
-        'supported_controls': ['speed', 'brightness'],
-    },
     'candy_cane': {
         'kind': 'streamed_slow',
         'group': 'Seasonal & Novelty',
+        'subgroup': 'Seasonal',
         'category': 'seasonal',
         'desc': 'Wide alternating red and white bands visibly moving along strip with clean edges',
         'default_palette': 'sunset',
@@ -339,9 +332,20 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
     'haunted_mansion': {
         'kind': 'streamed_slow',
         'group': 'Seasonal & Novelty',
+        'subgroup': 'Seasonal / Spooky',
         'category': 'seasonal',
         'desc': 'Near-black base with rare emerald glows, eerie violet pools, and sudden flashes',
         'default_palette': 'forest',
+        'supported_controls': ['speed', 'brightness'],
+    },
+    'police': {
+        'kind': 'streamed_slow',
+        'group': 'Seasonal & Novelty',
+        'subgroup': 'Novelty',
+        'category': 'novelty',
+        'desc': 'Crisp red and blue alternating sections with tiny dark gaps between flashes',
+        'warning': 'Rapid flashing / strobe warning: contains high-contrast alternating red/blue pulses.',
+        'default_palette': 'sunset',
         'supported_controls': ['speed', 'brightness'],
     },
 
@@ -472,7 +476,9 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
 CORE_EFFECTS: List[str] = [k for k, v in EFFECT_CATALOG.items() if v.get('category') == 'core']
 ADVANCED_EFFECTS: List[str] = [k for k, v in EFFECT_CATALOG.items() if v.get('category') == 'advanced']
 SEASONAL_EFFECTS: List[str] = [k for k, v in EFFECT_CATALOG.items() if v.get('category') == 'seasonal']
-ACTIVE_EFFECTS: List[str] = CORE_EFFECTS + ADVANCED_EFFECTS + SEASONAL_EFFECTS
+NOVELTY_EFFECTS: List[str] = [k for k, v in EFFECT_CATALOG.items() if v.get('category') == 'novelty']
+OCCASIONAL_EFFECTS: List[str] = SEASONAL_EFFECTS + NOVELTY_EFFECTS
+ACTIVE_EFFECTS: List[str] = CORE_EFFECTS + ADVANCED_EFFECTS + SEASONAL_EFFECTS + NOVELTY_EFFECTS
 
 
 CUSTOM_EFFECTS = list(EFFECT_CATALOG.keys())
