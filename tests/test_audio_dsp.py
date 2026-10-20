@@ -130,6 +130,10 @@ def test_music_analyzer_exposes_detected_onsets_as_visible_bounded_envelope():
         burst = rng.normal(0.0, 0.08, 512).astype(np.float32)
         states.append(analyzer.process_samples(burst, now=i * 512 / 44100))
 
+    # Quiet frames prove the event falls away smoothly instead of sticking on.
+    for i in range(24, 36):
+        states.append(analyzer.process_samples(np.zeros(512, dtype=np.float32), now=i * 512 / 44100))
+
     onset_values = [state.onset for state in states]
     assert all(0.0 <= value <= 1.0 for value in onset_values)
     assert max(onset_values) > 0.40, f"Onset envelope never reached a reactive level: {max(onset_values):.3f}"
