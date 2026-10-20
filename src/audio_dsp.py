@@ -968,7 +968,9 @@ class MusicAnalyzer:
             onset_target = 0.65 + 0.35 * min(1.0, excess)
         else:
             onset_target = 0.0
-        onset_tau = 0.010 if onset_target > self._onset_strength_env else 0.095
+        # The strip is rate-limited to 8 FPS (125 ms between frames), so a
+        # sub-100ms release would decay before the next physical update.
+        onset_tau = 0.010 if onset_target > self._onset_strength_env else 0.240
         onset_alpha = 1.0 - math.exp(-dt / onset_tau)
         self._onset_strength_env += onset_alpha * (onset_target - self._onset_strength_env)
         norm_onset = float(max(0.0, min(1.0, self._onset_strength_env)))
