@@ -233,3 +233,31 @@ def test_stop_purges_and_turns_off():
     assert ctrl_l930.cleared_count >= 1
     assert ctrl_l930.submitted_frames[-1]["brightness"] == 0
     assert all(s == [0, 0, 0] for s in ctrl_l930.submitted_frames[-1]["segments"])
+
+
+def test_l930_music_transition_fallback_guarantee():
+    """
+    Verifies that when a controller or test double does NOT declare music_transition_ms,
+    MusicReactiveL930 defaults to a smooth hardware crossfade (~120ms for music, 800ms for movie),
+    never falling back to an abrupt 0ms transition.
+    """
+    from src.audio_dsp import MusicState
+    ctrl = MockController()
+    assert not hasattr(ctrl, "music_transition_ms")
+
+    engine = MusicReactiveL930(controller=ctrl, loop_runner=None, app_state={"brightness": 100}, blocksize=512)
+
+    # 1. Active music state
+    st = MusicState(energy=0.70, kick=0.80, hat=0.40, silent=False)
+    engine._render_from_music_state(st, dt=0.033)
+
+    assert len(ctrl.submitted_frames) > 0
+    music_frame = ctrl.submitted_frames[-1]
+    assert music_frame["transition"] >= 100, f"Expected >= 100ms smooth crossfade, got {music_frame['transition']}"
+
+    # 2. Movie mode transition
+    engine.set_mode("movie")
+    engine._render_from_music_state(st, dt=0.033)
+    movie_frame = ctrl.submitted_frames[-1]
+    assert movie_frame["transition"] == 800, f"Expected 800ms movie crossfade, got {movie_frame['transition']}"
+

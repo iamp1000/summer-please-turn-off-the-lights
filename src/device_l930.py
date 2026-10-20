@@ -161,8 +161,8 @@ class L930Controller:
         wb = calib.get("white_balance", [1.0, 0.96, 0.90]) if isinstance(calib, dict) else getattr(calib, "white_balance", [1.0, 0.96, 0.90])
         min_b = calib.get("min_brightness", 0) if isinstance(calib, dict) else getattr(calib, "min_brightness", 0)
         trans_ms = calib.get("transition_ms", 0) if isinstance(calib, dict) else getattr(calib, "transition_ms", 0)
-        self.default_transition_ms = trans_ms
         self.music_transition_ms = calib.get("music_transition_ms", 120) if isinstance(calib, dict) else 120
+        self.default_transition_ms = trans_ms if trans_ms > 0 else self.music_transition_ms
         self.movie_transition_ms = calib.get("movie_transition_ms", 800) if isinstance(calib, dict) else 800
         self._max_updates_per_s = float(calib.get("max_updates_per_s", 8.0) if isinstance(calib, dict) else 8.0)
         self._movie_max_updates_per_s = float(calib.get("movie_max_updates_per_s", 2.0) if isinstance(calib, dict) else 2.0)
@@ -360,7 +360,7 @@ class L930Controller:
         if not self._is_on:
             return False
 
-        trans = getattr(self, "default_transition_ms", 0)
+        trans = getattr(self, "music_transition_ms", 120)
         pre_corrected = False
         if isinstance(frame, dict):
             segs = frame.get("segments", self.last_segments)

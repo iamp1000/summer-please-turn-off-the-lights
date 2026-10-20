@@ -317,10 +317,20 @@ class MusicReactiveL930:
         self._rendered_segs = corrected_segs
         brightness_val = int(max(x[2] for x in corrected_segs)) if corrected_segs else 0
 
-        # Phase R: Movie mode transition ~800ms and max 2 updates/s; Music 0ms (instant strike) and 8 updates/s
+        # Phase R: Movie mode transition ~800ms and max 2 updates/s; Music default 120ms and 8 updates/s
         is_movie = (style_key == "movie")
-        trans_ms = getattr(self._ctrl, "movie_transition_ms", 800) if is_movie else getattr(self._ctrl, "music_transition_ms", 0)
-        target_max_ups = getattr(self._ctrl, "_movie_max_updates_per_s", 2.0) if is_movie else getattr(self._ctrl, "_max_updates_per_s", 8.0)
+        music_trans = getattr(self._ctrl, "music_transition_ms", None)
+        if is_movie:
+            trans_ms = getattr(self._ctrl, "movie_transition_ms", 800)
+            target_max_ups = getattr(self._ctrl, "_movie_max_updates_per_s", 2.0)
+        else:
+            target_max_ups = getattr(self._ctrl, "_max_updates_per_s", 8.0)
+            if music_trans is not None and music_trans > 0:
+                trans_ms = music_trans
+            else:
+                # Cadence-matched fallback: smoothly fill ~95% of send interval to prevent micro-pauses
+                send_interval_ms = int((1.0 / max(1.0, target_max_ups)) * 1000.0)
+                trans_ms = max(60, min(send_interval_ms - 5, int(send_interval_ms * 0.95)))
 
         if hasattr(self._ctrl, "frame_sender") and self._ctrl.frame_sender:
             if getattr(self._ctrl.frame_sender, "max_updates_per_s", None) != target_max_ups:
@@ -562,13 +572,14 @@ class MusicReactiveL930:
                 else:
                     corrected = self._pipeline.correct_hsv_sequence(segs, master_ceiling=master_ceiling)
 
-                # Set transition per mode: 0 for fast modes, 80ms for flow modes, 40ms for accents/starfield
-                if self.style_name in ("shockwave", "edm_drop", "mirror_eq", "fire", "melody"):
-                    trans = 0
-                elif self.style_name in ("aurora", "plasma", "comet", "calm"):
-                    trans = 80
+                # Set transition per mode: hardware crossfade (default 120ms or higher for ambient flow modes)
+                music_trans = getattr(self._ctrl, "music_transition_ms", None)
+                def_music_trans = music_trans if music_trans is not None and music_trans > 0 else 120
+                if self.style_name in ("aurora", "plasma", "comet", "calm"):
+                    trans = max(80, def_music_trans)
                 else:
-                    trans = 40
+                    trans = def_music_trans
+
 
                 if self._frame_bus:
                     self._frame_bus.publish(FramePacket(
@@ -769,4 +780,6 @@ class MusicReactiveL930:
         master_ceiling = self._app_state.get("brightness", 85) / 100.0
         if hasattr(self._ctrl, "submit_frame"):
             corrected = self._pipeline.correct_hsv_sequence(smoothed, master_ceiling=master_ceiling)
-            self._ctrl.submit_frame({"segments": corrected, "brightness": 100, "transition": 0, "_pre_corrected": True})
+            music_trans = getattr(self._ctrl, "music_transition_ms", None)
+            trans = music_trans if music_trans is not None and music_trans > 0 else 120
+            self._ctrl.submit_frame({"segments": corrected, "brightness": 100, "transition": trans, "_pre_corrected": True})

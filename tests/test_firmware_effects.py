@@ -415,3 +415,26 @@ def test_next_gen_music_styles():
             assert 0 <= h <= 360
             assert 0 <= s <= 100
             assert 0 <= v <= 100
+
+
+def test_make_50_zone_effect_payload_invariance_and_anti_reinit():
+    from src.device_l930 import make_50_zone_effect, _STATIC_EFFECT_ID
+
+    frame1 = [(120, 80, 70)] * 50
+    fx1 = make_50_zone_effect(frame1, master_brightness=100, transition=120, pre_corrected=True)
+
+    assert fx1.id == _STATIC_EFFECT_ID
+    assert fx1.custom == 1
+    assert fx1.type == 'static'
+    assert fx1.transition == 120
+    assert fx1.segments == list(range(50))
+    assert len(fx1.sequence) == 50
+
+    frame2 = [(240, 90, 85)] * 50
+    fx2 = make_50_zone_effect(frame2, master_brightness=80, transition=120, pre_corrected=True)
+
+    assert fx2.id == fx1.id, 'Effect ID must remain strictly identical across frames to prevent firmware re-init'
+    assert fx2.custom == 1
+    assert fx2.type == 'static'
+    assert fx2.transition == 120
+    assert fx2.segments == fx1.segments
