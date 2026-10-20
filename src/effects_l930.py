@@ -486,14 +486,15 @@ class L930EffectsEngine:
         if changed and self._active_kind == "firmware" and self._active_effect_name:
             self._redeploy_current_firmware_effect()
 
-    def start(self, effect_name: str, palette_name: Optional[str] = None, speed: Optional[float] = None, brightness: Optional[int] = None):
-        key = effect_name.strip().lower()
+    def start(self, effect_name: str, palette_name: Optional[str] = None, speed: Optional[float] = None, brightness: Optional[int] = None) -> bool:
+        key = (effect_name or "").strip().lower()
+        # Keep native UI aliases pointed at real catalog entries. The previous
+        # alias path admitted "aurora_native" then indexed a nonexistent key.
+        key = {"rainbow_native": "rainbow", "aurora_native": "aurora"}.get(key, key)
         if key not in EFFECT_CATALOG:
-            # Check native aliases
-            if key in NATIVE_PRESETS:
-                key = "rainbow" if key == "rainbow_native" else key
-            else:
-                return
+            self._last_error = f"Unknown L930 effect: {effect_name!r}"
+            logger.error("[L930EffectsEngine] %s", self._last_error)
+            return False
 
         # Increment effect generation immediately
         self._effect_generation += 1
@@ -508,6 +509,14 @@ class L930EffectsEngine:
                 self._pending_fw_timer = None
             self._pending_fw_upload = None
 
+        # Stop the previous render worker before purging the frame queue. Without
+        # this ordering its final in-flight frame can overwrite the newly selected
+        # effect after the UI has already switched.
+        self._stop_stream_worker()
+        if hasattr(self._ctrl, "clear_frames"):
+            self._ctrl.clear_frames()
+
+        self._last_error = None
         if palette_name and palette_name.strip().lower() in PALETTES:
             self._palette_name = palette_name.strip().lower()
         elif "default_palette" in EFFECT_CATALOG[key]:
@@ -525,12 +534,20 @@ class L930EffectsEngine:
         self._start_time = time.monotonic()
 
         if kind == "firmware":
-            # Stop streaming worker cleanly
-            self._stop_stream_worker()
-            self._deploy_firmware_effect(key)
+            # An explicit effect change should be immediate. Only report success
+            # after the controller confirms that the device accepted the effect.
+            if not self._deploy_firmware_effect(key, force=True):
+                return False
         elif kind == "streamed_slow":
             # Start slow streaming worker (<= 2 updates/s)
             self._start_stream_worker()
+        else:
+            self._last_error = f"Unsupported L930 effect kind {kind!r} for {key!r}"
+            logger.error("[L930EffectsEngine] %s", self._last_error)
+            self._active_effect_name = None
+            self._active_kind = None
+            return False
+        return True
 
     def stop(self):
         self._effect_generation += 1
@@ -550,16 +567,21 @@ class L930EffectsEngine:
 
     # ── Firmware Effect Deployment ────────────────────────────────────────────
 
-    def _deploy_firmware_effect(self, name: str):
+    def _deploy_firmware_effect(self, name: str, force: bool = False) -> bool:
         fx = self._build_effect_payload(name)
         if fx is None:
-            return
+            self._last_error = f"No firmware payload could be built for L930 effect {name!r}"
+            logger.error("[L930EffectsEngine] %s", self._last_error)
+            self._active_effect_name = None
+            self._active_kind = None
+            return False
 
         gen = self._effect_generation
         with self._fw_lock:
             now = time.monotonic()
-            # Throttle firmware uploads to at most once per 2s
-            if now - self._last_firmware_upload < 2.0:
+            # Parameter updates are throttled, but a deliberate effect selection
+            # must not appear to hang behind the previous effect for two seconds.
+            if not force and now - self._last_firmware_upload < 2.0:
                 self._pending_fw_upload = (gen, name, fx)
                 # Debounce: cancel any existing pending timer before scheduling a new one
                 if self._pending_fw_timer is not None:
@@ -570,7 +592,7 @@ class L930EffectsEngine:
                 delay = max(0.1, 2.0 - (now - self._last_firmware_upload))
                 self._pending_fw_timer = threading.Timer(delay, self._flush_pending_firmware_upload)
                 self._pending_fw_timer.start()
-                return
+                return True
 
             self._last_firmware_upload = now
             self._pending_fw_upload = None
@@ -581,7 +603,22 @@ class L930EffectsEngine:
                     pass
                 self._pending_fw_timer = None
 
-        self._loop_runner.run(self._ctrl.set_native_effect(fx, priority=0))
+        try:
+            future = self._loop_runner.run(self._ctrl.set_native_effect(fx, priority=0))
+            # BackgroundLoop.run returns a Future: wait for the hardware ACK so
+            # we can distinguish "accepted" from merely "queued in asyncio".
+            result_method = getattr(future, "result", None)
+            result = result_method(timeout=10.0) if callable(result_method) else future
+            if result is False:
+                raise RuntimeError(f"Controller rejected firmware effect {name!r}")
+            self._last_error = None
+            return True
+        except Exception as exc:
+            self._last_error = f"Failed to deploy L930 firmware effect {name!r}: {exc}"
+            logger.error("[L930EffectsEngine] %s", self._last_error)
+            self._active_effect_name = None
+            self._active_kind = None
+            return False
 
     def _flush_pending_firmware_upload(self):
         with self._fw_lock:
@@ -1244,57 +1281,6 @@ class L930EffectsEngine:
                     segs = self._render_rainbow(t)
                     interval = 0.35
                     trans_ms = 350
-                elif eff == "bioluminescent_abyss":
-                    # Deep navy field with intermittent cyan/emerald blooms
-                    segs = []
-                    for i in range(NUM_SEGMENTS):
-                        flt = math.sin(t * 1.5 + i * 0.4)
-                        if flt > 0.75:
-                            h = 175 if (i % 2 == 0) else 190
-                            v = int(20 + 70 * ((flt - 0.75) / 0.25))
-                        else:
-                            h, v = 230, 4
-                        segs.append([h, 95, v])
-                    interval = 0.35
-                    trans_ms = 350
-                elif eff == "campfire_hearth":
-                    # Multi-zone warm orange, deep crimson, and flickering gold
-                    segs = []
-                    for i in range(NUM_SEGMENTS):
-                        flt = math.sin(t * 3.0 + i * 0.8) + math.cos(t * 5.2 - i * 0.5)
-                        norm_flt = max(0.0, min(1.0, (flt + 2.0) / 4.0))
-                        h = int(12 + norm_flt * 28)
-                        v = int(25 + norm_flt * 70)
-                        segs.append([h, 95, v])
-                    interval = 0.25
-                    trans_ms = 250
-                elif eff == "dual_wipe":
-                    # Bi-directional dual wipe meeting in center
-                    pos = (t * 25.0 * max(0.2, self._speed)) % 25.0
-                    segs = []
-                    pal_dw = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "dusk")
-                    c1_h = pal_dw[0][0] if pal_dw else 280
-                    c2_h = pal_dw[1][0] if len(pal_dw) > 1 else 180
-                    for i in range(NUM_SEGMENTS):
-                        if i < 25:
-                            d = abs(i - pos)
-                            v = int(max(10, 100 - d * 18))
-                            segs.append([c1_h, 85, v])
-                        else:
-                            d = abs((49 - i) - pos)
-                            v = int(max(10, 100 - d * 18))
-                            segs.append([c2_h, 90, v])
-                    interval = 0.25
-                    trans_ms = 250
-                elif eff == "infinite_prism":
-                    # Circulating 8-step saturated rainbow prism
-                    segs = []
-                    sp_eff = max(0.2, self._speed)
-                    for i in range(NUM_SEGMENTS):
-                        h = int((i * (360.0 / 8.0) + t * 60.0 * sp_eff) % 360)
-                        segs.append([h, 100, 100])
-                    interval = 0.30
-                    trans_ms = 300
                 else:
                     segs = [[30, 60, 50]] * NUM_SEGMENTS
 
@@ -2493,5 +2479,40 @@ class L930EffectsEngine:
             return [[int(330 - 50 * prog), int(85 + 15 * prog), int(max(8, min(85, 15 + prog * 70)))] for _ in range(NUM_SEGMENTS)]
         elif eff in ("ocean", "ocean_waves"):
             return [[int(185 + 15 * math.sin(t * 0.8 + i * 0.2)), 90, int(35 + 25 * math.cos(t * 0.6 + i * 0.15))] for i in range(NUM_SEGMENTS)]
+        elif eff == "bioluminescent_abyss":
+            segs = []
+            for i in range(NUM_SEGMENTS):
+                flt = math.sin(t * 1.5 + i * 0.4)
+                if flt > 0.75:
+                    h = 175 if (i % 2 == 0) else 190
+                    v = int(20 + 70 * ((flt - 0.75) / 0.25))
+                else:
+                    h, v = 230, 4
+                segs.append([h, 95, v])
+            return segs
+        elif eff == "campfire_hearth":
+            segs = []
+            for i in range(NUM_SEGMENTS):
+                flt = math.sin(t * 3.0 + i * 0.8) + math.cos(t * 5.2 - i * 0.5)
+                norm_flt = max(0.0, min(1.0, (flt + 2.0) / 4.0))
+                segs.append([int(12 + norm_flt * 28), 95, int(25 + norm_flt * 70)])
+            return segs
+        elif eff == "dual_wipe":
+            pos = (t * 25.0 * max(0.2, self._speed)) % 25.0
+            segs = []
+            pal_dw = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "dusk")
+            c1_h = pal_dw[0][0] if pal_dw else 280
+            c2_h = pal_dw[1][0] if len(pal_dw) > 1 else 180
+            for i in range(NUM_SEGMENTS):
+                if i < 25:
+                    d = abs(i - pos)
+                    segs.append([c1_h, 85, int(max(10, 100 - d * 18))])
+                else:
+                    d = abs((49 - i) - pos)
+                    segs.append([c2_h, 90, int(max(10, 100 - d * 18))])
+            return segs
+        elif eff == "infinite_prism":
+            sp_eff = max(0.2, self._speed)
+            return [[int((i * (360.0 / 8.0) + t * 60.0 * sp_eff) % 360), 100, 100] for i in range(NUM_SEGMENTS)]
         return [[30, 80, 60]] * NUM_SEGMENTS
 

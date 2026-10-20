@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 
 from src.music_reactive import MusicReactive
 from src.music_reactive_l930 import MusicReactiveL930, NUM_SEGMENTS
+from src.audio_dsp import MusicState, Section
 
 
 class MockDiagnostics:
@@ -261,3 +262,33 @@ def test_l930_music_transition_fallback_guarantee():
     movie_frame = ctrl.submitted_frames[-1]
     assert movie_frame["transition"] == 800, f"Expected 800ms movie crossfade, got {movie_frame['transition']}"
 
+
+def test_l930_music_transition_matches_aimd_rate_cap():
+    ctrl = MockController()
+    ctrl._max_updates_per_s = 8.0
+    ctrl.music_transition_ms = 120
+
+    class FakeFrameSender:
+        max_updates_per_s = 8.0
+        _aimd_rate_cap = 1.0  # Simulate a slow device forced to 1 FPS.
+
+        def set_send_budget(self, max_updates_per_s):
+            self.max_updates_per_s = max_updates_per_s
+
+    ctrl.frame_sender = FakeFrameSender()
+    engine = MusicReactiveL930(controller=ctrl, loop_runner=None, app_state={"brightness": 100})
+    state = MusicState(
+        bands=np.linspace(0.1, 1.0, NUM_SEGMENTS, dtype=np.float32),
+        energy=0.55,
+        intensity=0.6,
+        section=Section.VERSE,
+        silent=False,
+    )
+
+    engine._render_from_music_state(state, dt=1.0 / 60.0)
+    assert ctrl.submitted_frames[-1]["transition"] == 980
+
+    # At the nominal 8 FPS cap, the transition should remain near one frame.
+    ctrl.frame_sender._aimd_rate_cap = 8.0
+    engine._render_from_music_state(state, dt=1.0 / 60.0)
+    assert 120 <= ctrl.submitted_frames[-1]["transition"] <= 130

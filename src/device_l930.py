@@ -554,19 +554,24 @@ class L930Controller:
             except Exception as e:
                 asyncio.create_task(self._handle_failure(e))
 
-    async def set_native_effect(self, effect: LightEffect, priority: int = 1):
-        """Push a plugp100 LightEffect (firmware-accelerated)."""
+    async def set_native_effect(self, effect: LightEffect, priority: int = 1) -> bool:
+        """Push a firmware-accelerated effect and report whether the device accepted it."""
         self.clear_frames()
         if priority > 0 and self._lock.locked():
-            return
+            return False
         async with self._lock:
             try:
                 await self._ensure_connected()
                 await self._device.set_light_effect(effect)
                 self._is_on = True
                 self._last_successful_response = time.time()
+                return True
             except Exception as e:
+                # Recovery still runs, but do not conceal the failed deployment from
+                # the caller: the UI must not report that an effect loaded when it did not.
                 asyncio.create_task(self._handle_failure(e))
+                log.error(f"[{self.dev_id}] L930 firmware effect deployment failed: {e}")
+                return False
 
     async def set_segments(
         self,

@@ -436,24 +436,37 @@ class LightHub:
                 ))
         self.notify_change()
 
-    def apply_effect(self, dev_id: str, effect_name: str):
+    def apply_effect(self, dev_id: str, effect_name: str) -> bool:
         targets = self._resolve_targets(dev_id)
+
+        # Validate every L930 target before stopping its current producer. A bad
+        # key must not turn off music/screen mode and then claim the effect loaded.
+        for ctx in targets:
+            if ctx.model == "L930":
+                key = (effect_name or "").strip().lower()
+                key = {"rainbow_native": "rainbow", "aurora_native": "aurora"}.get(key, key)
+                if key not in EFFECT_CATALOG:
+                    raise ValueError(f"Unknown L930 effect: {effect_name!r}")
+
         for ctx in targets:
             self.arbiter.claim_output(ctx.dev_id, OutputProducer.EFFECT, on_relinquish=ctx.fx_engine.stop)
             ctx.audio_sync.stop()
             ctx.screen_sync.stop()
-            ctx.state["power"] = True
-            ctx.state["active_label"] = effect_name
             cur_b = ctx.state.get("brightness", 50)
             if hasattr(ctx, "fx_engine") and hasattr(ctx.fx_engine, "set_parameters"):
                 ctx.fx_engine.set_parameters(brightness=cur_b)
             if ctx.model == "L930":
-                ctx.fx_engine.start(effect_name, brightness=cur_b)
+                started = ctx.fx_engine.start(effect_name, brightness=cur_b)
+                if started is False:
+                    raise RuntimeError(getattr(ctx.fx_engine, "_last_error", None) or f"Failed to start L930 effect {effect_name!r}")
             else:
                 eff_cfg = dict(self.config.get("effects", {}).get(effect_name, {}))
                 eff_cfg["name"] = effect_name
                 ctx.fx_engine.start(eff_cfg)
+            ctx.state["power"] = True
+            ctx.state["active_label"] = effect_name
         self.notify_change()
+        return True
 
     def toggle_music(self, dev_id: str):
         targets = self._resolve_targets(dev_id)

@@ -226,7 +226,10 @@ def test_meteor_shower_renderer_is_bounded_and_moves():
 
 def test_firmware_effect_previews_are_bounded_and_not_uniform():
     engine = L930EffectsEngine(controller=None, loop_runner=None, app_state={})
-    for effect in ("drift", "deep_ocean", "tide", "fireflies", "prism_sparks", "flicker"):
+    for effect in (
+        "drift", "deep_ocean", "tide", "fireflies", "prism_sparks", "flicker",
+        "bioluminescent_abyss", "campfire_hearth", "dual_wipe", "infinite_prism",
+    ):
         frame = engine._compute(effect, t=1.23)
         assert len(frame) == 50, effect
         assert all(0 <= h <= 360 and 0 <= sat <= 100 and 0 <= val <= 100 for h, sat, val in frame), effect
@@ -438,3 +441,78 @@ def test_make_50_zone_effect_payload_invariance_and_anti_reinit():
     assert fx2.type == 'static'
     assert fx2.transition == 120
     assert fx2.segments == fx1.segments
+
+def test_effect_switch_clears_old_frames_and_bypasses_slider_throttle():
+    """Explicit selections replace stale output immediately, even inside the throttle window."""
+    import asyncio
+
+    events = []
+
+    class FakeController:
+        def clear_frames(self):
+            events.append("clear")
+
+        async def set_native_effect(self, effect, priority=0):
+            events.append(("set", effect.name))
+
+    class FakeLoopRunner:
+        def run(self, awaitable):
+            return asyncio.run(awaitable)
+
+    engine = L930EffectsEngine(
+        controller=FakeController(),
+        loop_runner=FakeLoopRunner(),
+        app_state={},
+    )
+
+    assert engine.start("drift") is True
+    assert events[0] == "clear"
+    assert events[1][0] == "set"
+
+    # A second explicit choice within two seconds must deploy now rather than
+    # leave the previous firmware animation running while a timer waits.
+    before = len(events)
+    assert engine.start("fireflies") is True
+    assert events[before] == "clear"
+    assert events[before + 1][0] == "set"
+    assert engine._pending_fw_timer is None
+
+
+def test_effect_start_rejects_unknown_name_without_claiming_success():
+    engine = L930EffectsEngine(controller=None, loop_runner=None, app_state={})
+    assert engine.start("not-a-real-l930-effect") is False
+    assert "Unknown L930 effect" in engine._last_error
+
+
+def test_native_effect_aliases_resolve_to_catalog_entries():
+    import asyncio
+
+    class FakeController:
+        async def set_native_effect(self, effect, priority=0):
+            return None
+
+    class FakeLoopRunner:
+        def run(self, awaitable):
+            return asyncio.run(awaitable)
+
+    engine = L930EffectsEngine(FakeController(), FakeLoopRunner(), app_state={})
+    assert engine.start("aurora_native") is True
+    assert engine._active_effect_name == "aurora"
+
+
+def test_firmware_deployment_failure_is_returned_to_caller():
+    import asyncio
+
+    class FakeController:
+        async def set_native_effect(self, effect, priority=0):
+            return False
+
+    class FakeLoopRunner:
+        def run(self, awaitable):
+            return asyncio.run(awaitable)
+
+    engine = L930EffectsEngine(FakeController(), FakeLoopRunner(), app_state={})
+    assert engine.start("drift") is False
+    assert "Controller rejected firmware effect 'drift'" in engine._last_error
+    assert engine._active_effect_name is None
+    assert engine._active_kind is None

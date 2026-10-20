@@ -807,6 +807,8 @@ class MusicAnalyzer:
         self._sample_clock_time: float = 0.0
         self._last_process_time: float = 0.0
         self._current_state = MusicState()
+        # Hold threshold-qualified onsets across the physical strip's frame cadence.
+        self._onset_strength_env: float = 0.0
         self._hat_peak: float = 0.50
         self._snare_peak: float = 0.50
         self._bass_peak: float = 0.50
@@ -975,8 +977,15 @@ class MusicAnalyzer:
 
         norm_kick = float(getattr(self.calibrator, "norm_kick", kick_e))
 
-        # Normalized onset strength in range [0.0, 1.0] from pre-update detector statistics
-        norm_onset = norm_onset_raw if not is_silent else 0.0
+        # Use pre-update detector statistics, then hold the event long enough to survive
+        # the strip's 125ms nominal update interval. A raw sub-threshold flux rise may
+        # still contribute; a detector-confirmed onset is guaranteed a visible peak.
+        onset_raw = float(max(0.0, min(1.0, norm_onset_raw)))
+        onset_target = 0.0 if is_silent else max(onset_raw, 0.65 if is_onset else 0.0)
+        onset_tau = 0.010 if onset_target > self._onset_strength_env else 0.240
+        onset_alpha = 1.0 - math.exp(-dt / onset_tau)
+        self._onset_strength_env += onset_alpha * (onset_target - self._onset_strength_env)
+        norm_onset = float(max(0.0, min(1.0, self._onset_strength_env)))
         composite_transient = float(max(0.0, min(1.0, norm_snare * 0.5 + norm_onset * 0.3 + norm_hat * 0.2))) if not is_silent else 0.0
 
         intensity = float(max(0.0, min(1.0, energy * 0.50 + norm_kick * 0.30 + (1.0 - flatness) * 0.20)))

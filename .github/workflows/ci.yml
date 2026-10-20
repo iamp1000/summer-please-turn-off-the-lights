@@ -32,7 +32,7 @@ jobs:
           node-version: "22"
 
       - name: Install application and test dependencies
-        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt pytest pytest-asyncio httpx
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt pytest pytest-asyncio
 
       - name: Compile Python sources
         run: python -m compileall -q src tests
