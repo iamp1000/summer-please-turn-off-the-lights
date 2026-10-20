@@ -9,9 +9,457 @@ let state = {
 };
 
 let currentDevId = "strip1";
-let currentEffectCategory = "core";
+let currentEffectCategory = "all";
+let currentExperienceTab = "motion";
 let ws = null;
 let reconnectTimer = null;
+
+const EXPERIENCE_METADATA = {
+  // Ambient
+  tide: { tags: "Slow · Ambient", desc: "Overlapping ocean waves with different speeds and thin seafoam crests on dark teal.", tab: "ambient", cat: "core" },
+  embers: { tags: "Warm · Low motion", desc: "Near-black background with dark-red coal beds and isolated orange embers glowing at varied rates.", tab: "ambient", cat: "core" },
+  breathe: { tags: "Gentle · Meditative", desc: "Deliberate inhale/exhale envelope with slow relaxing color-temperature shift.", tab: "ambient", cat: "core" },
+  drift: { tags: "Smooth · Color shifting", desc: "Slow hue advection traveling across strip with subtle overlapping color clouds.", tab: "ambient", cat: "core" },
+  starfield: { tags: "Dark · Twinkling", desc: "Near-black navy background with isolated stars brightening, holding, and fading independently.", tab: "ambient", cat: "core" },
+  fireflies: { tags: "Organic · Bioluminescent", desc: "Loose clusters of green-gold lights with asynchronous bloom, short peak, and long fade.", tab: "ambient", cat: "core" },
+  lava_lamp: { tags: "Viscous · Fluid", desc: "Viscous molten metaballs stretching, merging, and separating with dark gaps.", tab: "ambient", cat: "core" },
+  golden_hour: { tags: "Warm · Twilight", desc: "Warm amber-to-rose horizon with slow moving bands and rare golden glints.", tab: "ambient", cat: "core" },
+  flicker: { tags: "Organic · Hearth glow", desc: "Warm candlelight flicker with gentle random micro-variations.", tab: "ambient", cat: "core" },
+  candle_flicker: { tags: "Organic · Hearth glow", desc: "Warm candlelight flicker with gentle random micro-variations.", tab: "ambient", cat: "core" },
+  sunrise: { tags: "Gradual · Dawn glow", desc: "Slow warming progression from deep rose dawn to bright warm daylight.", tab: "ambient", cat: "core" },
+  sunset: { tags: "Relaxing · Dusk fade", desc: "Gentle transition from amber gold into deep twilight violet.", tab: "ambient", cat: "core" },
+  fireplace: { tags: "Warm · Cozy hearth", desc: "Roaring fireplace with dancing flame tips and ember base.", tab: "ambient", cat: "core" },
+  sakura: { tags: "Delicate · Blossom", desc: "Soft pastel cherry blossom petals drifting serenely.", tab: "ambient", cat: "core" },
+  ambient_drift: { tags: "Soft · Lavender drift", desc: "Cosmic violet wave nodes floating continuously.", tab: "ambient", cat: "core" },
+
+  // Motion
+  aurora: { tags: "Flowing · Atmospheric", desc: "Vertical celestial ribbons of violet, purple, and green-teal waving smoothly.", tab: "motion", cat: "core" },
+  cyber_chase: { tags: "Motion · Energetic", desc: "High-speed electric cyan and magenta streaks racing with intense neon contrast.", tab: "motion", cat: "core" },
+  comet: { tags: "Directional · Fast sweep", desc: "Streaking celestial head with long exponential fading tail.", tab: "motion", cat: "core" },
+  sinelon: { tags: "Smooth · Pendulum sweep", desc: "Harmonic laser beam oscillating smoothly back and forth.", tab: "motion", cat: "core" },
+  deep_ocean: { tags: "Aquatic · Deep pulse", desc: "Deep oceanic blue and cyan currents swelling and rippling in abyss.", tab: "motion", cat: "core" },
+  raindrop: { tags: "Dynamic · Splash ripple", desc: "Scattered raindrops splashing with concentric expanding ripples.", tab: "motion", cat: "core" },
+  lightning: { tags: "Dramatic · Storm flash", desc: "High-energy electrical storm with sudden branching lightning discharges.", tab: "motion", cat: "core" },
+  rainbow: { tags: "Vibrant · Spectrum flow", desc: "Smooth continuous prismatic spectrum looping continuously.", tab: "motion", cat: "core" },
+  meteor_shower: { tags: "Advanced · Multi-streak", desc: "Independent falling meteors streaking across the sky.", tab: "motion", cat: "advanced" },
+  juggle: { tags: "Advanced · Multi-orb", desc: "Independently traveling colored orbs weaving together.", tab: "motion", cat: "advanced" },
+  spiral_vortex: { tags: "Advanced · Rotational", desc: "Hypnotic rotational spiral winding into a center core.", tab: "motion", cat: "advanced" },
+  gravity_slosh: { tags: "Advanced · Inertial", desc: "Viscous liquid sloshing with realistic boundary rebound physics.", tab: "motion", cat: "advanced" },
+  lissajous_orbit: { tags: "Advanced · Geometric", desc: "Harmonic 3D Lissajous figure-8 spatial curve.", tab: "motion", cat: "advanced" },
+  planar_wind: { tags: "Advanced · Directional", desc: "Directional atmospheric wave advecting smoothly.", tab: "motion", cat: "advanced" },
+  radar_sweep: { tags: "Advanced · Phosphor sweep", desc: "360-degree rotating radar sweep with decaying phosphor echo.", tab: "motion", cat: "advanced" },
+  vaporwave_neon: { tags: "Aesthetic · Retro 80s", desc: "Broad magenta and cyan synthwave aesthetic bands.", tab: "motion", cat: "advanced" },
+  neon_heartbeat: { tags: "Rhythmic · Cardiac pulse", desc: "Realistic double-pulse cardiac rhythm with resting pause.", tab: "motion", cat: "advanced" },
+  lantern_sweep: { tags: "Warm · Ambient motion", desc: "Warm slow lantern pendulum swaying gently.", tab: "motion", cat: "advanced" },
+  candy_cane: { tags: "Seasonal · Holiday stripes", desc: "Festive rotating red and white peppermint candy stripes.", tab: "motion", cat: "seasonal" },
+  haunted_mansion: { tags: "Seasonal · Spooky mist", desc: "Eerie spectral green and deep phantom violet shadows.", tab: "motion", cat: "seasonal" },
+  police: { tags: "Novelty · Emergency beacon", desc: "High-speed alternating red and blue emergency split flash.", tab: "motion", cat: "novelty", warning: "Rapid flashing emergency strobe." },
+
+  // Music
+  pulse: { tags: "Rhythmic · Beat sync", desc: "High-energy transient bursts locked to bass kicks.", tab: "music", cat: "core" },
+  spectrum: { tags: "Frequency · Multi-band", desc: "Direct multi-band frequency mapping from bass to treble across zones.", tab: "music", cat: "core" },
+  flow: { tags: "Melodic · Liquid", desc: "Silky undulating acoustic ribbons following musical contour.", tab: "music", cat: "core" },
+  edm: { tags: "High Energy · Rave", desc: "Explosive strobe flashes and laser sweeps built for bass drops.", tab: "music", cat: "core" },
+  chill: { tags: "Warm · Lo-Fi vinyl", desc: "Cozy warm amber bass swells and gentle harmonic relaxation.", tab: "music", cat: "core" },
+  bass_bounce: { tags: "Percussive · Low-end", desc: "Heavy kick-drum driven bouncing pulses radiating from impact points.", tab: "music", cat: "core" },
+  center_burst: { tags: "Spatial · Radial", desc: "Symmetrical explosive burst expanding outward from center zone.", tab: "music", cat: "core" },
+  twinkle: { tags: "High-freq · Sparkle", desc: "Percussive cymbals and high-frequency harmonics shimmering as stardust.", tab: "music", cat: "core" },
+  director: { tags: "Intelligent · Auto-adaptive", desc: "Autonomous AI lighting director tracking musical key, BPM, and section changes.", tab: "music", cat: "advanced" },
+  acoustic_string: { tags: "Harmonic · Timber", desc: "Warm resonance modeling plucked acoustic strings and guitar.", tab: "music", cat: "advanced" },
+  hydro_acoustic: { tags: "Fluid · Underwater bass", desc: "Deep sub-aquatic acoustic pressure waves propagating smoothly.", tab: "music", cat: "advanced" },
+  bpm_resonator: { tags: "Tempo · Phase-locked", desc: "Harmonic resonance metronome locked strictly to detected tempo.", tab: "music", cat: "advanced" },
+  party: { tags: "Celebration · Dynamic color", desc: "Vibrant fast-paced party celebration color rotation.", tab: "music", cat: "core" },
+  movie: { tags: "Cinematic · Subdued ambiance", desc: "Low-glare cinema bias lighting adapting to dynamic sound tracks.", tab: "music", cat: "core" }
+};
+
+function drawCardBanner(canvas, effId) {
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  switch (effId) {
+    case "tide": {
+      // Flowing cyan wave threads on dark oceanic teal (User mockup match)
+      const grad = ctx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, "#02121d");
+      grad.addColorStop(1, "#052636");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+
+      const waves = [
+        { color: "rgba(0, 168, 204, 0.4)", yOffset: h * 0.72, amp: 26, freq: 0.015, width: 8 },
+        { color: "rgba(0, 229, 255, 0.75)", yOffset: h * 0.56, amp: 34, freq: 0.018, width: 6 },
+        { color: "rgba(56, 189, 248, 0.85)", yOffset: h * 0.44, amp: 40, freq: 0.022, width: 4 },
+        { color: "rgba(224, 247, 250, 0.95)", yOffset: h * 0.40, amp: 44, freq: 0.024, width: 2 }
+      ];
+      waves.forEach(wv => {
+        ctx.beginPath();
+        for (let x = 0; x <= w; x += 4) {
+          const y = wv.yOffset + Math.sin(x * wv.freq + 1.2) * wv.amp + Math.cos(x * wv.freq * 0.5) * (wv.amp * 0.35);
+          if (x === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = wv.color;
+        ctx.lineWidth = wv.width;
+        ctx.shadowColor = "#00e5ff";
+        ctx.shadowBlur = 14;
+        ctx.stroke();
+      });
+      ctx.shadowBlur = 0;
+      break;
+    }
+    case "embers": {
+      // Dark charred coals with burning orange/gold sparks (User mockup match)
+      const grad = ctx.createRadialGradient(w * 0.5, h, 10, w * 0.5, h, w * 0.8);
+      grad.addColorStop(0, "#4a0e03");
+      grad.addColorStop(0.4, "#1a0402");
+      grad.addColorStop(1, "#060101");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+
+      const coalGrad = ctx.createLinearGradient(0, h * 0.65, 0, h);
+      coalGrad.addColorStop(0, "rgba(255, 69, 0, 0)");
+      coalGrad.addColorStop(0.5, "rgba(255, 110, 0, 0.65)");
+      coalGrad.addColorStop(1, "rgba(255, 180, 0, 0.9)");
+      ctx.fillStyle = coalGrad;
+      ctx.fillRect(0, h * 0.65, w, h * 0.35);
+
+      const randSeed = [
+        [0.15, 0.85, 3.5, "#ffcc00"], [0.28, 0.72, 4.0, "#ff9900"], [0.42, 0.88, 5.0, "#ffffff"],
+        [0.55, 0.78, 4.2, "#ff5500"], [0.68, 0.82, 3.8, "#ffaa00"], [0.82, 0.75, 4.5, "#ff6600"],
+        [0.22, 0.55, 2.8, "#ff8800"], [0.38, 0.48, 3.0, "#ffaa33"], [0.62, 0.52, 3.2, "#ffcc44"],
+        [0.75, 0.45, 2.5, "#ff5500"], [0.48, 0.35, 2.2, "#ffaa00"], [0.58, 0.28, 1.8, "#ffdd66"],
+        [0.32, 0.22, 1.6, "#ff9900"], [0.70, 0.25, 2.0, "#ff7700"], [0.88, 0.60, 3.0, "#ffbb00"]
+      ];
+      randSeed.forEach(([rx, ry, r, col]) => {
+        ctx.beginPath();
+        ctx.arc(rx * w, ry * h, r, 0, Math.PI * 2);
+        ctx.fillStyle = col;
+        ctx.shadowColor = col;
+        ctx.shadowBlur = 10;
+        ctx.fill();
+      });
+      ctx.shadowBlur = 0;
+      break;
+    }
+    case "aurora": {
+      // Vertical purple & emerald-cyan ribbons with star dust (User mockup match)
+      const grad = ctx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, "#05021a");
+      grad.addColorStop(1, "#070b28");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+
+      const curtains = [
+        { x: 0.18, color1: "rgba(168, 85, 247, 0.75)", color2: "rgba(236, 72, 153, 0.4)", width: 45 },
+        { x: 0.38, color1: "rgba(192, 132, 252, 0.85)", color2: "rgba(99, 102, 241, 0.5)", width: 55 },
+        { x: 0.60, color1: "rgba(6, 182, 212, 0.75)", color2: "rgba(59, 130, 246, 0.5)", width: 50 },
+        { x: 0.82, color1: "rgba(16, 185, 129, 0.7)", color2: "rgba(6, 182, 212, 0.4)", width: 40 }
+      ];
+      curtains.forEach(c => {
+        const cGrad = ctx.createLinearGradient(0, 0, 0, h);
+        cGrad.addColorStop(0, "rgba(0,0,0,0)");
+        cGrad.addColorStop(0.35, c.color1);
+        cGrad.addColorStop(0.85, c.color2);
+        cGrad.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = cGrad;
+        ctx.shadowColor = c.color1;
+        ctx.shadowBlur = 18;
+        ctx.fillRect(c.x * w - c.width * 0.5, 0, c.width, h);
+      });
+      ctx.shadowBlur = 0;
+
+      for (let i = 0; i < 30; i++) {
+        const sx = ((i * 37) % 100) / 100 * w;
+        const sy = ((i * 59) % 100) / 100 * h;
+        const sr = (i % 3 === 0) ? 1.5 : 0.9;
+        ctx.beginPath();
+        ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+        ctx.fillStyle = (i % 2 === 0) ? "rgba(255,255,255,0.9)" : "rgba(192, 132, 252, 0.8)";
+        ctx.fill();
+      }
+      break;
+    }
+    case "cyber_chase": {
+      // High-speed neon cyan & magenta converging streaks (User mockup match)
+      ctx.fillStyle = "#030308";
+      ctx.fillRect(0, 0, w, h);
+
+      const streaks = [
+        { y: 0.22, endY: 0.45, color: "#00f0ff", width: 5 },
+        { y: 0.35, endY: 0.48, color: "#38bdf8", width: 4 },
+        { y: 0.45, endY: 0.50, color: "#e0f2fe", width: 3 },
+        { y: 0.55, endY: 0.51, color: "#ec4899", width: 3.5 },
+        { y: 0.65, endY: 0.53, color: "#ff007f", width: 5 },
+        { y: 0.78, endY: 0.56, color: "#a855f7", width: 4 }
+      ];
+      streaks.forEach(s => {
+        ctx.beginPath();
+        ctx.moveTo(0, s.y * h);
+        ctx.bezierCurveTo(w * 0.4, s.y * h, w * 0.7, s.endY * h, w, s.endY * h);
+        ctx.strokeStyle = s.color;
+        ctx.lineWidth = s.width;
+        ctx.shadowColor = s.color;
+        ctx.shadowBlur = 14;
+        ctx.stroke();
+      });
+      ctx.shadowBlur = 0;
+      break;
+    }
+    case "breathe": {
+      const grad = ctx.createRadialGradient(w * 0.5, h * 0.5, 5, w * 0.5, h * 0.5, w * 0.5);
+      grad.addColorStop(0, "rgba(192, 132, 252, 0.9)");
+      grad.addColorStop(0.35, "rgba(124, 110, 245, 0.6)");
+      grad.addColorStop(0.7, "rgba(59, 130, 246, 0.2)");
+      grad.addColorStop(1, "#070712");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+      break;
+    }
+    case "drift": {
+      const grad = ctx.createLinearGradient(0, 0, w, h);
+      grad.addColorStop(0, "#4338ca");
+      grad.addColorStop(0.35, "#7c3aed");
+      grad.addColorStop(0.7, "#c026d3");
+      grad.addColorStop(1, "#0284c7");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+      break;
+    }
+    case "starfield": {
+      ctx.fillStyle = "#03040a";
+      ctx.fillRect(0, 0, w, h);
+      const neb = ctx.createRadialGradient(w * 0.6, h * 0.4, 10, w * 0.6, h * 0.4, w * 0.5);
+      neb.addColorStop(0, "rgba(30, 58, 138, 0.45)");
+      neb.addColorStop(1, "transparent");
+      ctx.fillStyle = neb;
+      ctx.fillRect(0, 0, w, h);
+
+      for (let i = 0; i < 40; i++) {
+        const sx = ((i * 47) % 100) / 100 * w;
+        const sy = ((i * 73) % 100) / 100 * h;
+        const r = (i % 5 === 0) ? 2.0 : 1.0;
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        if (i % 5 === 0) {
+          ctx.shadowColor = "#38bdf8";
+          ctx.shadowBlur = 8;
+        }
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+      break;
+    }
+    case "fireflies": {
+      ctx.fillStyle = "#020f06";
+      ctx.fillRect(0, 0, w, h);
+      const orbs = [
+        [0.2, 0.35, 12, "#a3e635"], [0.35, 0.65, 16, "#84cc16"],
+        [0.55, 0.3, 14, "#facc15"], [0.72, 0.6, 18, "#a3e635"],
+        [0.85, 0.4, 10, "#4ade80"]
+      ];
+      orbs.forEach(([ox, oy, or, col]) => {
+        const g = ctx.createRadialGradient(ox * w, oy * h, 1, ox * w, oy * h, or * 2);
+        g.addColorStop(0, col);
+        g.addColorStop(0.4, col);
+        g.addColorStop(1, "transparent");
+        ctx.fillStyle = g;
+        ctx.fillRect(ox * w - or * 2, oy * h - or * 2, or * 4, or * 4);
+      });
+      break;
+    }
+    case "lava_lamp": {
+      ctx.fillStyle = "#0c0204";
+      ctx.fillRect(0, 0, w, h);
+      const blobs = [
+        [0.3, 0.6, 32, "#f97316"], [0.45, 0.35, 26, "#ef4444"],
+        [0.7, 0.55, 38, "#ea580c"], [0.6, 0.25, 20, "#fbbf24"]
+      ];
+      blobs.forEach(([bx, by, br, col]) => {
+        const g = ctx.createRadialGradient(bx * w, by * h, 2, bx * w, by * h, br);
+        g.addColorStop(0, "#fef08a");
+        g.addColorStop(0.5, col);
+        g.addColorStop(1, "transparent");
+        ctx.fillStyle = g;
+        ctx.fillRect(bx * w - br, by * h - br, br * 2, br * 2);
+      });
+      break;
+    }
+    case "golden_hour": {
+      const grad = ctx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, "#1e1b4b");
+      grad.addColorStop(0.4, "#991b1b");
+      grad.addColorStop(0.7, "#ea580c");
+      grad.addColorStop(1, "#facc15");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+      break;
+    }
+    case "comet": {
+      ctx.fillStyle = "#03020a";
+      ctx.fillRect(0, 0, w, h);
+      const trail = ctx.createLinearGradient(w * 0.1, h * 0.8, w * 0.8, h * 0.2);
+      trail.addColorStop(0, "rgba(168, 85, 247, 0)");
+      trail.addColorStop(0.7, "rgba(192, 132, 252, 0.6)");
+      trail.addColorStop(1, "#ffffff");
+      ctx.beginPath();
+      ctx.moveTo(w * 0.1, h * 0.8);
+      ctx.lineTo(w * 0.8, h * 0.2);
+      ctx.strokeStyle = trail;
+      ctx.lineWidth = 6;
+      ctx.shadowColor = "#c084fc";
+      ctx.shadowBlur = 16;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      break;
+    }
+    case "sinelon": {
+      ctx.fillStyle = "#060312";
+      ctx.fillRect(0, 0, w, h);
+      ctx.beginPath();
+      for (let x = 0; x <= w; x += 4) {
+        const y = h * 0.5 + Math.sin(x * 0.02) * (h * 0.35);
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = "#818cf8";
+      ctx.lineWidth = 4;
+      ctx.shadowColor = "#6366f1";
+      ctx.shadowBlur = 12;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      break;
+    }
+    case "deep_ocean": {
+      const grad = ctx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, "#020b14");
+      grad.addColorStop(0.6, "#032d42");
+      grad.addColorStop(1, "#06b6d4");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+      break;
+    }
+    case "lightning": {
+      ctx.fillStyle = "#070814";
+      ctx.fillRect(0, 0, w, h);
+      ctx.beginPath();
+      ctx.moveTo(w * 0.3, 0);
+      ctx.lineTo(w * 0.45, h * 0.35);
+      ctx.lineTo(w * 0.4, h * 0.45);
+      ctx.lineTo(w * 0.65, h * 0.7);
+      ctx.lineTo(w * 0.55, h * 0.75);
+      ctx.lineTo(w * 0.7, h);
+      ctx.strokeStyle = "#93c5fd";
+      ctx.lineWidth = 3.5;
+      ctx.shadowColor = "#3b82f6";
+      ctx.shadowBlur = 20;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      break;
+    }
+    case "rainbow": {
+      const grad = ctx.createLinearGradient(0, 0, w, 0);
+      grad.addColorStop(0, "#ef4444");
+      grad.addColorStop(0.2, "#f59e0b");
+      grad.addColorStop(0.4, "#10b981");
+      grad.addColorStop(0.6, "#06b6d4");
+      grad.addColorStop(0.8, "#6366f1");
+      grad.addColorStop(1, "#ec4899");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+      break;
+    }
+    case "pulse": {
+      ctx.fillStyle = "#08020a";
+      ctx.fillRect(0, 0, w, h);
+      [0.2, 0.4, 0.65].forEach(rPct => {
+        ctx.beginPath();
+        ctx.arc(w * 0.5, h * 0.5, w * rPct, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(244, 63, 94, ${1.0 - rPct})`;
+        ctx.lineWidth = 4;
+        ctx.shadowColor = "#f43f5e";
+        ctx.shadowBlur = 14;
+        ctx.stroke();
+      });
+      ctx.shadowBlur = 0;
+      break;
+    }
+    case "spectrum": {
+      ctx.fillStyle = "#05050a";
+      ctx.fillRect(0, 0, w, h);
+      const bars = [0.35, 0.65, 0.9, 0.8, 0.5, 0.7, 0.95, 0.6, 0.4, 0.25];
+      const barW = (w - 20) / bars.length;
+      bars.forEach((bH, idx) => {
+        const x = 10 + idx * barW;
+        const barHeight = bH * (h - 20);
+        const y = h - 10 - barHeight;
+        const g = ctx.createLinearGradient(0, y, 0, h - 10);
+        g.addColorStop(0, "#ef4444");
+        g.addColorStop(0.5, "#eab308");
+        g.addColorStop(1, "#10b981");
+        ctx.fillStyle = g;
+        ctx.fillRect(x + 2, y, barW - 4, barHeight);
+      });
+      break;
+    }
+    case "flow": {
+      ctx.fillStyle = "#020d18";
+      ctx.fillRect(0, 0, w, h);
+      ctx.beginPath();
+      for (let x = 0; x <= w; x += 3) {
+        const y = h * 0.5 + Math.sin(x * 0.02) * (h * 0.25) + Math.cos(x * 0.04) * (h * 0.15);
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = "#38bdf8";
+      ctx.lineWidth = 5;
+      ctx.shadowColor = "#0284c7";
+      ctx.shadowBlur = 15;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      break;
+    }
+    case "edm": {
+      ctx.fillStyle = "#0c010b";
+      ctx.fillRect(0, 0, w, h);
+      for (let i = 0; i < 8; i++) {
+        const angle = (i / 8) * Math.PI;
+        ctx.beginPath();
+        ctx.moveTo(w * 0.5 - Math.cos(angle) * w, h * 0.5 - Math.sin(angle) * h);
+        ctx.lineTo(w * 0.5 + Math.cos(angle) * w, h * 0.5 + Math.sin(angle) * h);
+        ctx.strokeStyle = (i % 2 === 0) ? "#f43f5e" : "#00f0ff";
+        ctx.lineWidth = 3;
+        ctx.shadowColor = ctx.strokeStyle;
+        ctx.shadowBlur = 12;
+        ctx.stroke();
+      }
+      ctx.shadowBlur = 0;
+      break;
+    }
+    case "chill": {
+      const g = ctx.createRadialGradient(w * 0.5, h * 0.5, 5, w * 0.5, h * 0.5, w * 0.5);
+      g.addColorStop(0, "#fbbf24");
+      g.addColorStop(0.5, "#d97706");
+      g.addColorStop(1, "#1c1917");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h);
+      break;
+    }
+    default: {
+      const c = EFFECT_COLORS[effId] || "#7c6ef5";
+      const g = ctx.createLinearGradient(0, 0, w, h);
+      g.addColorStop(0, "#080812");
+      g.addColorStop(0.5, c);
+      g.addColorStop(1, "#050508");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h);
+      break;
+    }
+  }
+}
 
 const MODE_COLORS = {
   work: "#fff9e6",
@@ -981,20 +1429,25 @@ function drawAudioSpectrum(spectrum) {
 
 function drawZonePreview(segments) {
   const canvas = document.getElementById("zonePreviewCanvas");
-  if (!canvas || !segments || !segments.length) return;
-  const ctx = canvas.getContext("2d");
-  const w = canvas.width;
-  const h = canvas.height;
-  ctx.clearRect(0, 0, w, h);
+  const trayCanvas = document.getElementById("trayPreviewCanvas");
+  if (!segments || !segments.length) return;
 
-  const numZones = segments.length;
-  const blockW = w / numZones;
+  [canvas, trayCanvas].forEach(c => {
+    if (!c) return;
+    const ctx = c.getContext("2d");
+    const w = c.width;
+    const h = c.height;
+    ctx.clearRect(0, 0, w, h);
 
-  for (let i = 0; i < numZones; i++) {
-    const [hue, sat, val] = segments[i];
-    ctx.fillStyle = `hsl(${hue}, ${sat}%, ${Math.round(val * 0.55)}%)`;
-    ctx.fillRect(i * blockW, 0, blockW, h);
-  }
+    const numZones = segments.length;
+    const blockW = w / numZones;
+
+    for (let i = 0; i < numZones; i++) {
+      const [hue, sat, val] = segments[i];
+      ctx.fillStyle = `hsl(${hue}, ${sat}%, ${Math.round(val * 0.55)}%)`;
+      ctx.fillRect(i * blockW, 0, blockW, h);
+    }
+  });
 }
 
 // ── API Helpers ───────────────────────────────────────────────────────────────
@@ -1151,120 +1604,157 @@ function renderUI() {
     zoneCard.style.display = (isL930 || currentDevId === "all") ? "block" : "none";
   }
 
-  // 4. Dynamic Effects
-  const fxGrid = document.getElementById("effectsGrid");
-  const fxHeader = document.getElementById("effectsHeader");
-  const fxCount = document.getElementById("effectsCount");
+  // 4. Visual Experience Hub (Ambient · Motion · Music)
+  const expGrid = document.getElementById("experienceCardsGrid") || document.getElementById("effectsGrid");
+  const expHeader = document.getElementById("experienceHubHeader") || document.getElementById("effectsHeader");
+  const expSubheading = document.getElementById("experienceSubheading");
+  const expCount = document.getElementById("effectsCount");
+  const expStatusPill = document.getElementById("experienceStatusPill");
 
-  const effectsList = isL930 ? state.effects_l930 : state.effects_l900;
-  const effectSearchQuery = (document.getElementById("effectSearch")?.value || "").trim().toLowerCase();
-  const totalEffects = isL930 && state.effects_catalog
-    ? Object.keys(state.effects_catalog).length : effectsList.length;
-  let visibleEffectCount = 0;
-  fxHeader.textContent = isL930 ? "L930 50-ZONE WRGBIC EFFECTS" : "L900 SLOW AMBIENT EFFECTS";
+  if (expHeader) {
+    expHeader.textContent = isL930 ? "L930 LIGHTING" : "L900 LIGHTING";
+  }
+  if (expSubheading) {
+    expSubheading.textContent = isL930 ? "CURATED LIGHTING SYSTEM · 50-ZONE ADDRESSABLE" : "SLOW AMBIENT LIGHTING SYSTEM";
+  }
+  if (expStatusPill) {
+    expStatusPill.textContent = activeDev.device_on ? "Live & Streaming" : "Standby";
+  }
 
-  let fxHtml = `
-    <div style="grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; background: rgba(0,0,0,0.25); padding: 8px 10px; border-radius: 8px;">
-      <div>
-        <div style="font-size: 9px; font-weight: 700; color: #888899; margin-bottom: 2px;">⚡ SPEED</div>
-        <select onchange="updateFxSpeed(this.value)" style="width: 100%; background: #181824; color: #eee; border: 1px solid #2d2d40; border-radius: 6px; padding: 3px 6px; font-size: 11px;">
-          <option value="0.5">0.5x (Slow)</option>
-          <option value="1.0" selected>1.0x (Normal)</option>
-          <option value="1.5">1.5x (Fast)</option>
-          <option value="2.0">2.0x (Hyper)</option>
-        </select>
-      </div>
-      <div>
-        <div style="font-size: 9px; font-weight: 700; color: #888899; margin-bottom: 2px;">🎨 PALETTE</div>
-        <select onchange="updateFxPalette(this.value)" style="width: 100%; background: #181824; color: #eee; border: 1px solid #2d2d40; border-radius: 6px; padding: 3px 6px; font-size: 11px;">
-          <option value="sunset" selected>Sunset</option>
-          <option value="forest">Forest</option>
-          <option value="fire">Fire</option>
-          <option value="pastel">Pastel</option>
-          <option value="tide">Tide</option>
-          <option value="dusk">Dusk</option>
-          <option value="ember">Ember</option>
-          <option value="warm_mono">WarmMono</option>
-        </select>
-      </div>
-    </div>
-  `;
+  // Segment tabs active state
+  document.querySelectorAll(".primary-segment-tab").forEach(tabBtn => {
+    tabBtn.classList.toggle("active", tabBtn.dataset.tab === currentExperienceTab);
+  });
 
   const filterTabsEl = document.getElementById("effectsFilterTabs");
   if (filterTabsEl) {
-    filterTabsEl.style.display = isL930 ? "flex" : "none";
+    filterTabsEl.style.display = (isL930 && currentExperienceTab === "motion") ? "flex" : "none";
     filterTabsEl.querySelectorAll(".effect-tab-btn").forEach(btn => {
       btn.classList.toggle("active", btn.dataset.category === currentEffectCategory);
     });
   }
 
-  if (isL930 && state.effects_catalog) {
-    const catalog = state.effects_catalog;
-    let effectKeys = Object.keys(catalog);
+  const effectSearchQuery = (document.getElementById("effectSearch")?.value || "").trim().toLowerCase();
+  let availableItems = [];
 
-    if (effectSearchQuery) {
-      effectKeys = effectKeys.filter(eff => {
-        const meta = catalog[eff] || {};
-        return `${eff} ${formatName(eff)} ${meta.desc || ""} ${meta.group || ""} ${meta.alias_of || ""}`.toLowerCase().includes(effectSearchQuery);
+  if (currentExperienceTab === "music") {
+    // Music visualizer modes
+    const musicModes = [
+      "pulse", "flow", "chill", "edm", "spectrum", "bass_bounce", "center_burst",
+      "twinkle", "director", "acoustic_string", "hydro_acoustic", "bpm_resonator",
+      "party", "movie"
+    ];
+    availableItems = musicModes.map(id => ({
+      id,
+      meta: EXPERIENCE_METADATA[id] || { tags: "Music Reactive", desc: formatName(id) }
+    }));
+  } else if (isL930 && state.effects_catalog) {
+    const catalog = state.effects_catalog;
+    let keys = Object.keys(catalog).filter(k => catalog[k]?.category !== "alias" && catalog[k]?.category !== "reactive");
+
+    if (currentExperienceTab === "ambient") {
+      keys = keys.filter(k => {
+        const m = catalog[k] || {};
+        const meta = EXPERIENCE_METADATA[k] || {};
+        return (m.group === "Ambient" || meta.tab === "ambient");
       });
     } else {
+      // Motion tab
+      keys = keys.filter(k => {
+        const m = catalog[k] || {};
+        const meta = EXPERIENCE_METADATA[k] || {};
+        return (m.group === "Motion" || m.group === "Seasonal & Novelty" || meta.tab === "motion");
+      });
       if (currentEffectCategory === "core") {
-        effectKeys = effectKeys.filter(k => catalog[k]?.category === "core");
+        keys = keys.filter(k => catalog[k]?.category === "core");
       } else if (currentEffectCategory === "advanced") {
-        effectKeys = effectKeys.filter(k => catalog[k]?.category === "advanced");
+        keys = keys.filter(k => catalog[k]?.category === "advanced");
       } else if (currentEffectCategory === "seasonal") {
-        effectKeys = effectKeys.filter(k => catalog[k]?.category === "seasonal");
+        keys = keys.filter(k => catalog[k]?.category === "seasonal");
       } else if (currentEffectCategory === "novelty") {
-        effectKeys = effectKeys.filter(k => catalog[k]?.category === "novelty");
-      } else {
-        effectKeys = effectKeys.filter(k => catalog[k]?.category !== "alias" && catalog[k]?.category !== "reactive");
+        keys = keys.filter(k => catalog[k]?.category === "novelty");
       }
     }
 
-    visibleEffectCount = effectKeys.length;
-    effectKeys.forEach(eff => {
-      const isAct = (activeDev.active_label === eff) ? "active" : "";
-      const color = EFFECT_COLORS[eff] || "#7c6ef5";
-      const meta = catalog[eff] || {};
-      const isAlias = Boolean(meta.alias_of);
-      const isWarn = Boolean(meta.warning);
-      const kindLabel = isAlias
-        ? `ALIAS → ${formatName(meta.alias_of)}`
-        : (meta.kind === "firmware" ? "ON-DEVICE" : "PROCEDURAL");
-      const warnBadge = isWarn
-        ? `<span class="novelty-warning-badge">⚠️ RAPID FLASHING</span>`
-        : `<small>${kindLabel}</small>`;
-      fxHtml += `
-        <button class="item-btn effect-item ${isAct}"
-                data-eff="${eff}"
-                title="${meta.desc || formatName(eff)}${isWarn ? ' · ' + meta.warning : ''} · ${kindLabel}"
-                onclick="applyEffect('${eff}', this)">
-          <span class="item-dot" style="background: ${color};"></span>
-          <span class="effect-item-copy"><span>${formatName(eff)}</span>${warnBadge}</span>
-        </button>
-      `;
-    });
+    availableItems = keys.map(id => ({
+      id,
+      meta: { ...(catalog[id] || {}), ...(EXPERIENCE_METADATA[id] || {}) }
+    }));
   } else {
-    const visibleItems = effectsList.filter(eff =>
-      `${eff} ${formatName(eff)}`.toLowerCase().includes(effectSearchQuery)
-    );
-    visibleEffectCount += visibleItems.length;
-    visibleItems.forEach(eff => {
-      const isAct = (activeDev.active_label === eff) ? "active" : "";
-      const color = EFFECT_COLORS[eff] || "#7c6ef5";
-      fxHtml += `
-        <button class="item-btn effect-item ${isAct}" data-eff="${eff}" title="${formatName(eff)}" onclick="applyEffect('${eff}', this)">
-          <span class="item-dot" style="background: ${color};"></span>
-          <span class="effect-item-copy"><span>${formatName(eff)}</span></span>
-        </button>
-      `;
+    // L900 or fallback list
+    const effectsList = isL930 ? (state.effects_l930 || []) : (state.effects_l900 || []);
+    availableItems = effectsList.map(id => ({
+      id,
+      meta: EXPERIENCE_METADATA[id] || { tags: "Slow · Ambient", desc: formatName(id) }
+    }));
+  }
+
+  // Filter by search query if any
+  if (effectSearchQuery) {
+    availableItems = availableItems.filter(item => {
+      const fullText = `${item.id} ${formatName(item.id)} ${item.meta.tags || ''} ${item.meta.desc || ''}`.toLowerCase();
+      return fullText.includes(effectSearchQuery);
     });
   }
-  fxGrid.innerHTML = fxHtml;
-  fxCount.textContent = effectSearchQuery
-    ? `${visibleEffectCount} / ${totalEffects} modes`
-    : `${totalEffects} modes`;
+
+  let cardsHtml = "";
+  const activeLabel = (activeDev.active_label || "").toLowerCase();
+
+  availableItems.forEach(item => {
+    const id = item.id;
+    const meta = item.meta || {};
+    const isActive = (activeLabel === id) || (currentExperienceTab === "music" && state.audio_style === id);
+    const isWarn = Boolean(meta.warning);
+    const isAdv = meta.category === "advanced" || meta.cat === "advanced";
+    const isSeasonal = meta.category === "seasonal" || meta.cat === "seasonal";
+
+    let badgeOverlay = "";
+    if (isWarn) {
+      badgeOverlay = `<span class="card-badge-overlay warning">⚠️ Rapid Flash</span>`;
+    } else if (isSeasonal) {
+      badgeOverlay = `<span class="card-badge-overlay seasonal">Seasonal</span>`;
+    } else if (isAdv) {
+      badgeOverlay = `<span class="card-badge-overlay advanced">Advanced</span>`;
+    }
+
+    const tags = meta.tags || (meta.group ? `${meta.group} · Smooth` : "Curated · WRGBIC");
+
+    cardsHtml += `
+      <div class="experience-card ${isActive ? 'active' : ''}" data-id="${id}" onclick="selectExperience('${id}', '${currentExperienceTab}')">
+        <div class="card-banner-wrapper">
+          <canvas class="card-banner-canvas" width="340" height="180" data-eff="${id}"></canvas>
+          ${badgeOverlay}
+        </div>
+        <div class="card-meta">
+          <h3 class="card-title">${formatName(id)}</h3>
+          <p class="card-subtitle">${tags}</p>
+        </div>
+      </div>
+    `;
+  });
+
+  if (expGrid) {
+    expGrid.innerHTML = cardsHtml;
+  }
+
+  // Render procedural artwork on all visible card canvases
+  requestAnimationFrame(() => {
+    document.querySelectorAll(".card-banner-canvas").forEach(cv => {
+      const effId = cv.dataset.eff;
+      if (effId) drawCardBanner(cv, effId);
+    });
+  });
+
+  // Update In-Situ Selected Effect Tray
+  updateSelectedEffectTray(activeDev.active_label);
+
   const emptyState = document.getElementById("effectsEmptyState");
+  if (emptyState) {
+    emptyState.hidden = availableItems.length > 0;
+  }
+  if (expCount) {
+    expCount.textContent = `${availableItems.length} available`;
+  }
   if (emptyState) emptyState.hidden = visibleEffectCount > 0;
 
   // 5. Static Presets
@@ -1376,12 +1866,130 @@ function toggleGroup(gName) {
   });
 }
 
+function switchExperienceTab(tab) {
+  currentExperienceTab = tab;
+  document.querySelectorAll(".primary-segment-tab").forEach(tabBtn => {
+    tabBtn.classList.toggle("active", tabBtn.dataset.tab === tab);
+  });
+  renderUI();
+}
+
+function selectExperience(id, tab) {
+  if (tab === "music" || currentExperienceTab === "music") {
+    selectMusicStyle(id);
+  } else {
+    applyEffect(id);
+  }
+}
+
+async function selectMusicStyle(style) {
+  const activeDev = state.devices?.[currentDevId] || {};
+  if (!activeDev.music_sync) {
+    await apiPost(`/api/device/${currentDevId}/music`, {});
+  }
+  const theme = getThemeForLabel(style);
+  document.body.setAttribute("data-theme", theme);
+  bgEngine.setTheme(theme);
+  await apiPost(`/api/device/${currentDevId}/music/mode`, { mode: style });
+  showToast(`🎵 Music Visualizer: ${formatName(style)}`, "success");
+  renderUI();
+}
+
+function updateSelectedEffectTray(activeLabel) {
+  const dev = state.devices?.[currentDevId] || {};
+  const currentEff = activeLabel || dev.active_label || "tide";
+  const catalog = state.effects_catalog || {};
+  const meta = catalog[currentEff] || EXPERIENCE_METADATA[currentEff] || {};
+  const supported = new Set(meta.supported_controls || ["speed", "brightness", "palette"]);
+
+  const titleEl = document.getElementById("trayEffectTitle");
+  if (titleEl) titleEl.textContent = formatName(currentEff);
+
+  const kindEl = document.getElementById("trayKindBadge");
+  if (kindEl) {
+    if (currentExperienceTab === "music") {
+      kindEl.textContent = "AUDIO REACTIVE";
+    } else {
+      kindEl.textContent = meta.kind === "firmware" ? "ON-DEVICE FIRMWARE" : "PROCEDURAL STREAM";
+    }
+  }
+
+  const descEl = document.getElementById("trayEffectDesc");
+  if (descEl) descEl.textContent = meta.desc || EXPERIENCE_METADATA[currentEff]?.desc || "Dynamic 50-zone light experience.";
+
+  // Dynamic slider boxes
+  const boxSpeed = document.getElementById("trayBoxSpeed");
+  const boxBright = document.getElementById("trayBoxBrightness");
+  const boxPalette = document.getElementById("trayBoxPalette");
+  const boxDensity = document.getElementById("trayBoxDensity");
+  const boxTail = document.getElementById("trayBoxTail");
+  const boxWidth = document.getElementById("trayBoxWidth");
+  const boxFlash = document.getElementById("trayBoxFlash");
+  const musicTelemetry = document.getElementById("trayMusicTelemetry");
+
+  if (currentExperienceTab === "music") {
+    if (musicTelemetry) musicTelemetry.style.display = "flex";
+    if (boxPalette) boxPalette.style.display = "none";
+    if (boxDensity) boxDensity.style.display = "none";
+    if (boxTail) boxTail.style.display = "none";
+    if (boxWidth) boxWidth.style.display = "none";
+    if (boxFlash) boxFlash.style.display = "none";
+  } else {
+    if (musicTelemetry) musicTelemetry.style.display = "none";
+    if (boxPalette) boxPalette.style.display = supported.has("palette") ? "flex" : "none";
+    if (boxDensity) boxDensity.style.display = supported.has("particle_density") ? "flex" : "none";
+    if (boxTail) boxTail.style.display = supported.has("tail_length") ? "flex" : "none";
+    if (boxWidth) boxWidth.style.display = supported.has("wave_width") ? "flex" : "none";
+    if (boxFlash) boxFlash.style.display = supported.has("flash_strength") ? "flex" : "none";
+  }
+}
+
 function updateFxSpeed(val) {
-  apiPost(`/api/device/${currentDevId}/effect_params`, { speed: parseFloat(val) });
+  const v = parseFloat(val);
+  const el = document.getElementById("traySpeedVal");
+  if (el) el.textContent = `${v.toFixed(1)}x`;
+  apiPost(`/api/device/${currentDevId}/effect_params`, { speed: v });
+}
+
+function updateFxBrightness(val) {
+  const v = parseInt(val, 10);
+  const el = document.getElementById("trayBrightVal");
+  if (el) el.textContent = `${v}%`;
+  apiPost(`/api/device/${currentDevId}/effect_params`, { brightness: v });
 }
 
 function updateFxPalette(val) {
+  const el = document.getElementById("trayPaletteVal");
+  if (el) el.textContent = formatName(val);
   apiPost(`/api/device/${currentDevId}/effect_params`, { palette_name: val });
+}
+
+function updateFxDensity(val) {
+  const v = parseFloat(val);
+  const el = document.getElementById("trayDensityVal");
+  if (el) el.textContent = `${v.toFixed(1)}x`;
+  apiPost(`/api/device/${currentDevId}/effect_params`, { particle_density: v });
+}
+
+function updateFxTail(val) {
+  const v = parseFloat(val);
+  const el = document.getElementById("trayTailVal");
+  if (el) el.textContent = `${v.toFixed(1)}x`;
+  apiPost(`/api/device/${currentDevId}/effect_params`, { tail_length: v });
+}
+
+function updateFxWidth(val) {
+  const v = parseFloat(val);
+  const el = document.getElementById("trayWidthVal");
+  if (el) el.textContent = `${v.toFixed(1)}x`;
+  apiPost(`/api/device/${currentDevId}/effect_params`, { wave_width: v });
+}
+
+function updateFxFlash(val) {
+  const v = parseFloat(val);
+  const el = document.getElementById("trayFlashVal");
+  if (el) el.textContent = `${v.toFixed(1)}x`;
+  apiPost(`/api/device/${currentDevId}/effect_params`, { flash_strength: v });
 }
 
 document.getElementById("effectSearch")?.addEventListener("input", () => renderUI());

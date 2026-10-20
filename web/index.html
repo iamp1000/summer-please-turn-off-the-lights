@@ -88,72 +88,150 @@
         </div>
       </section>
 
-      <!-- Reactive Modes Card -->
-      <section class="card sync-card">
-        <span class="card-tag">LIVE SYNC & REACTIVE</span>
-        <div class="sync-grid">
-          <button class="sync-tile" id="btnMusicSync">
-            <span class="tile-icon">🎵</span>
-            <div class="tile-info">
-              <span class="tile-title" id="musicSyncTitle">Audio Reactive</span>
-              <span class="tile-desc" id="musicSyncDesc">Bass & frequency visualizer</span>
-            </div>
-            <span class="tile-status-dot"></span>
+      <!-- Visual Experience Hub (Ambient · Motion · Music) -->
+      <section class="card experience-hub-card" id="experienceHubCard">
+        <div class="card-title-row">
+          <div>
+            <span class="card-tag" id="experienceHubHeader">L930 LIGHTING</span>
+            <div class="experience-subheading" id="experienceSubheading">CURATED LIGHTING SYSTEM · 50-ZONE ADDRESSABLE</div>
+          </div>
+          <span class="status-pill-subtle" id="experienceStatusPill">Device Ready</span>
+        </div>
+
+        <!-- 3 Primary Segment Tabs -->
+        <div class="primary-segment-bar" id="primarySegmentBar" role="tablist">
+          <button type="button" class="primary-segment-tab active" data-tab="ambient" onclick="switchExperienceTab('ambient')">
+            <span class="seg-icon">🌿</span>
+            <span class="seg-label">Ambient</span>
           </button>
-          <button class="sync-tile" id="btnScreenSync">
-            <span class="tile-icon">📺</span>
-            <div class="tile-info">
-              <span class="tile-title">Screen Sync</span>
-              <span class="tile-desc">Ambilight display tracking</span>
-            </div>
-            <span class="tile-status-dot"></span>
+          <button type="button" class="primary-segment-tab" data-tab="motion" onclick="switchExperienceTab('motion')">
+            <span class="seg-icon">↔</span>
+            <span class="seg-label">Motion</span>
+          </button>
+          <button type="button" class="primary-segment-tab" data-tab="music" onclick="switchExperienceTab('music')">
+            <span class="seg-icon">🎵</span>
+            <span class="seg-label">Music</span>
           </button>
         </div>
 
-        <!-- Dual-Strip Composite Synergy -->
-        <div class="composite-synergy-row" style="margin-top: 14px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <span class="card-tag" style="margin: 0; font-size: 10px;">DUAL-STRIP COMPOSITE SYNERGY</span>
-            <button id="btnCircadianToggle" style="background: #1c1c28; border: 1px solid #2d2d40; color: #f5a623; border-radius: 6px; padding: 2px 8px; font-size: 11px; font-weight: 700; cursor: pointer;">☀️ Circadian: OFF</button>
-          </div>
-          <div class="quick-levels" id="compositeButtons" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;">
-            <button class="active" data-cmode="off">Off</button>
-            <button data-cmode="average">Ambient Fill</button>
-            <button data-cmode="complementary">Complement 180°</button>
-            <button data-cmode="contrast">Soft Contrast</button>
+        <!-- Search & Filter Controls -->
+        <div class="experience-filter-row">
+          <label class="effect-search-wrap" for="effectSearch">
+            <span class="effect-search-icon" aria-hidden="true">⌕</span>
+            <input id="effectSearch" class="effect-search" type="search"
+                   placeholder="Search experiences by name or behavior…" autocomplete="off"
+                   aria-label="Search lighting experiences">
+          </label>
+          <div class="effects-filter-tabs" id="effectsFilterTabs">
+            <button type="button" class="effect-tab-btn active" data-category="core" onclick="setEffectCategory('core')">Core</button>
+            <button type="button" class="effect-tab-btn" data-category="advanced" onclick="setEffectCategory('advanced')">Advanced</button>
+            <button type="button" class="effect-tab-btn" data-category="seasonal" onclick="setEffectCategory('seasonal')">Seasonal</button>
+            <button type="button" class="effect-tab-btn" data-category="novelty" onclick="setEffectCategory('novelty')">Novelty</button>
+            <button type="button" class="effect-tab-btn" data-category="all" onclick="setEffectCategory('all')">All</button>
           </div>
         </div>
 
-        <div class="audio-device-row" style="margin-top: 14px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <span class="card-tag" style="margin: 0; font-size: 10px;">AUDIO INPUT SOURCE</span>
-            <span id="activeAudioDeviceBadge" class="card-hint" style="color: #7c6ef5; font-size: 11px;">Auto-Detect</span>
-          </div>
-          <select id="audioDeviceSelect" class="device-select-dropdown" style="width: 100%; padding: 10px 14px; background: #1a1a24; border: 1px solid #2a2a38; border-radius: 10px; color: #eeeef5; font-size: 13px; font-weight: 600; outline: none; cursor: pointer;">
-            <option value="auto">Auto-Detect Active Audio</option>
-          </select>
+        <!-- 2-Column Experience Cards Grid -->
+        <div class="experience-cards-grid" id="experienceCardsGrid">
+          <!-- Populated by JS according to selected tab & device -->
         </div>
-        <div class="visualizer-modes" id="visualizerModes" style="display: none;">
-          <!-- Two-Axis Visual Styles (Genre-Agnostic) -->
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; margin-bottom: 8px;">
-            <span class="card-tag" style="margin: 0; font-size: 10px;">VISUAL STYLES (GENRE-AGNOSTIC)</span>
-            <span class="card-hint" style="font-size: 10px; color: #a8a8ba;">Style stays · Music adapts</span>
-          </div>
-          <div class="quick-levels" id="vstyleButtons" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(78px, 1fr)); gap: 6px;">
-            <button data-vstyle="party">🎉 Party</button>
-            <button data-vstyle="chill">☕ Chill</button>
-            <button data-vstyle="edm">💥 EDM</button>
-            <button data-vstyle="movie">🎬 Movie</button>
-            <button class="active" data-vstyle="pulse">⚡ Pulse</button>
-            <button data-vstyle="spectrum">📊 Spectrum</button>
-            <button data-vstyle="flow">🌊 Flow</button>
-            <button data-vstyle="bass_bounce">🏀 Bounce</button>
-            <button data-vstyle="center_burst">💫 Burst</button>
-            <button data-vstyle="twinkle">✨ Twinkle</button>
+        <p id="effectsEmptyState" class="effects-empty" hidden>No matching experiences. Try another name or behavior.</p>
+
+        <!-- Selected Effect In-Situ Control Tray & Animated Preview -->
+        <div class="selected-effect-tray" id="selectedEffectTray">
+          <div class="tray-header-row">
+            <div class="tray-identity">
+              <span class="tray-tag">SELECTED EXPERIENCE</span>
+              <div class="tray-title-group">
+                <h3 class="tray-title" id="trayEffectTitle">Tide</h3>
+                <span class="tray-kind-badge" id="trayKindBadge">On-Device</span>
+              </div>
+            </div>
+            <div class="tray-preview-box">
+              <canvas id="trayPreviewCanvas" class="tray-preview-canvas" width="220" height="20"></canvas>
+              <span class="tray-preview-label">Live 50-Zone Stream</span>
+            </div>
           </div>
 
-          <!-- Live Music Understanding Engine Telemetry -->
-          <div style="margin-top: 14px; background: rgba(0,0,0,0.32); padding: 14px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.08); display: flex; flex-direction: column; gap: 10px;">
+          <p class="tray-desc" id="trayEffectDesc">Overlapping ocean waves with different speeds and thin seafoam crests on dark teal.</p>
+
+          <!-- Adaptive Dynamic Controls -->
+          <div class="tray-controls-grid" id="trayControlsGrid">
+            <!-- Speed Control -->
+            <div class="tray-control-box" id="trayBoxSpeed">
+              <div class="tray-control-header">
+                <label>⚡ SPEED</label>
+                <span id="traySpeedVal">1.0x</span>
+              </div>
+              <input type="range" min="0.2" max="2.0" step="0.1" value="1.0" class="range-slider" id="traySpeedSlider" oninput="updateFxSpeed(this.value)">
+            </div>
+
+            <!-- Brightness Control -->
+            <div class="tray-control-box" id="trayBoxBrightness">
+              <div class="tray-control-header">
+                <label>🔆 BRIGHTNESS</label>
+                <span id="trayBrightVal">80%</span>
+              </div>
+              <input type="range" min="1" max="100" step="1" value="80" class="range-slider" id="trayBrightSlider" oninput="updateFxBrightness(this.value)">
+            </div>
+
+            <!-- Palette Control -->
+            <div class="tray-control-box" id="trayBoxPalette">
+              <div class="tray-control-header">
+                <label>🎨 PALETTE</label>
+                <span id="trayPaletteVal">Sunset</span>
+              </div>
+              <select id="trayPaletteSelect" class="device-select-dropdown" onchange="updateFxPalette(this.value)" style="width: 100%; padding: 6px 10px; background: #181824; color: #eee; border: 1px solid #2d2d40; border-radius: 8px; font-size: 11px;">
+                <option value="sunset" selected>Sunset (Amber/Rose)</option>
+                <option value="forest">Forest (Emerald/Mint)</option>
+                <option value="fire">Fire (Crimson/Gold)</option>
+                <option value="pastel">Pastel (Soft Cyan/Lavender)</option>
+                <option value="tide">Tide (Aqua/Teal)</option>
+                <option value="dusk">Dusk (Purple/Navy)</option>
+                <option value="ember">Ember (Charred Red/Orange)</option>
+                <option value="warm_mono">WarmMono (2700K White)</option>
+              </select>
+            </div>
+
+            <!-- Particle Density Control -->
+            <div class="tray-control-box" id="trayBoxDensity">
+              <div class="tray-control-header">
+                <label>✨ PARTICLE DENSITY</label>
+                <span id="trayDensityVal">1.0x</span>
+              </div>
+              <input type="range" min="0.2" max="3.0" step="0.1" value="1.0" class="range-slider" id="trayDensitySlider" oninput="updateFxDensity(this.value)">
+            </div>
+
+            <!-- Tail Length Control -->
+            <div class="tray-control-box" id="trayBoxTail">
+              <div class="tray-control-header">
+                <label>☄️ TAIL LENGTH</label>
+                <span id="trayTailVal">1.0x</span>
+              </div>
+              <input type="range" min="0.2" max="3.0" step="0.1" value="1.0" class="range-slider" id="trayTailSlider" oninput="updateFxTail(this.value)">
+            </div>
+
+            <!-- Wave Width Control -->
+            <div class="tray-control-box" id="trayBoxWidth">
+              <div class="tray-control-header">
+                <label>🌊 WAVE WIDTH</label>
+                <span id="trayWidthVal">1.0x</span>
+              </div>
+              <input type="range" min="0.2" max="3.0" step="0.1" value="1.0" class="range-slider" id="trayWidthSlider" oninput="updateFxWidth(this.value)">
+            </div>
+
+            <!-- Flash Strength Control -->
+            <div class="tray-control-box" id="trayBoxFlash">
+              <div class="tray-control-header">
+                <label>⚡ FLASH STRENGTH</label>
+                <span id="trayFlashVal">1.0x</span>
+              </div>
+              <input type="range" min="0.2" max="3.0" step="0.1" value="1.0" class="range-slider" id="trayFlashSlider" oninput="updateFxFlash(this.value)">
+            </div>
+          </div>
+
+          <!-- Music Reactive In-Situ Telemetry Tray (Visible in Music tab) -->
+          <div id="trayMusicTelemetry" style="display: none; flex-direction: column; gap: 10px; margin-top: 6px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.08);">
             <!-- Section & Key Row -->
             <div style="display: flex; justify-content: space-between; align-items: center;">
               <div style="display: flex; align-items: center; gap: 8px;">
@@ -214,7 +292,6 @@
               </div>
             </div>
 
-            <!-- Interactive Tap Calibration Prompt / Audio Delay Guide -->
             <div id="tapSyncStatus" style="display: none; padding: 6px 10px; border-radius: 8px; font-size: 10px; background: rgba(61, 214, 140, 0.12); border: 1px solid rgba(61, 214, 140, 0.3); color: #3dd68c; text-align: center; font-weight: 600;">
               👆 Tap the "🎯 Tap" button on 4 consecutive beats...
             </div>
@@ -229,31 +306,57 @@
             </div>
           </div>
         </div>
+
+        <!-- Hidden container for backward compat if any legacy script queries effectsGrid or vstyleButtons -->
+        <div id="effectsGrid" style="display: none;"></div>
+        <div id="visualizerModes" style="display: none;"><div id="vstyleButtons"></div></div>
       </section>
 
-      <!-- Dynamic Effects Card -->
-      <section class="card effects-card">
-        <div class="card-title-row">
-          <span class="card-tag" id="effectsHeader">DYNAMIC EFFECTS</span>
-          <span class="card-hint" id="effectsCount">8 available</span>
+      <!-- Screen Sync & Multi-Strip Synergy Card -->
+      <section class="card sync-card" id="screenSyncCard">
+        <span class="card-tag">SCREEN AMBILIGHT & MULTI-STRIP SYNERGY</span>
+        <div class="sync-grid">
+          <button class="sync-tile" id="btnMusicSync">
+            <span class="tile-icon">🎵</span>
+            <div class="tile-info">
+              <span class="tile-title" id="musicSyncTitle">Audio Reactive</span>
+              <span class="tile-desc" id="musicSyncDesc">Bass & frequency visualizer</span>
+            </div>
+            <span class="tile-status-dot"></span>
+          </button>
+          <button class="sync-tile" id="btnScreenSync">
+            <span class="tile-icon">📺</span>
+            <div class="tile-info">
+              <span class="tile-title">Screen Sync</span>
+              <span class="tile-desc">Ambilight display tracking</span>
+            </div>
+            <span class="tile-status-dot"></span>
+          </button>
         </div>
-        <label class="effect-search-wrap" for="effectSearch">
-          <span class="effect-search-icon" aria-hidden="true">⌕</span>
-          <input id="effectSearch" class="effect-search" type="search"
-                 placeholder="Search effects by name or behavior…" autocomplete="off"
-                 aria-label="Search lighting effects">
-        </label>
-        <div class="effects-filter-tabs" id="effectsFilterTabs">
-          <button type="button" class="effect-tab-btn active" data-category="core" onclick="setEffectCategory('core')">Core (22)</button>
-          <button type="button" class="effect-tab-btn" data-category="advanced" onclick="setEffectCategory('advanced')">Advanced (10)</button>
-          <button type="button" class="effect-tab-btn" data-category="seasonal" onclick="setEffectCategory('seasonal')">Seasonal (2)</button>
-          <button type="button" class="effect-tab-btn" data-category="novelty" onclick="setEffectCategory('novelty')">Novelty (1)</button>
-          <button type="button" class="effect-tab-btn" data-category="all" onclick="setEffectCategory('all')">All</button>
+
+        <!-- Dual-Strip Composite Synergy -->
+        <div class="composite-synergy-row" style="margin-top: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span class="card-tag" style="margin: 0; font-size: 10px;">DUAL-STRIP COMPOSITE SYNERGY</span>
+            <button id="btnCircadianToggle" style="background: #1c1c28; border: 1px solid #2d2d40; color: #f5a623; border-radius: 6px; padding: 2px 8px; font-size: 11px; font-weight: 700; cursor: pointer;">☀️ Circadian: OFF</button>
+          </div>
+          <div class="quick-levels" id="compositeButtons" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;">
+            <button class="active" data-cmode="off">Off</button>
+            <button data-cmode="average">Ambient Fill</button>
+            <button data-cmode="complementary">Complement 180°</button>
+            <button data-cmode="contrast">Soft Contrast</button>
+          </div>
         </div>
-        <div class="effects-grid" id="effectsGrid">
-          <!-- Populated by JS according to selected device (L900 or L930) -->
+
+        <div class="audio-device-row" style="margin-top: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span class="card-tag" style="margin: 0; font-size: 10px;">AUDIO INPUT SOURCE</span>
+            <span id="activeAudioDeviceBadge" class="card-hint" style="color: #7c6ef5; font-size: 11px;">Auto-Detect</span>
+          </div>
+          <select id="audioDeviceSelect" class="device-select-dropdown" style="width: 100%; padding: 10px 14px; background: #1a1a24; border: 1px solid #2a2a38; border-radius: 10px; color: #eeeef5; font-size: 13px; font-weight: 600; outline: none; cursor: pointer;">
+            <option value="auto">Auto-Detect Active Audio</option>
+          </select>
         </div>
-        <p id="effectsEmptyState" class="effects-empty" hidden>No matching effects. Try another name or behavior.</p>
       </section>
 
       <!-- Static Presets Card -->
