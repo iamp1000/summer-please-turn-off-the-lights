@@ -801,6 +801,9 @@ class MusicAnalyzer:
         self._sample_clock_time: float = 0.0
         self._last_process_time: float = 0.0
         self._current_state = MusicState()
+        # Hold detected onsets long enough to survive the analyzer/render cadence
+        # and the much slower physical-strip send rate.
+        self._onset_strength_env: float = 0.0
         self._hat_peak: float = 0.05
         self._snare_peak: float = 0.05
         self._snare_env: float = 0.0
@@ -950,10 +953,25 @@ class MusicAnalyzer:
         norm_bass = float(max(0.0, min(1.0, math.sqrt(raw_bass_e) * 0.7 + norm_kick * 0.3)))
         norm_mid = float(max(0.0, min(1.0, math.sqrt(raw_mid_e) * (energy * 0.6 + 0.4))))
 
-        # Normalized onset strength in range [0.0, 1.0]
+        # The detector decides onset against the *previous* flux statistics,
+        # then updates those statistics before returning. Normalizing against the
+        # updated mean/variance here suppresses the very peak we need to react to.
+        # Preserve threshold-qualified events and decay them smoothly so a brief
+        # onset is visible to the render loop and low-rate L930 transport.
         std_flux = math.sqrt(max(1e-5, getattr(self.onset_detector, "flux_var", 0.25)))
         mean_flux = getattr(self.onset_detector, "flux_mean", 0.5)
-        norm_onset = float(max(0.0, min(1.0, (flux - mean_flux) / max(0.05, std_flux * 3.0)))) if not is_silent else 0.0
+        if is_silent:
+            onset_target = 0.0
+        elif is_onset:
+            threshold_estimate = mean_flux + self.onset_detector.threshold_mult * std_flux
+            excess = max(0.0, flux - threshold_estimate) / max(0.05, threshold_estimate)
+            onset_target = 0.65 + 0.35 * min(1.0, excess)
+        else:
+            onset_target = 0.0
+        onset_tau = 0.010 if onset_target > self._onset_strength_env else 0.095
+        onset_alpha = 1.0 - math.exp(-dt / onset_tau)
+        self._onset_strength_env += onset_alpha * (onset_target - self._onset_strength_env)
+        norm_onset = float(max(0.0, min(1.0, self._onset_strength_env)))
         composite_transient = float(max(0.0, min(1.0, norm_snare * 0.5 + norm_onset * 0.3 + norm_hat * 0.2))) if not is_silent else 0.0
 
         intensity = float(max(0.0, min(1.0, energy * 0.50 + norm_kick * 0.30 + (1.0 - flatness) * 0.20)))
