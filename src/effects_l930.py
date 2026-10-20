@@ -486,14 +486,15 @@ class L930EffectsEngine:
         if changed and self._active_kind == "firmware" and self._active_effect_name:
             self._redeploy_current_firmware_effect()
 
-    def start(self, effect_name: str, palette_name: Optional[str] = None, speed: Optional[float] = None, brightness: Optional[int] = None):
-        key = effect_name.strip().lower()
+    def start(self, effect_name: str, palette_name: Optional[str] = None, speed: Optional[float] = None, brightness: Optional[int] = None) -> bool:
+        key = (effect_name or "").strip().lower()
+        # Keep native UI aliases pointed at real catalog entries. The previous
+        # alias path admitted "aurora_native" then indexed a nonexistent key.
+        key = {"rainbow_native": "rainbow", "aurora_native": "aurora"}.get(key, key)
         if key not in EFFECT_CATALOG:
-            # Check native aliases
-            if key in NATIVE_PRESETS:
-                key = "rainbow" if key == "rainbow_native" else key
-            else:
-                return
+            self._last_error = f"Unknown L930 effect: {effect_name!r}"
+            logger.error("[L930EffectsEngine] %s", self._last_error)
+            return False
 
         # Increment effect generation immediately
         self._effect_generation += 1
@@ -508,6 +509,14 @@ class L930EffectsEngine:
                 self._pending_fw_timer = None
             self._pending_fw_upload = None
 
+        # Stop the previous render worker before purging the frame queue. Without
+        # this ordering its final in-flight frame can overwrite the newly selected
+        # effect after the UI has already switched.
+        self._stop_stream_worker()
+        if hasattr(self._ctrl, "clear_frames"):
+            self._ctrl.clear_frames()
+
+        self._last_error = None
         if palette_name and palette_name.strip().lower() in PALETTES:
             self._palette_name = palette_name.strip().lower()
         elif "default_palette" in EFFECT_CATALOG[key]:
@@ -525,12 +534,19 @@ class L930EffectsEngine:
         self._start_time = time.monotonic()
 
         if kind == "firmware":
-            # Stop streaming worker cleanly
-            self._stop_stream_worker()
-            self._deploy_firmware_effect(key)
+            # An explicit effect change should be immediate. The two-second
+            # throttle remains for parameter-slider redeploys, not user selection.
+            self._deploy_firmware_effect(key, force=True)
         elif kind == "streamed_slow":
             # Start slow streaming worker (<= 2 updates/s)
             self._start_stream_worker()
+        else:
+            self._last_error = f"Unsupported L930 effect kind {kind!r} for {key!r}"
+            logger.error("[L930EffectsEngine] %s", self._last_error)
+            self._active_effect_name = None
+            self._active_kind = None
+            return False
+        return True
 
     def stop(self):
         self._effect_generation += 1
@@ -550,16 +566,21 @@ class L930EffectsEngine:
 
     # ── Firmware Effect Deployment ────────────────────────────────────────────
 
-    def _deploy_firmware_effect(self, name: str):
+    def _deploy_firmware_effect(self, name: str, force: bool = False):
         fx = self._build_effect_payload(name)
         if fx is None:
+            self._last_error = f"No firmware payload could be built for L930 effect {name!r}"
+            logger.error("[L930EffectsEngine] %s", self._last_error)
+            self._active_effect_name = None
+            self._active_kind = None
             return
 
         gen = self._effect_generation
         with self._fw_lock:
             now = time.monotonic()
-            # Throttle firmware uploads to at most once per 2s
-            if now - self._last_firmware_upload < 2.0:
+            # Parameter updates are throttled, but a deliberate effect selection
+            # must not appear to hang behind the previous effect for two seconds.
+            if not force and now - self._last_firmware_upload < 2.0:
                 self._pending_fw_upload = (gen, name, fx)
                 # Debounce: cancel any existing pending timer before scheduling a new one
                 if self._pending_fw_timer is not None:
