@@ -44,14 +44,24 @@
 
     <!-- Main Content Grid -->
     <main class="content-body">
-      <!-- Device Overview / Power Card -->
+      <!-- Device Overview / Power Card with Prominent Live Status -->
       <section class="card status-card">
         <div class="status-meta">
-          <div class="dev-badge" id="devBadge">L900 STRIP</div>
-          <h2 id="activeDevName">Desk Strip (L900-5)</h2>
-          <div class="now-playing-pill">
-            <span class="pulse-indicator"></span>
-            <span id="nowPlayingText">Idle</span>
+          <div class="dev-badge" id="devBadge">L930 STRIP</div>
+          <h2 id="activeDevName">Bias Strip (L930)</h2>
+          <div class="status-pills-row" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+            <div class="now-playing-pill" title="Currently applied lighting effect">
+              <span class="pulse-indicator"></span>
+              <span id="nowPlayingText">Tide</span>
+            </div>
+            <div class="telemetry-pill send-rate-pill" title="Real-time frame send rate to hardware" style="display: flex; align-items: center; gap: 5px; background: rgba(61, 214, 140, 0.12); border: 1px solid rgba(61, 214, 140, 0.3); border-radius: 20px; padding: 4px 10px; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: #3dd68c;">
+              <span>⚡</span>
+              <span id="topSendRate">2.0 FPS</span>
+            </div>
+            <div class="telemetry-pill errors-pill" title="Connection and hardware error telemetry" style="display: flex; align-items: center; gap: 5px; background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 20px; padding: 4px 10px; font-size: 11px; font-weight: 700; color: #94a3b8;">
+              <span id="topErrorDot" class="status-dot online" style="width: 7px; height: 7px; border-radius: 50%; background: #3dd68c; display: inline-block;"></span>
+              <span id="topErrorText">0 errors</span>
+            </div>
           </div>
         </div>
         <button class="power-toggle-large" id="btnDevicePower">
@@ -123,10 +133,10 @@
                    aria-label="Search lighting experiences">
           </label>
           <div class="effects-filter-tabs" id="effectsFilterTabs">
-            <button type="button" class="effect-tab-btn active" data-category="core" onclick="setEffectCategory('core')">Core</button>
-            <button type="button" class="effect-tab-btn" data-category="advanced" onclick="setEffectCategory('advanced')">Advanced</button>
-            <button type="button" class="effect-tab-btn" data-category="seasonal" onclick="setEffectCategory('seasonal')">Seasonal</button>
-            <button type="button" class="effect-tab-btn" data-category="novelty" onclick="setEffectCategory('novelty')">Novelty</button>
+            <button type="button" class="effect-tab-btn active" data-category="core" onclick="setEffectCategory('core')">Curated Core (22)</button>
+            <button type="button" class="effect-tab-btn" data-category="advanced" onclick="setEffectCategory('advanced')">Advanced (10)</button>
+            <button type="button" class="effect-tab-btn" data-category="seasonal" onclick="setEffectCategory('seasonal')">Seasonal (2)</button>
+            <button type="button" class="effect-tab-btn" data-category="novelty" onclick="setEffectCategory('novelty')">Novelty (1)</button>
             <button type="button" class="effect-tab-btn" data-category="all" onclick="setEffectCategory('all')">All</button>
           </div>
         </div>

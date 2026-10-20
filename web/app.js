@@ -9,8 +9,8 @@ let state = {
 };
 
 let currentDevId = "strip1";
-let currentEffectCategory = "all";
-let currentExperienceTab = "motion";
+let currentEffectCategory = "core";
+let currentExperienceTab = "ambient";
 let ws = null;
 let reconnectTimer = null;
 
@@ -1276,6 +1276,21 @@ function updateTelemetry(diagnostics) {
   }
   if (elErrors) elErrors.textContent = `${diag.error_count} err · ${diag.reconnect_count} re-auth`;
 
+  // Prominent Live Status Bar (Applied effect, send rate, errors)
+  const topSend = document.getElementById("topSendRate");
+  const topErr = document.getElementById("topErrorText");
+  const topDot = document.getElementById("topErrorDot");
+  const expStatus = document.getElementById("experienceStatusPill");
+  const activeDev = state.devices?.[currentDevId] || {};
+
+  if (topSend) topSend.textContent = `${diag.send_fps} FPS`;
+  if (topErr) topErr.textContent = `${diag.error_count} errors`;
+  if (topDot) topDot.style.background = diag.error_count > 0 ? "#ef4444" : "#3dd68c";
+  if (expStatus) {
+    const effName = formatName(activeDev.active_label || "Idle");
+    expStatus.textContent = `${effName} · ${diag.send_fps} FPS · ${diag.error_count} err`;
+  }
+
   const connText = document.getElementById("connText");
   if (connText && ws && ws.readyState === WebSocket.OPEN) {
     connText.textContent = `Live · ${diag.send_fps} FPS · ${diag.rtt_ms}ms`;
@@ -1942,10 +1957,176 @@ function updateSelectedEffectTray(activeLabel) {
     if (boxWidth) boxWidth.style.display = supported.has("wave_width") ? "flex" : "none";
     if (boxFlash) boxFlash.style.display = supported.has("flash_strength") ? "flex" : "none";
   }
+
+  // Start smooth real-time animated preview on tray canvas
+  startTrayPreviewAnimation(currentEff);
+}
+
+// ── Accurate Real-Time Animated Preview Engine ────────────────────────────────
+let previewAnimId = null;
+let previewActiveEffect = "tide";
+const previewParams = {
+  speed: 1.0,
+  brightness: 80,
+  wave_width: 1.0,
+  tail_length: 1.0,
+  particle_density: 1.0,
+  flash_strength: 1.0,
+  palette_name: "sunset"
+};
+
+function computePreviewSegments(effectName, t, numZones, params) {
+  const eff = (effectName || "tide").toLowerCase();
+  const segments = [];
+  const spd = params.speed || 1.0;
+  const effT = t * spd;
+
+  for (let i = 0; i < numZones; i++) {
+    let h = 200, s = 80, v = 50;
+
+    switch (eff) {
+      case "tide":
+      case "ocean": {
+        const waveWidth = params.wave_width || 1.0;
+        const w1 = Math.sin(i * 0.15 * waveWidth - effT * 1.5);
+        const w2 = Math.cos(i * 0.28 - effT * 0.9);
+        v = Math.max(12, Math.min(100, Math.round(50 + 45 * (w1 * 0.6 + w2 * 0.4))));
+        h = (175 + Math.round(w1 * 18) + 360) % 360;
+        s = 85;
+        break;
+      }
+      case "embers": {
+        const baseV = 16 + Math.round(14 * Math.sin(i * 0.35 + effT * 0.6));
+        const density = params.particle_density || 1.0;
+        const isSpark = Math.sin(i * 13.7 + Math.floor(effT * 4.0 * density)) > 0.85;
+        if (isSpark) {
+          h = 36; s = 100; v = 100;
+        } else {
+          h = 10; s = 95; v = baseV;
+        }
+        break;
+      }
+      case "aurora": {
+        const width = params.wave_width || 1.0;
+        const wave = Math.sin(i * 0.16 * width + effT * 1.3);
+        h = (145 + Math.round(wave * 75) + 360) % 360;
+        s = 90;
+        v = 30 + Math.round(60 * Math.abs(wave));
+        break;
+      }
+      case "cyber_chase": {
+        const flash = params.flash_strength || 1.0;
+        const pos1 = Math.floor(effT * 24) % numZones;
+        const pos2 = (numZones - 1 - (Math.floor(effT * 24) % numZones));
+        const d1 = Math.min(Math.abs(i - pos1), Math.abs(i - pos1 + numZones));
+        const d2 = Math.min(Math.abs(i - pos2), Math.abs(i - pos2 + numZones));
+        if (d1 < 3) {
+          h = 185; s = 100; v = Math.min(100, Math.round(100 * flash * (1 - d1 / 3)));
+        } else if (d2 < 3) {
+          h = 320; s = 100; v = Math.min(100, Math.round(100 * flash * (1 - d2 / 3)));
+        } else {
+          h = 260; s = 70; v = 10;
+        }
+        break;
+      }
+      case "comet": {
+        const head = (effT * 18) % numZones;
+        const tailLen = 12 * (params.tail_length || 1.0);
+        const dist = (head - i + numZones) % numZones;
+        if (dist < tailLen) {
+          const fade = 1.0 - (dist / tailLen);
+          h = 275; s = 85; v = Math.round(100 * fade * fade);
+        } else {
+          h = 250; s = 60; v = 4;
+        }
+        break;
+      }
+      case "sinelon": {
+        const tailLen = 6 * (params.tail_length || 1.0);
+        const center = (numZones / 2) + ((numZones / 2) - 2) * Math.sin(effT * 2.4);
+        const d = Math.abs(i - center);
+        h = 220; s = 90;
+        v = d < tailLen ? Math.round(100 * (1 - d / tailLen)) : 8;
+        break;
+      }
+      case "starfield": {
+        const density = params.particle_density || 1.0;
+        const isStar = Math.sin(i * 17.3 + Math.floor(effT * 2.5 * density)) > 0.88;
+        h = 210; s = isStar ? 20 : 90;
+        v = isStar ? 100 : 8;
+        break;
+      }
+      case "fireflies": {
+        const density = params.particle_density || 1.0;
+        const bloom = Math.sin(i * 7.1 + effT * 1.8 * density);
+        h = 85; s = 95;
+        v = bloom > 0.7 ? Math.round(95 * (bloom - 0.7) / 0.3) : 5;
+        break;
+      }
+      case "breathe": {
+        const env = (Math.sin(effT * 1.5) + 1.0) * 0.5;
+        h = 265; s = 75;
+        v = Math.round(15 + 75 * env);
+        break;
+      }
+      case "rainbow": {
+        h = Math.round((i * (360 / numZones) + effT * 40) % 360);
+        s = 100; v = 85;
+        break;
+      }
+      case "lightning": {
+        const flash = params.flash_strength || 1.0;
+        const isBolt = Math.sin(effT * 7.0) > 0.93;
+        h = 215; s = 80;
+        v = isBolt ? Math.min(100, Math.round(100 * flash)) : 8;
+        break;
+      }
+      default: {
+        const wave = Math.sin(i * 0.2 + effT * 2.0);
+        h = Math.round((i * 6 + effT * 20) % 360);
+        s = 85; v = Math.round(30 + 50 * Math.abs(wave));
+        break;
+      }
+    }
+    segments.push([h, s, v]);
+  }
+  return segments;
+}
+
+function startTrayPreviewAnimation(effectName) {
+  if (effectName) previewActiveEffect = effectName;
+  const canvas = document.getElementById("trayPreviewCanvas");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  const numZones = 50;
+
+  if (previewAnimId) cancelAnimationFrame(previewAnimId);
+
+  let startT = performance.now();
+  function renderStep(now) {
+    const elapsed = (now - startT) / 1000.0;
+    const w = canvas.width;
+    const h = canvas.height;
+    const blockW = w / numZones;
+    ctx.clearRect(0, 0, w, h);
+
+    const segments = computePreviewSegments(previewActiveEffect, elapsed, numZones, previewParams);
+    const bMult = (previewParams.brightness || 80) / 100.0;
+
+    for (let i = 0; i < numZones; i++) {
+      const [hue, sat, val] = segments[i];
+      const adjVal = Math.round(val * bMult * 0.55);
+      ctx.fillStyle = `hsl(${hue}, ${sat}%, ${adjVal}%)`;
+      ctx.fillRect(i * blockW, 0, blockW, h);
+    }
+    previewAnimId = requestAnimationFrame(renderStep);
+  }
+  previewAnimId = requestAnimationFrame(renderStep);
 }
 
 function updateFxSpeed(val) {
   const v = parseFloat(val);
+  previewParams.speed = v;
   const el = document.getElementById("traySpeedVal");
   if (el) el.textContent = `${v.toFixed(1)}x`;
   apiPost(`/api/device/${currentDevId}/effect_params`, { speed: v });
@@ -1953,12 +2134,14 @@ function updateFxSpeed(val) {
 
 function updateFxBrightness(val) {
   const v = parseInt(val, 10);
+  previewParams.brightness = v;
   const el = document.getElementById("trayBrightVal");
   if (el) el.textContent = `${v}%`;
   apiPost(`/api/device/${currentDevId}/effect_params`, { brightness: v });
 }
 
 function updateFxPalette(val) {
+  previewParams.palette_name = val;
   const el = document.getElementById("trayPaletteVal");
   if (el) el.textContent = formatName(val);
   apiPost(`/api/device/${currentDevId}/effect_params`, { palette_name: val });
@@ -1966,6 +2149,7 @@ function updateFxPalette(val) {
 
 function updateFxDensity(val) {
   const v = parseFloat(val);
+  previewParams.particle_density = v;
   const el = document.getElementById("trayDensityVal");
   if (el) el.textContent = `${v.toFixed(1)}x`;
   apiPost(`/api/device/${currentDevId}/effect_params`, { particle_density: v });
@@ -1973,6 +2157,7 @@ function updateFxDensity(val) {
 
 function updateFxTail(val) {
   const v = parseFloat(val);
+  previewParams.tail_length = v;
   const el = document.getElementById("trayTailVal");
   if (el) el.textContent = `${v.toFixed(1)}x`;
   apiPost(`/api/device/${currentDevId}/effect_params`, { tail_length: v });
@@ -1980,6 +2165,7 @@ function updateFxTail(val) {
 
 function updateFxWidth(val) {
   const v = parseFloat(val);
+  previewParams.wave_width = v;
   const el = document.getElementById("trayWidthVal");
   if (el) el.textContent = `${v.toFixed(1)}x`;
   apiPost(`/api/device/${currentDevId}/effect_params`, { wave_width: v });
@@ -1987,6 +2173,7 @@ function updateFxWidth(val) {
 
 function updateFxFlash(val) {
   const v = parseFloat(val);
+  previewParams.flash_strength = v;
   const el = document.getElementById("trayFlashVal");
   if (el) el.textContent = `${v.toFixed(1)}x`;
   apiPost(`/api/device/${currentDevId}/effect_params`, { flash_strength: v });
