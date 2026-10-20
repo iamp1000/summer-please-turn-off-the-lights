@@ -476,3 +476,21 @@ def test_native_effect_aliases_resolve_to_catalog_entries():
     engine = L930EffectsEngine(FakeController(), FakeLoopRunner(), app_state={})
     assert engine.start("aurora_native") is True
     assert engine._active_effect_name == "aurora"
+
+
+def test_firmware_deployment_failure_is_returned_to_caller():
+    import asyncio
+
+    class FakeController:
+        async def set_native_effect(self, effect, priority=0):
+            return False
+
+    class FakeLoopRunner:
+        def run(self, awaitable):
+            return asyncio.run(awaitable)
+
+    engine = L930EffectsEngine(FakeController(), FakeLoopRunner(), app_state={})
+    assert engine.start("drift") is False
+    assert "Controller rejected firmware effect 'drift'" in engine._last_error
+    assert engine._active_effect_name is None
+    assert engine._active_kind is None
