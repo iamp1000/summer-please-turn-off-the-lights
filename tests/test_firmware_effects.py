@@ -630,3 +630,70 @@ def test_hub_full_state_includes_curated_categories(monkeypatch):
         assert len(st["active_effects"]) == 35
     finally:
         loop_runner.stop()
+
+
+def test_merged_effect_behavior_preservation():
+    """Verify that retained effects absorbed full behaviors from merged/retired effects."""
+    from src.effects_l930 import L930EffectsEngine
+
+    engine = L930EffectsEngine(controller=None, loop_runner=None, app_state={})
+
+    # 1. dusk absorbed into golden_hour: dusk palette produces twilight progression
+    engine.set_parameters(palette_name="dusk")
+    f_dusk = engine._render_standing_wave_golden_hour(t=1.0)
+    assert len(f_dusk) == 50
+    assert engine._compute("dusk", t=1.0) == f_dusk
+
+    # 2. ocean absorbed into tide: returns Pacifica multi-wave rendering
+    f_ocean = engine._compute("ocean", t=1.5)
+    f_tide = engine._render_tide(t=1.5)
+    assert f_ocean == f_tide
+
+    # 3. bioluminescent_abyss absorbed into deep_ocean: returns deep ocean with cyan sparks
+    f_bio = engine._compute("bioluminescent_abyss", t=1.2)
+    f_deep = engine._render_deep_ocean(t=1.2)
+    assert f_bio == f_deep
+    # Cyan or teal highlights present
+    assert any(160 <= h <= 195 for h, s, v in f_deep)
+
+    # 4. hearth absorbed into campfire_hearth: returns Fire2012 heat diffusion
+    f_hearth = engine._compute("hearth", t=1.0)
+    f_camp = engine._compute("campfire_hearth", t=1.0)
+    assert len(f_camp) == 50
+    assert max(c[2] for c in f_camp) >= 20
+
+    # 5. glitter_cascade absorbed into starfield: particle_density & flash_strength scaling
+    engine.set_parameters(particle_density=2.5, flash_strength=2.0)
+    f_glitter = engine._render_autonomous_starfield(t=2.0)
+    assert any(v == 100 for _, _, v in f_glitter), "Glitter pops should hit 100 brightness"
+    assert engine._compute("glitter_cascade", t=2.0) == engine._render_glitter_cascade(t=2.0)
+
+    # 6. confetti absorbed into prism_sparks: particle_density > 1.5 triggers burst mode
+    engine.set_parameters(particle_density=2.0)
+    f_burst = engine._render_prism_sparks(t=2.5)
+    assert len(f_burst) == 50
+    assert max(c[2] for c in f_burst) >= 20
+    assert engine._compute("confetti", t=2.5) == engine._render_confetti_burst(t=2.5)
+
+    # 7. dual_wipe absorbed into cyber_chase: bi-directional dual-end collision
+    f_dual = engine._compute("dual_wipe", t=1.5)
+    f_cyber = engine._render_collider_chase(t=1.5)
+    assert f_dual == f_cyber
+
+    # 8. sonar_sweep absorbed into radar_sweep: tail_length & palette scaling
+    engine.set_parameters(tail_length=2.0, palette_name="forest")
+    f_radar = engine._render_radar_sweep(t=1.0)
+    assert len(f_radar) == 50
+    assert engine._compute("sonar_sweep", t=1.0) == engine._render_multi_pod_sonar(t=1.0)
+
+    # 9. coordinated_lightning absorbed into lightning: flash_strength & thunder rumble
+    engine.set_parameters(flash_strength=2.0)
+    # Rumble window (4.5s into 7.0s cycle)
+    f_rumble = engine._render_lightning(t=4.5)
+    assert any(h == 28 for h, s, v in f_rumble), "Thunder rumble warm amber should be present"
+    assert engine._compute("coordinated_lightning", t=1.2) == engine._render_coordinated_lightning(t=1.2)
+
+    # 10. infinite_prism absorbed into rainbow: seamless circulating spectral cycle
+    f_prism = engine._compute("infinite_prism", t=1.0)
+    f_rainbow = engine._render_rainbow(t=1.0)
+    assert f_prism == f_rainbow

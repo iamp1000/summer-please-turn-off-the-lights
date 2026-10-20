@@ -1273,7 +1273,7 @@ class L930EffectsEngine:
                     trans_ms = 300
 
                 # ── Motion Group Dispatching ─────────────────────────────────
-                elif eff in ("hearth", "hearth_streamed"):
+                elif eff in ("campfire_hearth", "hearth", "hearth_streamed"):
                     segs = self._render_hearth_fire2012(t)
                     interval = 0.35
                     trans_ms = 350
@@ -1556,10 +1556,11 @@ class L930EffectsEngine:
         for k in range(n - 1, 1, -1):
             self._heat[k] = (self._heat[k - 1] + self._heat[k - 2] + self._heat[k - 2]) / 3.0
 
-        # 3. Randomly ignite new sparks near bottom/center
-        if random.randint(0, 255) < sparking:
-            y = random.randint(0, 3)
-            self._heat[y] = min(255.0, self._heat[y] + random.randint(160, 255))
+        # 3. Randomly ignite new sparks near bottom/center (and maintain base ember warmth)
+        if random.randint(0, 255) < sparking or max(self._heat) < 60.0:
+            for _ in range(random.randint(1, 3)):
+                y = random.randint(0, 4)
+                self._heat[y] = min(255.0, self._heat[y] + random.randint(160, 255))
 
         # Map heat to fire palette
         pal = get_palette_hsv("fire")
@@ -1715,11 +1716,23 @@ class L930EffectsEngine:
         return segs
 
     def _render_standing_wave_golden_hour(self, t: float) -> List[List[int]]:
-        """Standing Wave Horizon: Superposition of two opposing waves so colors breathe in place without scrolling."""
-        pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "sunset")
+        """Standing Wave Horizon: Superposition of opposing waves with twilight dusk progression variation."""
+        pal_name = self._palette_name if self._palette_name in PALETTES else "sunset"
+        pal = get_palette_hsv(pal_name)
         from src.visual_styles import sample_palette_oklab
         segs = []
         sp = self._speed
+        # Twilight horizon cycle progression for dusk variation (slow 240s non-repeating cycle)
+        if pal_name == "dusk":
+            cycle_period = 240.0 / max(0.2, sp)
+            progress = (t % cycle_period) / cycle_period
+            for i in range(NUM_SEGMENTS):
+                x = i / 49.0
+                standing = (math.sin(x * 2.5 * math.pi) * 0.15)
+                h, s, _ = sample_palette_oklab(pal, (progress + standing) % 1.0, cyclic=True)
+                segs.append([h, s, int(max(20, min(100, 75 * (1.0 - 0.2 * abs(x - 0.5)))))])
+            return segs
+
         for i in range(NUM_SEGMENTS):
             x = i / 49.0
             wave = math.sin(x * 3.0 * math.pi - t * 0.8 * sp) + math.cos(x * 5.0 * math.pi + t * 0.55 * sp)
@@ -1730,33 +1743,39 @@ class L930EffectsEngine:
         return segs
 
     def _render_standing_wave_dusk(self, t: float) -> List[List[int]]:
-        """Dusk standing wave progression."""
-        pal = get_palette_hsv("dusk")
-        from src.visual_styles import sample_palette_oklab
-        segs = []
-        sp = self._speed
-        cycle_period = 240.0 / max(0.2, sp)
-        progress = (t % cycle_period) / cycle_period
-        for i in range(NUM_SEGMENTS):
-            x = i / 49.0
-            standing = (math.sin(x * 2.5 * math.pi) * 0.15)
-            h, s, _ = sample_palette_oklab(pal, (progress + standing) % 1.0, cyclic=True)
-            segs.append([h, s, int(max(20, 75 * (1.0 - 0.2 * abs(x - 0.5))))])
-        return segs
+        """Dusk variation (absorbed into golden_hour engine with dusk palette)."""
+        old_pal = self._palette_name
+        self._palette_name = "dusk"
+        try:
+            return self._render_standing_wave_golden_hour(t)
+        finally:
+            self._palette_name = old_pal
 
     def _render_autonomous_starfield(self, t: float) -> List[List[int]]:
-        """50 Autonomous IC Agents: Independent sine oscillators and prime phase offsets for zero linear correlation."""
+        """50 Autonomous IC Agents: Starfield with configurable particle density and glitter cascade pops."""
         pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "tide")
         bg_h, bg_s = pal[0][0], pal[0][1]
-        star_h, star_s = pal[1][0] if len(pal) > 1 else 200, 30
+        star_h, star_s = pal[1][:2] if len(pal) > 1 else (200, 30)
         segs = []
         sp = self._speed
+        density_mult = max(0.2, getattr(self, "_particle_density", 1.0))
+        flash_mult = max(0.2, getattr(self, "_flash_strength", 1.0))
+        # Threshold: density scales star frequency; flash scales high-luminance pops
+        threshold = max(0.60, 0.92 - 0.12 * density_mult)
         for i in range(NUM_SEGMENTS):
             osc = math.sin(t * (1.2 + (i % 7) * 0.35) * sp + i * 17.3)
-            if osc > 0.80:
-                twinkle = (osc - 0.80) / 0.20
-                b = int(max(15, min(100, 20 + twinkle * 80)))
-                segs.append([star_h, star_s, b])
+            if osc > threshold:
+                twinkle = (osc - threshold) / (1.0 - threshold)
+                if flash_mult > 1.2 and osc > (threshold + (1.0 - threshold) * 0.7):
+                    # High-luminance micro-sparkle / glitter pop
+                    h = star_h
+                    s = int(star_s * 0.25)
+                    b = 100
+                else:
+                    h = star_h
+                    s = star_s
+                    b = int(max(15, min(100, 20 + twinkle * 80)))
+                segs.append([h, s, b])
             else:
                 segs.append([bg_h, bg_s, 12])
         return segs
@@ -1797,24 +1816,13 @@ class L930EffectsEngine:
         return segs
 
     def _render_multi_pod_sonar(self, t: float) -> List[List[int]]:
-        """Sonar Sweep: Center-outward repeating sweeps with smooth exponential fading tail."""
-        pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "forest")
-        from src.visual_styles import sample_palette_oklab
-        sp = self._speed
-        radius = (t * 18.0 * sp) % 28.0
-        segs = []
-        half = 24.5
-        for i in range(NUM_SEGMENTS):
-            dist = abs(i - half)
-            diff = dist - radius
-            if -8.0 <= diff <= 1.0:
-                glow = math.exp(-abs(diff) / 2.5)
-            else:
-                glow = 0.05
-            h, s, _ = sample_palette_oklab(pal, glow)
-            b = int(max(5, min(100, glow * 100)))
-            segs.append([h, s, b])
-        return segs
+        """Sonar sweep variation (absorbed into radar_sweep engine with tail multiplier)."""
+        old_t = getattr(self, "_tail_length", 1.0)
+        self._tail_length = 2.0
+        try:
+            return self._render_radar_sweep(t)
+        finally:
+            self._tail_length = old_t
 
     def _render_harmonic_juggle(self, t: float) -> List[List[int]]:
         """
@@ -1893,37 +1901,13 @@ class L930EffectsEngine:
         return segs
 
     def _render_confetti_burst(self, t: float) -> List[List[int]]:
-        """
-        FastLED Confetti (adapted for L930 50 ICs):
-        Random colored speckles that blink in and smoothly decay into an ambient floor.
-        Deterministic multi-frequency cellular oscillators ensure zero random jitter.
-        """
-        pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "sunset")
-        from src.visual_styles import sample_palette_oklab
-        sp = self._speed
-        density_mult = max(0.2, getattr(self, "_particle_density", 1.0))
-        # Threshold: lower threshold means higher particle density
-        threshold = max(0.55, 0.95 - 0.10 * density_mult)
-        segs = []
-
-        for i in range(NUM_SEGMENTS):
-            f = 1.5 + (i * 13 % 11) * 0.25 * sp
-            phase = i * 29.3
-            osc = math.sin(t * f + phase)
-
-            if osc > threshold:
-                sparkle_str = (osc - threshold) / (1.0 - threshold)
-                norm_hue = ((i * 37 % 100) / 100.0 + t * 0.08 * sp) % 1.0
-                h, s, _ = sample_palette_oklab(pal, norm_hue, cyclic=True)
-                v = int(max(15, min(100, 25 + sparkle_str * 75)))
-                segs.append([h, s, v])
-            else:
-                amb_pos = (i / 49.0 + t * 0.03 * sp) % 1.0
-                h, s, _ = sample_palette_oklab(pal, amb_pos, cyclic=True)
-                v = int(max(5, min(18, 12 + osc * 5)))
-                segs.append([h, s, v])
-
-        return segs
+        """Confetti burst variation (absorbed into prism_sparks particle engine with elevated density)."""
+        old_d = getattr(self, "_particle_density", 1.0)
+        self._particle_density = 2.0
+        try:
+            return self._render_prism_sparks(t)
+        finally:
+            self._particle_density = old_d
 
     def _render_meteor_shower(self, t: float) -> List[List[int]]:
         """Three staggered meteor heads cross the strip with asymmetric cool-white tails."""
@@ -2108,21 +2092,37 @@ class L930EffectsEngine:
         return segs
 
     def _render_prism_sparks(self, t: float) -> List[List[int]]:
-        """Black background with sparse, high-saturation RGB sparks with varied lifetimes."""
+        """Prism Sparks with particle density scaling and confetti burst dynamics."""
+        pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "sunset")
+        from src.visual_styles import sample_palette_oklab
         sp = self._speed
+        density_mult = max(0.2, getattr(self, "_particle_density", 1.0))
+        threshold = max(0.55, 0.94 - 0.08 * density_mult)
         segs = []
+        is_burst = density_mult > 1.5
+
         for i in range(NUM_SEGMENTS):
             f = 1.2 + (i * 19 % 17) * 0.18 * sp
             phase = i * 31.415
             osc = math.sin(t * f + phase)
-            if osc > 0.88:
-                spark = (osc - 0.88) / 0.12
-                h = int((i * 67 + t * 45 * sp) % 360)
-                s = 100
+            if osc > threshold:
+                spark = (osc - threshold) / (1.0 - threshold)
+                if is_burst:
+                    norm_hue = ((i * 37 % 100) / 100.0 + t * 0.08 * sp) % 1.0
+                    h, s, _ = sample_palette_oklab(pal, norm_hue, cyclic=True)
+                else:
+                    h = int((i * 67 + t * 45 * sp) % 360)
+                    s = 100
                 v = int(max(20, min(100, spark * 100)))
+                segs.append([h, s, v])
             else:
-                h, s, v = 0, 0, 0  # Pure black background
-            segs.append([h, s, v])
+                if is_burst:
+                    amb_pos = (i / 49.0 + t * 0.03 * sp) % 1.0
+                    h, s, _ = sample_palette_oklab(pal, amb_pos, cyclic=True)
+                    v = int(max(5, min(18, 12 + osc * 5)))
+                    segs.append([h, s, v])
+                else:
+                    segs.append([0, 0, 0])
         return segs
 
     def _render_vaporwave_neon(self, t: float) -> List[List[int]]:
@@ -2231,30 +2231,40 @@ class L930EffectsEngine:
         return out
 
     def _render_lightning(self, t: float) -> List[List[int]]:
-        """Mostly dark with sharp white-blue flashes, irregular pauses, and uneven decays."""
+        """Thunderstorm simulation with sharp strikes, flash strength scaling, and trailing amber thunder roll."""
         sp = self._speed
-        # Pseudo-random episodic thunderstorm cycle (~6.5s)
-        cycle = 6.5 / max(0.2, sp)
+        flash_mult = max(0.2, getattr(self, "_flash_strength", 1.0))
+        cycle = 7.0 / max(0.2, sp)
         sub_t = t % cycle
         segs = [[230, 95, 2]] * NUM_SEGMENTS
 
-        # Strike timings within cycle: 0.8s, 0.95s, 3.4s, 3.52s, 3.68s
+        # Strike timings within cycle
         strikes = [
-            (0.80, 0.12, 1.0, 15, 35),
-            (0.95, 0.08, 0.7, 10, 45),
-            (3.40, 0.10, 0.9, 0, 30),
-            (3.52, 0.06, 0.6, 20, 48),
-            (3.68, 0.18, 1.0, 5, 45),
+            (0.80, 0.12, 1.0 * flash_mult, 15, 35),
+            (0.95, 0.08, 0.7 * flash_mult, 10, 45),
+            (3.40, 0.10, 0.9 * flash_mult, 0, 30),
+            (3.52, 0.06, 0.6 * flash_mult, 20, 48),
+            (3.68, 0.18, 1.0 * flash_mult, 5, 45),
         ]
+        has_flash = False
         for s_start, s_dur, s_str, seg_start, seg_end in strikes:
             if s_start <= sub_t <= (s_start + s_dur):
+                has_flash = True
                 prog = (sub_t - s_start) / s_dur
                 flash = (1.0 - prog) * s_str
                 for i in range(seg_start, min(NUM_SEGMENTS, seg_end)):
                     h = 205
-                    s = int(max(5, 30 - flash * 25))  # Sharp cool white-blue
+                    s = int(max(5, 30 - min(1.0, flash) * 25))
                     v = int(max(segs[i][2], min(100, flash * 100)))
                     segs[i] = [h, s, v]
+
+        # Coordinated amber thunder roll rumble following strike episode
+        if not has_flash and 4.2 <= sub_t <= 5.8:
+            roll_prog = (sub_t - 4.2) / 1.6
+            heat = math.sin(roll_prog * math.pi) * 0.35 * min(1.5, flash_mult)
+            for i in range(NUM_SEGMENTS):
+                segs[i] = [28, 95, int(max(2, min(40, heat * 38)))]
+
         return segs
 
     def _render_police(self, t: float) -> List[List[int]]:
@@ -2396,49 +2406,45 @@ class L930EffectsEngine:
         return segs
 
     def _render_radar_sweep(self, t: float) -> List[List[int]]:
-        """Focused angular beam rotating around room center with exponential decay trail."""
+        """Focused angular beam rotating around room center with configurable palette, tail length, and echo decay."""
         sp = self._speed
+        pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "forest")
+        tail_mult = max(0.2, getattr(self, "_tail_length", 1.0))
         topo = get_l930_topology()
         angles = topo.polar_projection(center_x=0.0, center_y=0.0)
         beam_angle = (t * 0.6 * sp) % 1.0
 
         segs = []
+        head_h = pal[0][0] if pal else 135
+        trail_window = min(0.85, 0.45 * tail_mult)
+        decay_rate = 0.12 * tail_mult
+
         for i in range(NUM_SEGMENTS):
             phi = angles[i]
             diff = (phi - beam_angle) % 1.0
-            # Exponential phosphor decay behind sweep head
-            if diff < 0.45:
-                decay = math.exp(-diff / 0.12)
-                h = 135  # Radar phosphor green
+            if diff < trail_window:
+                decay = math.exp(-diff / decay_rate)
+                h = head_h
                 s = int(max(20, 95 - decay * 60))
                 v = int(max(4, min(100, 5 + decay * 95)))
             else:
-                h, s, v = 140, 95, 2
+                h, s, v = head_h, 95, 2
             segs.append([h, s, v])
         return segs
 
     # ── FastLED Ports & Strips Effects ────────────────────────────────────────
 
     def _render_glitter_cascade(self, t: float) -> List[List[int]]:
-        """Slow drifting base palette overlaid with high-luminance micro-sparkles."""
-        from src.visual_styles import sample_palette_oklab
-        pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "sunset")
-        sp = self._speed
-        segs = []
-        drift = (t * 0.05 * sp) % 1.0
-        for i in range(NUM_SEGMENTS):
-            pos = (i / float(NUM_SEGMENTS - 1) + drift) % 1.0
-            h, s, _ = sample_palette_oklab(pal, pos, cyclic=True)
-            v = int(max(15, min(65, 30 + 25 * math.sin(pos * 2.0 * math.pi))))
-
-            # Occasional sub-second glitter sparkle
-            spark = math.sin(t * (3.5 + (i % 11) * 0.5) * sp + i * 29.3)
-            if spark > 0.94:
-                # White/golden glitter pop
-                s = int(s * 0.25)
-                v = 100
-            segs.append([h, s, v])
-        return segs
+        """Glitter cascade variation (absorbed into starfield with elevated density and flash)."""
+        old_d = getattr(self, "_particle_density", 1.0)
+        old_f = getattr(self, "_flash_strength", 1.0)
+        self._particle_density = 2.0
+        self._flash_strength = 1.8
+        try:
+            return self._render_autonomous_starfield(t)
+        finally:
+            self._particle_density = old_d
+            self._flash_strength = old_f
 
     def _render_bpm_resonator(self, t: float) -> List[List[int]]:
         """FastLED beatsin8 multi-harmonic sine waves mixing additively in OKLab space."""
@@ -2466,32 +2472,13 @@ class L930EffectsEngine:
         return segs
 
     def _render_coordinated_lightning(self, t: float) -> List[List[int]]:
-        """Coordinated storm: sharp lightning strikes across segments with amber thunder roll."""
-        sp = self._speed
-        flash_mult = max(0.2, getattr(self, "_flash_strength", 1.0))
-        cycle = 8.0 / max(0.2, sp)
-        sub_t = t % cycle
-        segs = [[220, 95, 2]] * NUM_SEGMENTS
-
-        if 1.0 <= sub_t <= 1.25:
-            # Main lightning strike scaled by flash_strength
-            prog = (sub_t - 1.0) / 0.25
-            str_val = min(1.0, (1.0 - prog) * flash_mult)
-            for i in range(12, 38):
-                segs[i] = [200, 15, int(str_val * 100)]
-        elif 1.35 <= sub_t <= 1.50:
-            # Secondary branch flash scaled by flash_strength
-            prog = (sub_t - 1.35) / 0.15
-            str_val = min(1.0, (1.0 - prog) * 0.75 * flash_mult)
-            for i in range(25, 48):
-                segs[i] = [205, 25, int(str_val * 90)]
-        elif 1.6 <= sub_t <= 3.8:
-            # Deep amber rumbling afterglow across desk/bias
-            rumble_prog = (sub_t - 1.6) / 2.2
-            heat = math.exp(-rumble_prog * 2.5) * (0.6 + 0.4 * math.sin(t * 12.0 * sp)) * min(1.5, flash_mult)
-            for i in range(NUM_SEGMENTS):
-                segs[i] = [28, 95, int(max(2, min(40, heat * 38)))]
-        return segs
+        """Coordinated storm variation (absorbed into lightning engine with flash multiplier)."""
+        old_f = getattr(self, "_flash_strength", 1.0)
+        self._flash_strength = 2.0
+        try:
+            return self._render_lightning(t)
+        finally:
+            self._flash_strength = old_f
 
     def _compute(self, name: str, t: float = 0.0) -> List[List[int]]:
         """Backward compatibility simulation computation for test suites."""
@@ -2584,41 +2571,19 @@ class L930EffectsEngine:
             prog = (math.cos(t * 0.35 * self._speed) + 1.0) * 0.5
             return [[int(330 - 50 * prog), int(85 + 15 * prog), int(max(8, min(85, 15 + prog * 70)))] for _ in range(NUM_SEGMENTS)]
         elif eff in ("ocean", "ocean_waves"):
-            return [[int(185 + 15 * math.sin(t * 0.8 + i * 0.2)), 90, int(35 + 25 * math.cos(t * 0.6 + i * 0.15))] for i in range(NUM_SEGMENTS)]
+            # Merged with tide (retains full Pacifica wave and crest model)
+            return self._render_tide(t)
         elif eff == "bioluminescent_abyss":
-            segs = []
-            for i in range(NUM_SEGMENTS):
-                flt = math.sin(t * 1.5 + i * 0.4)
-                if flt > 0.75:
-                    h = 175 if (i % 2 == 0) else 190
-                    v = int(20 + 70 * ((flt - 0.75) / 0.25))
-                else:
-                    h, v = 230, 4
-                segs.append([h, 95, v])
-            return segs
+            # Merged into deep_ocean (retains cyan/emerald bioluminescent glow and deep marine floor)
+            return self._render_deep_ocean(t)
         elif eff == "campfire_hearth":
-            segs = []
-            for i in range(NUM_SEGMENTS):
-                flt = math.sin(t * 3.0 + i * 0.8) + math.cos(t * 5.2 - i * 0.5)
-                norm_flt = max(0.0, min(1.0, (flt + 2.0) / 4.0))
-                segs.append([int(12 + norm_flt * 28), 95, int(25 + norm_flt * 70)])
-            return segs
+            # Absorbs hearth (retains realistic Fire2012 heat diffusion and flickering embers)
+            return self._render_hearth_fire2012(t)
         elif eff == "dual_wipe":
-            pos = (t * 25.0 * max(0.2, self._speed)) % 25.0
-            segs = []
-            pal_dw = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "dusk")
-            c1_h = pal_dw[0][0] if pal_dw else 280
-            c2_h = pal_dw[1][0] if len(pal_dw) > 1 else 180
-            for i in range(NUM_SEGMENTS):
-                if i < 25:
-                    d = abs(i - pos)
-                    segs.append([c1_h, 85, int(max(10, 100 - d * 18))])
-                else:
-                    d = abs((49 - i) - pos)
-                    segs.append([c2_h, 90, int(max(10, 100 - d * 18))])
-            return segs
+            # Merged into cyber_chase (retains bi-directional dual convergence and collision flare)
+            return self._render_collider_chase(t)
         elif eff == "infinite_prism":
-            sp_eff = max(0.2, self._speed)
-            return [[int((i * (360.0 / 8.0) + t * 60.0 * sp_eff) % 360), 100, 100] for i in range(NUM_SEGMENTS)]
+            # Merged into rainbow (retains seamless continuous spectral circulation)
+            return self._render_rainbow(t)
         return [[30, 80, 60]] * NUM_SEGMENTS
 
