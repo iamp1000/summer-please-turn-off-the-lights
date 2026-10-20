@@ -113,3 +113,58 @@ def test_synthetic_signals_suite():
     # 5. White Noise Bursts
     noise = SyntheticTrackGenerator.generate_white_noise_bursts(duration=3.0, burst_interval=0.5)
     assert len(noise) == 3 * 44100
+
+
+def test_onset_pre_update_statistics_and_sensitivity():
+    """
+    Verifies that onset strength uses pre-update statistics, preventing self-masking,
+    and accurately distinguishes true transient bursts from steady-state loudness without false triggers.
+    """
+    detector = SpectralFluxOnsetDetector(num_bins=20, threshold_mult=1.4)
+
+    # 1. Steady background tone should not trigger onsets once adapted
+    steady_spectrum = np.full(20, 0.40, dtype=np.float32)
+    for i in range(40):
+        flux, is_onset = detector.process(steady_spectrum, now=i * 0.02, dt=0.02)
+
+    # After adaptation, steady state must not be flagged as onset
+    assert not is_onset
+    assert detector.normalized_onset < 0.15, "Steady tone should have near-zero normalized onset"
+
+    # 2. Sudden sharp transient burst (3x jump in high bands)
+    transient_spectrum = steady_spectrum.copy()
+    transient_spectrum[10:] = 1.80
+    flux, is_onset = detector.process(transient_spectrum, now=40 * 0.02, dt=0.02)
+
+    assert is_onset, "Sharp transient burst must reliably trigger onset"
+    assert detector.normalized_onset > 0.40, "Normalized onset must respond with strong positive value"
+
+
+def test_subband_absolute_calibration():
+    """
+    Verifies that bass and mid signals represent calibrated absolute physical sub-band energies,
+    rather than purely relative ratios of the frame's peak band.
+    """
+    analyzer = MusicAnalyzer(samplerate=44100, blocksize=512)
+
+    # Synthetic low-frequency bass tone (60 Hz sine wave)
+    t = np.linspace(0, 512 / 44100.0, 512, endpoint=False)
+    bass_samples = (0.50 * np.sin(2.0 * np.pi * 60.0 * t)).astype(np.float32)
+
+    # Process blocks with continuous phase to settle filter and envelope state
+    for i in range(35):
+        t_block = (i * 512 + np.arange(512)) / 44100.0
+        bass_samples = (0.50 * np.sin(2.0 * np.pi * 60.0 * t_block)).astype(np.float32)
+        state = analyzer.process_samples(bass_samples, now=i * (512 / 44100.0))
+
+    assert state.bass > 0.40, f"Expected strong bass signal for 60Hz tone, got {state.bass}"
+    assert state.mid < 0.20, f"Expected low mid signal for pure 60Hz bass tone, got {state.mid}"
+
+    # Synthetic mid-frequency tone (500 Hz vocal/instrument tone) with continuous phase
+    for i in range(35):
+        t_block = ((35 + i) * 512 + np.arange(512)) / 44100.0
+        mid_samples = (0.50 * np.sin(2.0 * np.pi * 500.0 * t_block)).astype(np.float32)
+        state = analyzer.process_samples(mid_samples, now=(35 + i) * (512 / 44100.0))
+
+    assert state.mid > 0.30, f"Expected strong mid signal for 500Hz tone, got {state.mid}"
+    assert state.bass < 0.25, f"Expected lower bass signal for 500Hz tone, got {state.bass}"
