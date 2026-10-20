@@ -415,3 +415,61 @@ def test_next_gen_music_styles():
             assert 0 <= h <= 360
             assert 0 <= s <= 100
             assert 0 <= v <= 100
+
+
+def test_effect_switch_clears_old_frames_and_bypasses_slider_throttle():
+    """Explicit selections replace stale output immediately, even inside the throttle window."""
+    import asyncio
+
+    events = []
+
+    class FakeController:
+        def clear_frames(self):
+            events.append("clear")
+
+        async def set_native_effect(self, effect, priority=0):
+            events.append(("set", effect.name))
+
+    class FakeLoopRunner:
+        def run(self, awaitable):
+            return asyncio.run(awaitable)
+
+    engine = L930EffectsEngine(
+        controller=FakeController(),
+        loop_runner=FakeLoopRunner(),
+        app_state={},
+    )
+
+    assert engine.start("drift") is True
+    assert events[0] == "clear"
+    assert events[1][0] == "set"
+
+    # A second explicit choice within two seconds must deploy now rather than
+    # leave the previous firmware animation running while a timer waits.
+    before = len(events)
+    assert engine.start("fireflies") is True
+    assert events[before] == "clear"
+    assert events[before + 1][0] == "set"
+    assert engine._pending_fw_timer is None
+
+
+def test_effect_start_rejects_unknown_name_without_claiming_success():
+    engine = L930EffectsEngine(controller=None, loop_runner=None, app_state={})
+    assert engine.start("not-a-real-l930-effect") is False
+    assert "Unknown L930 effect" in engine._last_error
+
+
+def test_native_effect_aliases_resolve_to_catalog_entries():
+    import asyncio
+
+    class FakeController:
+        async def set_native_effect(self, effect, priority=0):
+            return None
+
+    class FakeLoopRunner:
+        def run(self, awaitable):
+            return asyncio.run(awaitable)
+
+    engine = L930EffectsEngine(FakeController(), FakeLoopRunner(), app_state={})
+    assert engine.start("aurora_native") is True
+    assert engine._active_effect_name == "aurora"
