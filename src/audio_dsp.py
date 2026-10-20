@@ -182,6 +182,7 @@ class SpectralFluxOnsetDetector:
         self.flux_mean: float = 0.5
         self.flux_var: float = 0.25
         self.last_onset_time: float = -1.0
+        self.normalized_onset: float = 0.0
         self._initialized: bool = False
 
     def process(self, spectrum: np.ndarray, now: float, dt: float = 0.02) -> Tuple[float, bool]:
@@ -197,6 +198,7 @@ class SpectralFluxOnsetDetector:
             whitened = spec_log / np.maximum(1e-4, self.running_band_mean)
             self.prev_whitened = whitened.copy()
             self._initialized = True
+            self.normalized_onset = 0.0
             return 0.0, False
 
         self.running_band_mean += alpha_whiten * (spec_log - self.running_band_mean)
@@ -210,6 +212,10 @@ class SpectralFluxOnsetDetector:
         # 4. Continuous flux mean & variance tracking (tau = 1.5s)
         std_flux = math.sqrt(max(1e-5, self.flux_var))
         threshold = self.flux_mean + self.threshold_mult * std_flux
+
+        # Calculate pre-update normalized onset strength in [0.0, 1.0]
+        # using statistics prior to incorporating current frame's flux
+        self.normalized_onset = float(max(0.0, min(1.0, (flux - self.flux_mean) / max(0.05, std_flux * 3.0))))
 
         alpha_flux = 1.0 - math.exp(-dt / 1.5)
         self.flux_mean += alpha_flux * (flux - self.flux_mean)
@@ -801,13 +807,16 @@ class MusicAnalyzer:
         self._sample_clock_time: float = 0.0
         self._last_process_time: float = 0.0
         self._current_state = MusicState()
-        # Hold detected onsets long enough to survive the analyzer/render cadence
-        # and the much slower physical-strip send rate.
+        # Hold threshold-qualified onsets across the physical strip's frame cadence.
         self._onset_strength_env: float = 0.0
-        self._hat_peak: float = 0.05
-        self._snare_peak: float = 0.05
+        self._hat_peak: float = 0.50
+        self._snare_peak: float = 0.50
+        self._bass_peak: float = 0.50
+        self._mid_peak: float = 0.50
         self._snare_env: float = 0.0
         self._hat_env: float = 0.0
+        self._bass_env: float = 0.0
+        self._mid_env: float = 0.0
         self.backlog_warning_count: int = 0
 
         # Expose bpm_tracker for backwards compatibility
@@ -871,6 +880,7 @@ class MusicAnalyzer:
         norm_instant_bands = instant_bands / max(1e-4, float(np.max(instant_bands)))
 
         flux, is_onset = self.onset_detector.process(norm_instant_bands, stream_time, dt=dt)
+        norm_onset_raw = getattr(self.onset_detector, "normalized_onset", 0.0)
 
         # 4. Tempo & Phase-Locked Loop (PLL)
         bpm, beat_phase, bar_pos = self.tempo_tracker.update(flux, is_onset, stream_time, dt=dt)
@@ -926,50 +936,52 @@ class MusicAnalyzer:
         if is_silent:
             self._snare_env = 0.0
             self._hat_env = 0.0
+            self._bass_env = 0.0
+            self._mid_env = 0.0
             norm_snare = 0.0
             norm_hat = 0.0
+            norm_bass = 0.0
+            norm_mid = 0.0
         else:
             self._hat_peak = max(raw_hat, self._hat_peak * math.exp(-dt / 3.0))
-            instant_hat = float(max(0.0, min(1.0, raw_hat / max(0.005, self._hat_peak))))
+            instant_hat = float(max(0.0, min(1.0, raw_hat / max(0.10, self._hat_peak))))
             # Hi-hats: snappy attack (10ms) and short, sparse sparkle decay (60ms)
             alpha_hat = 1.0 - math.exp(-dt / 0.010) if instant_hat > self._hat_env else 1.0 - math.exp(-dt / 0.060)
             self._hat_env += alpha_hat * (instant_hat - self._hat_env)
             norm_hat = float(max(0.0, min(1.0, self._hat_env)))
 
             self._snare_peak = max(raw_snare, self._snare_peak * math.exp(-dt / 3.0))
-            instant_snare = float(max(0.0, min(1.0, raw_snare / max(0.005, self._snare_peak))))
+            instant_snare = float(max(0.0, min(1.0, raw_snare / max(0.10, self._snare_peak))))
             # Snare/transient: sharp attack (12ms) with 110ms visible tail
             alpha_snare = 1.0 - math.exp(-dt / 0.012) if instant_snare > self._snare_env else 1.0 - math.exp(-dt / 0.110)
             self._snare_env += alpha_snare * (instant_snare - self._snare_env)
             norm_snare = float(max(0.0, min(1.0, self._snare_env)))
 
+            # Absolute sub-band energy for bass (20-180 Hz) and mid (180-1500 Hz) using raw FFT magnitudes
+            bass_mask = (self.freqs_4096 >= 20) & (self.freqs_4096 < 180)
+            mid_mask = (self.freqs_4096 >= 180) & (self.freqs_4096 < 1500)
+            raw_bass_abs = float(np.mean(fft_4096[bass_mask])) if np.any(bass_mask) else 0.0
+            raw_mid_abs = float(np.mean(fft_4096[mid_mask])) if np.any(mid_mask) else 0.0
+
+            self._bass_peak = max(raw_bass_abs, self._bass_peak * math.exp(-dt / 3.0))
+            instant_bass = float(max(0.0, min(1.0, raw_bass_abs / max(0.20, self._bass_peak))))
+            alpha_bass = 1.0 - math.exp(-dt / 0.018) if instant_bass > self._bass_env else 1.0 - math.exp(-dt / 0.140)
+            self._bass_env += alpha_bass * (instant_bass - self._bass_env)
+            norm_bass = float(max(0.0, min(1.0, self._bass_env * 0.7 + getattr(self.calibrator, "norm_kick", kick_e) * 0.3)))
+
+            self._mid_peak = max(raw_mid_abs, self._mid_peak * math.exp(-dt / 3.0))
+            instant_mid = float(max(0.0, min(1.0, raw_mid_abs / max(0.20, self._mid_peak))))
+            alpha_mid = 1.0 - math.exp(-dt / 0.025) if instant_mid > self._mid_env else 1.0 - math.exp(-dt / 0.200)
+            self._mid_env += alpha_mid * (instant_mid - self._mid_env)
+            norm_mid = float(max(0.0, min(1.0, self._mid_env * (energy * 0.5 + 0.5))))
+
         norm_kick = float(getattr(self.calibrator, "norm_kick", kick_e))
 
-        # Calibrated sub-band energies & composite transient for styles
-        bass_slice = norm_bands[:8]  # ~20 to 180 Hz
-        mid_slice = norm_bands[8:28]  # ~180 to 1500 Hz
-        raw_bass_e = float(np.mean(bass_slice)) if len(bass_slice) > 0 else 0.0
-        raw_mid_e = float(np.mean(mid_slice)) if len(mid_slice) > 0 else 0.0
-        norm_bass = float(max(0.0, min(1.0, math.sqrt(raw_bass_e) * 0.7 + norm_kick * 0.3)))
-        norm_mid = float(max(0.0, min(1.0, math.sqrt(raw_mid_e) * (energy * 0.6 + 0.4))))
-
-        # The detector decides onset against the *previous* flux statistics,
-        # then updates those statistics before returning. Normalizing against the
-        # updated mean/variance here suppresses the very peak we need to react to.
-        # Preserve threshold-qualified events and decay them smoothly so a brief
-        # onset is visible to the render loop and low-rate L930 transport.
-        std_flux = math.sqrt(max(1e-5, getattr(self.onset_detector, "flux_var", 0.25)))
-        mean_flux = getattr(self.onset_detector, "flux_mean", 0.5)
-        if is_silent:
-            onset_target = 0.0
-        elif is_onset:
-            threshold_estimate = mean_flux + self.onset_detector.threshold_mult * std_flux
-            excess = max(0.0, flux - threshold_estimate) / max(0.05, threshold_estimate)
-            onset_target = 0.65 + 0.35 * min(1.0, excess)
-        else:
-            onset_target = 0.0
-        # The strip is rate-limited to 8 FPS (125 ms between frames), so a
-        # sub-100ms release would decay before the next physical update.
+        # Use pre-update detector statistics, then hold the event long enough to survive
+        # the strip's 125ms nominal update interval. A raw sub-threshold flux rise may
+        # still contribute; a detector-confirmed onset is guaranteed a visible peak.
+        onset_raw = float(max(0.0, min(1.0, norm_onset_raw)))
+        onset_target = 0.0 if is_silent else max(onset_raw, 0.65 if is_onset else 0.0)
         onset_tau = 0.010 if onset_target > self._onset_strength_env else 0.240
         onset_alpha = 1.0 - math.exp(-dt / onset_tau)
         self._onset_strength_env += onset_alpha * (onset_target - self._onset_strength_env)
