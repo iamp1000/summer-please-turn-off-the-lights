@@ -317,14 +317,32 @@ class MusicReactiveL930:
         self._rendered_segs = corrected_segs
         brightness_val = int(max(x[2] for x in corrected_segs)) if corrected_segs else 0
 
-        # Phase R: Movie mode transition ~800ms and max 2 updates/s; Music 0ms (instant strike) and 8 updates/s
+        # Keep hardware transitions matched to the *effective* send interval.
+        # When AIMD drops a slow strip to 1 FPS, a fixed 120ms music transition
+        # creates a dark/stale gap for ~880ms and looks like flicker.
         is_movie = (style_key == "movie")
-        trans_ms = getattr(self._ctrl, "movie_transition_ms", 800) if is_movie else getattr(self._ctrl, "music_transition_ms", 0)
         target_max_ups = getattr(self._ctrl, "_movie_max_updates_per_s", 2.0) if is_movie else getattr(self._ctrl, "_max_updates_per_s", 8.0)
+        target_max_ups = max(0.5, float(target_max_ups))
 
-        if hasattr(self._ctrl, "frame_sender") and self._ctrl.frame_sender:
-            if getattr(self._ctrl.frame_sender, "max_updates_per_s", None) != target_max_ups:
-                self._ctrl.frame_sender.set_send_budget(max_updates_per_s=target_max_ups)
+        frame_sender = getattr(self._ctrl, "frame_sender", None)
+        if frame_sender:
+            if getattr(frame_sender, "max_updates_per_s", None) != target_max_ups:
+                frame_sender.set_send_budget(max_updates_per_s=target_max_ups)
+            effective_ups = max(
+                0.5,
+                min(target_max_ups, float(getattr(frame_sender, "_aimd_rate_cap", target_max_ups))),
+            )
+        else:
+            effective_ups = target_max_ups
+
+        configured_transition = (
+            getattr(self._ctrl, "movie_transition_ms", 800)
+            if is_movie else getattr(self._ctrl, "music_transition_ms", 120)
+        )
+        # 98% of the send period prevents the device from snapping back to a
+        # previous/stale state between updates. Clamp to the firmware's 6000ms max.
+        rate_matched_transition = int(round(980.0 / effective_ups))
+        trans_ms = max(0, min(6000, max(int(configured_transition), rate_matched_transition)))
 
         frame_dict = {
             "segments": corrected_segs,
