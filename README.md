@@ -14,7 +14,7 @@
 
 A Windows desktop app and audio-reactive lighting engine for TP-Link Tapo smart light strips. Sync your lighting to music, movies, and ambient effects over your local network.
 
-Summer has been assigned lighting duty. Rick built the lab, Morty is not allowed near the power strip, and this project is the attempt to make the chaos reproducible.
+The goal is simple: make audio-reactive and screen-reactive lighting repeatable, local, and debuggable. The effects can be chaotic; the control path should not be.
 
 [Features](#-feature-highlights) • [Compatibility](#-compatibility) • [Quick Start](#-quick-start) • [Showcase](#-modes-showcase) • [Troubleshooting](#-troubleshooting) • [Architecture](#-architecture--performance) • [Effects Catalog](#-complete-effects-catalog) • [Contributing](#-contributing--development)
 
@@ -57,7 +57,7 @@ Ensure you have **Git** and **Python 3.13** installed on Windows.
 ### 2. Clone the Repository
 ```powershell
 git clone https://github.com/iamp1000/summer-turn-the-light-off-.git
-cd summer-please-turn-off-the-lights
+cd summer-turn-the-light-off-
 ```
 
 ### 3. Create a Virtual Environment & Install Dependencies
@@ -216,7 +216,7 @@ flowchart TD
     Web["FastAPI Dashboard / Tray UI"] <--> StateHub
 ```
 
-### Measured Diagnostics Telemetry
+### Local Diagnostics Measurements
 
 Performance benchmarks below come from local Wi-Fi test sessions. Treat them as diagnostics from the tested setup, not guarantees across every router, Windows build, or Tapo firmware version:
 
