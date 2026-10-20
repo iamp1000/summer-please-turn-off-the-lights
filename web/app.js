@@ -1236,8 +1236,9 @@ function renderUI() {
         : `<small>${kindLabel}</small>`;
       fxHtml += `
         <button class="item-btn effect-item ${isAct}"
+                data-eff="${eff}"
                 title="${meta.desc || formatName(eff)}${isWarn ? ' · ' + meta.warning : ''} · ${kindLabel}"
-                onclick="applyEffect('${eff}')">
+                onclick="applyEffect('${eff}', this)">
           <span class="item-dot" style="background: ${color};"></span>
           <span class="effect-item-copy"><span>${formatName(eff)}</span>${warnBadge}</span>
         </button>
@@ -1252,7 +1253,7 @@ function renderUI() {
       const isAct = (activeDev.active_label === eff) ? "active" : "";
       const color = EFFECT_COLORS[eff] || "#7c6ef5";
       fxHtml += `
-        <button class="item-btn effect-item ${isAct}" title="${formatName(eff)}" onclick="applyEffect('${eff}')">
+        <button class="item-btn effect-item ${isAct}" data-eff="${eff}" title="${formatName(eff)}" onclick="applyEffect('${eff}', this)">
           <span class="item-dot" style="background: ${color};"></span>
           <span class="effect-item-copy"><span>${formatName(eff)}</span></span>
         </button>
@@ -1300,7 +1301,33 @@ function setEffectCategory(cat) {
   renderUI();
 }
 
-function applyEffect(name) {
+function showToast(message, type = "info", duration = 3500) {
+  let container = document.getElementById("toastContainer");
+  if (!container) {
+    container = document.createElement("div");
+    container.id = "toastContainer";
+    container.className = "toast-container";
+    document.body.appendChild(container);
+  }
+
+  const toast = document.createElement("div");
+  toast.className = `toast-item toast-${type}`;
+  toast.textContent = message;
+
+  container.appendChild(toast);
+  requestAnimationFrame(() => {
+    toast.classList.add("toast-show");
+  });
+
+  setTimeout(() => {
+    toast.classList.remove("toast-show");
+    setTimeout(() => {
+      if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, 300);
+  }, duration);
+}
+
+async function applyEffect(name, btnElement = null) {
   const meta = (state.effects_catalog || {})[name] || {};
   if (meta.warning && !sessionStorage.getItem(`warned_${name}`)) {
     if (!confirm(`⚠️ Warning: ${meta.warning}\n\nDo you want to proceed?`)) {
@@ -1308,10 +1335,37 @@ function applyEffect(name) {
     }
     sessionStorage.setItem(`warned_${name}`, "true");
   }
-  const theme = getThemeForLabel(name);
-  document.body.setAttribute("data-theme", theme);
-  bgEngine.setTheme(theme);
-  apiPost(`/api/device/${currentDevId}/effect`, { effect: name });
+
+  const btn = btnElement || document.querySelector(`.effect-item[data-eff="${name}"]`) || (window.event?.currentTarget);
+  if (btn) {
+    btn.classList.add("loading");
+  }
+
+  try {
+    const res = await apiPost(`/api/device/${currentDevId}/effect`, { effect: name });
+    if (!res || !res.ok) {
+      let errMsg = "Device rejected effect deployment";
+      try {
+        const data = await res.json();
+        if (data && data.detail) errMsg = data.detail;
+      } catch (e) {}
+      showToast(`⚠️ ${errMsg}`, "error");
+      return;
+    }
+
+    // Effect confirmed by device! Update theme & notify user
+    const theme = getThemeForLabel(name);
+    document.body.setAttribute("data-theme", theme);
+    bgEngine.setTheme(theme);
+    showToast(`✓ Loaded ${formatName(name)}`, "success");
+  } catch (err) {
+    console.error("Effect deployment error:", err);
+    showToast(`⚠️ Network error deploying ${formatName(name)}`, "error");
+  } finally {
+    if (btn) {
+      btn.classList.remove("loading");
+    }
+  }
 }
 
 function toggleGroup(gName) {

@@ -741,3 +741,137 @@ def test_bpm_resonator_music_reactive_style_synchronization():
     st_bar2 = MusicState(bpm=120.0, bpm_confidence=0.8, beat_phase=0.0, bar_pos=2, energy=0.7, kick=0.1)
     frame_bar2 = style.render(st_bar2, dt=0.033, num_zones=50)
     assert frame0 != frame_bar2
+
+
+def test_comprehensive_native_aliases_resolution():
+    from src.effects_l930 import NATIVE_ALIASES, resolve_effect_alias, EFFECT_CATALOG
+    for alias, target in NATIVE_ALIASES.items():
+        resolved = resolve_effect_alias(alias)
+        assert resolved in EFFECT_CATALOG, f"Alias {alias} resolved to {resolved} which is not in EFFECT_CATALOG"
+    assert resolve_effect_alias("rainbow_native") == "rainbow"
+    assert resolve_effect_alias("aurora_native") == "aurora"
+    assert resolve_effect_alias("ocean_native") == "ocean"
+    assert resolve_effect_alias("candy_cane_native") == "candy_cane"
+    assert resolve_effect_alias("haunted_mansion_native") == "haunted_mansion"
+    assert resolve_effect_alias("candle_native") == "candle_native"
+
+
+def test_effect_status_lifecycle_and_failure_exposure():
+    import asyncio
+
+    state = {}
+    class FakeRejectController:
+        async def set_native_effect(self, effect, priority=0):
+            return False
+
+    class FakeAcceptController:
+        def __init__(self):
+            self.frames = []
+        async def set_native_effect(self, effect, priority=0):
+            return True
+        def submit_frame(self, frame):
+            self.frames.append(frame)
+        def clear_frames(self):
+            pass
+
+    class FakeLoopRunner:
+        def run(self, awaitable):
+            return asyncio.run(awaitable)
+
+    # 1. Unknown effect -> fails immediately
+    engine = L930EffectsEngine(FakeAcceptController(), FakeLoopRunner(), app_state=state)
+    assert engine.start("completely_unknown_xyz") is False
+    assert state["effect_status"] == "failed"
+    assert "Unknown L930 effect" in state["last_error"]
+
+    # 2. Firmware rejection -> sets failed state
+    reject_engine = L930EffectsEngine(FakeRejectController(), FakeLoopRunner(), app_state=state)
+    assert reject_engine.start("drift") is False
+    assert state["effect_status"] == "failed"
+    assert "rejected firmware effect" in state["last_error"]
+
+    # 3. Successful firmware deployment -> sets accepted state
+    accept_engine = L930EffectsEngine(FakeAcceptController(), FakeLoopRunner(), app_state=state)
+    assert accept_engine.start("drift") is True
+    assert state["effect_status"] == "accepted"
+    assert state["last_error"] is None
+
+
+def test_streamed_effects_pacing_and_adaptive_transitions():
+    import threading
+    import time
+
+    class MockController:
+        def __init__(self, interval=0.5):
+            self.submitted_frames = []
+            self.current_interval = interval
+        def submit_frame(self, frame):
+            self.submitted_frames.append(frame)
+        def clear_frames(self):
+            pass
+
+    # Test standard <= 2 FPS pacing (interval >= 0.50, transition >= 500)
+    ctrl = MockController(interval=0.5)
+    state = {}
+    engine = L930EffectsEngine(ctrl, None, app_state=state)
+    stop_event = threading.Event()
+
+    engine._active_effect_name = "lava_lamp"
+    engine._active_kind = "streamed_slow"
+    engine._effect_generation = 1
+    engine._start_time = time.monotonic()
+
+    t = threading.Thread(target=engine._stream_run, args=(stop_event, 1))
+    t.start()
+    time.sleep(0.1)
+    stop_event.set()
+    t.join(timeout=1.0)
+
+    assert len(ctrl.submitted_frames) >= 1
+    frame = ctrl.submitted_frames[0]
+    assert frame["transition"] >= 500, f"Expected transition >= 500ms, got {frame['transition']}"
+    assert state.get("effect_status") == "accepted"
+
+    # Test adaptive transition lengthening under network fallback (interval = 1.0 -> transition >= 1000)
+    ctrl_fallback = MockController(interval=1.0)
+    engine_fallback = L930EffectsEngine(ctrl_fallback, None, app_state={})
+    stop_event_fb = threading.Event()
+    engine_fallback._active_effect_name = "golden_hour"
+    engine_fallback._active_kind = "streamed_slow"
+    engine_fallback._effect_generation = 2
+    engine_fallback._start_time = time.monotonic()
+
+    t_fb = threading.Thread(target=engine_fallback._stream_run, args=(stop_event_fb, 2))
+    t_fb.start()
+    time.sleep(0.1)
+    stop_event_fb.set()
+    t_fb.join(timeout=1.0)
+
+    assert len(ctrl_fallback.submitted_frames) >= 1
+    frame_fb = ctrl_fallback.submitted_frames[0]
+    assert frame_fb["transition"] >= 1000, f"Expected transition >= 1000ms under AIMD fallback, got {frame_fb['transition']}"
+
+
+def test_stale_stream_frames_discarded_on_generation_bump():
+    import threading
+    import time
+
+    class MockController:
+        def __init__(self):
+            self.submitted = []
+        def submit_frame(self, frame):
+            self.submitted.append(frame)
+        def clear_frames(self):
+            pass
+
+    ctrl = MockController()
+    engine = L930EffectsEngine(ctrl, None, app_state={})
+    stop_event = threading.Event()
+    engine._active_effect_name = "cyber_chase"
+    engine._active_kind = "streamed_slow"
+    engine._effect_generation = 5
+
+    # If generation changes immediately, worker must exit without submitting
+    engine._effect_generation = 6
+    engine._stream_run(stop_event, generation=5)
+    assert len(ctrl.submitted) == 0

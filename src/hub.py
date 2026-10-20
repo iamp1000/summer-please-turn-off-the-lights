@@ -12,7 +12,7 @@ from src.device_l930 import L930Controller
 from src.event_loop import BackgroundLoop
 from src.modes import ModeManager
 from src.effects import AnimationEngine
-from src.effects_l930 import L930EffectsEngine, EFFECT_CATALOG, CORE_EFFECTS, ADVANCED_EFFECTS, SEASONAL_EFFECTS, NOVELTY_EFFECTS, OCCASIONAL_EFFECTS, ACTIVE_EFFECTS
+from src.effects_l930 import L930EffectsEngine, EFFECT_CATALOG, CORE_EFFECTS, ADVANCED_EFFECTS, SEASONAL_EFFECTS, NOVELTY_EFFECTS, OCCASIONAL_EFFECTS, ACTIVE_EFFECTS, resolve_effect_alias, NATIVE_ALIASES
 from src.music_reactive import MusicReactive, list_available_audio_devices
 from src.music_reactive_l930 import MusicReactiveL930
 from src.screen_sync import ScreenSync
@@ -43,6 +43,8 @@ class DeviceContext:
             "brightness": 50,
             "active_label": "Idle",
             "connected": False,
+            "effect_status": "idle",
+            "last_error": None,
         }
         
         self.mode_mgr = ModeManager(modes_cfg, controller, loop_runner)
@@ -447,16 +449,20 @@ class LightHub:
     def apply_effect(self, dev_id: str, effect_name: str) -> bool:
         targets = self._resolve_targets(dev_id)
 
-        # Validate every L930 target before stopping its current producer. A bad
+        # Validate every target before stopping its current producer. A bad
         # key must not turn off music/screen mode and then claim the effect loaded.
         for ctx in targets:
             if ctx.model == "L930":
-                key = (effect_name or "").strip().lower()
-                key = {"rainbow_native": "rainbow", "aurora_native": "aurora"}.get(key, key)
+                key = resolve_effect_alias(effect_name)
                 if key not in EFFECT_CATALOG:
+                    ctx.state["effect_status"] = "failed"
+                    ctx.state["last_error"] = f"Unknown L930 effect: {effect_name!r}"
+                    self.notify_change()
                     raise ValueError(f"Unknown L930 effect: {effect_name!r}")
 
         for ctx in targets:
+            ctx.state["effect_status"] = "requested"
+            ctx.state["last_error"] = None
             self.arbiter.claim_output(ctx.dev_id, OutputProducer.EFFECT, on_relinquish=ctx.fx_engine.stop)
             ctx.audio_sync.stop()
             ctx.screen_sync.stop()
@@ -464,13 +470,22 @@ class LightHub:
             if hasattr(ctx, "fx_engine") and hasattr(ctx.fx_engine, "set_parameters"):
                 ctx.fx_engine.set_parameters(brightness=cur_b)
             if ctx.model == "L930":
+                ctx.state["effect_status"] = "sent"
                 started = ctx.fx_engine.start(effect_name, brightness=cur_b)
                 if started is False:
-                    raise RuntimeError(getattr(ctx.fx_engine, "_last_error", None) or f"Failed to start L930 effect {effect_name!r}")
+                    ctx.state["effect_status"] = "failed"
+                    err_msg = getattr(ctx.fx_engine, "_last_error", None) or f"Failed to start L930 effect {effect_name!r}"
+                    ctx.state["last_error"] = err_msg
+                    self.notify_change()
+                    raise RuntimeError(err_msg)
+                ctx.state["effect_status"] = "accepted"
+                ctx.state["last_error"] = None
             else:
                 eff_cfg = dict(self.config.get("effects", {}).get(effect_name, {}))
                 eff_cfg["name"] = effect_name
                 ctx.fx_engine.start(eff_cfg)
+                ctx.state["effect_status"] = "accepted"
+                ctx.state["last_error"] = None
             ctx.state["power"] = True
             ctx.state["active_label"] = effect_name
         self.notify_change()

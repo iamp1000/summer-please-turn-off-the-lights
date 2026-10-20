@@ -535,24 +535,13 @@ class L930Controller:
             except Exception as e:
                 asyncio.create_task(self._handle_failure(e))
 
-    async def set_segments(self, segments: list[list[int]], brightness: int = 100, transition: int = 600, priority: int = 0):
-        """Pushes a custom 50-zone spatial canvas with transition smoothing."""
-        self.clear_frames()
-        if priority > 0 and self._lock.locked():
-            return
-        effect = make_50_zone_effect(segments, master_brightness=max(0, min(100, brightness)), transition=transition, pre_corrected=False)
-        async with self._lock:
-            try:
-                await self._ensure_connected()
-                if not self._is_on and brightness > 0:
-                    await self._device.turn_on()
-                    self._is_on = True
-                await self._device.set_light_effect(effect)
-                self.last_segments = segments
-                self.last_b = brightness
-                self._last_successful_response = time.time()
-            except Exception as e:
-                asyncio.create_task(self._handle_failure(e))
+    @property
+    def current_interval(self) -> float:
+        """Effective send interval in seconds accounting for AIMD network fallback."""
+        if getattr(self, "frame_sender", None):
+            aimd_cap = getattr(self.frame_sender, "_aimd_rate_cap", 2.0)
+            return 1.0 / max(0.5, aimd_cap)
+        return 0.5
 
     async def set_native_effect(self, effect: LightEffect, priority: int = 1) -> bool:
         """Push a firmware-accelerated effect and report whether the device accepted it."""
@@ -562,10 +551,10 @@ class L930Controller:
         async with self._lock:
             try:
                 await self._ensure_connected()
-                await self._device.set_light_effect(effect)
+                res = await self._device.set_light_effect(effect)
                 self._is_on = True
                 self._last_successful_response = time.time()
-                return True
+                return res.is_success() if hasattr(res, "is_success") else True
             except Exception as e:
                 # Recovery still runs, but do not conceal the failed deployment from
                 # the caller: the UI must not report that an effect loaded when it did not.

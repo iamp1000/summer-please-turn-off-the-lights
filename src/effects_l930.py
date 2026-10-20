@@ -59,6 +59,32 @@ NATIVE_PRESETS: Dict[str, LightEffectPreset] = {
     "haunted_mansion":  LightEffectPreset.HauntedMansion,
 }
 
+NATIVE_ALIASES: Dict[str, str] = {
+    "sunrise_native": "sunrise",
+    "sunset_native": "sunset",
+    "flicker_native": "flicker",
+    "ocean_native": "ocean",
+    "raindrop_native": "raindrop",
+    "lightning_native": "lightning",
+    "aurora_native": "aurora",
+    "rainbow_native": "rainbow",
+    "candy_cane_native": "candy_cane",
+    "haunted_mansion_native": "haunted_mansion",
+}
+
+
+def resolve_effect_alias(name: str) -> str:
+    """Resolves native effect aliases and suffixes to valid catalog keys."""
+    key = (name or "").strip().lower()
+    if key in NATIVE_ALIASES:
+        return NATIVE_ALIASES[key]
+    if key.endswith("_native"):
+        base = key[:-7]
+        if base in EFFECT_CATALOG or base in NATIVE_PRESETS:
+            return base
+    return key
+
+
 # Effect classification registry
 EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
     # ── 1. Core Effects (22) ─────────────────────────────────────────────────
@@ -581,13 +607,17 @@ class L930EffectsEngine:
             self._redeploy_current_firmware_effect()
 
     def start(self, effect_name: str, palette_name: Optional[str] = None, speed: Optional[float] = None, brightness: Optional[int] = None) -> bool:
-        key = (effect_name or "").strip().lower()
-        # Keep native UI aliases pointed at real catalog entries. The previous
-        # alias path admitted "aurora_native" then indexed a nonexistent key.
-        key = {"rainbow_native": "rainbow", "aurora_native": "aurora"}.get(key, key)
+        if isinstance(self._app_state, dict):
+            self._app_state["effect_status"] = "requested"
+            self._app_state["last_error"] = None
+
+        key = resolve_effect_alias(effect_name)
         if key not in EFFECT_CATALOG:
             self._last_error = f"Unknown L930 effect: {effect_name!r}"
             logger.error("[L930EffectsEngine] %s", self._last_error)
+            if isinstance(self._app_state, dict):
+                self._app_state["effect_status"] = "failed"
+                self._app_state["last_error"] = self._last_error
             return False
 
         # Increment effect generation immediately
@@ -643,11 +673,21 @@ class L930EffectsEngine:
         self._start_time = time.monotonic()
 
         if kind == "firmware":
+            if isinstance(self._app_state, dict):
+                self._app_state["effect_status"] = "sent"
             # An explicit effect change should be immediate. Only report success
             # after the controller confirms that the device accepted the effect.
             if not self._deploy_firmware_effect(key, force=True):
+                if isinstance(self._app_state, dict):
+                    self._app_state["effect_status"] = "failed"
+                    self._app_state["last_error"] = self._last_error
                 return False
+            if isinstance(self._app_state, dict):
+                self._app_state["effect_status"] = "accepted"
+                self._app_state["last_error"] = None
         elif kind == "streamed_slow":
+            if isinstance(self._app_state, dict):
+                self._app_state["effect_status"] = "sent"
             # Start slow streaming worker (<= 2 updates/s)
             self._start_stream_worker()
         else:
@@ -655,6 +695,9 @@ class L930EffectsEngine:
             logger.error("[L930EffectsEngine] %s", self._last_error)
             self._active_effect_name = None
             self._active_kind = None
+            if isinstance(self._app_state, dict):
+                self._app_state["effect_status"] = "failed"
+                self._app_state["last_error"] = self._last_error
             return False
         return True
 
@@ -727,6 +770,9 @@ class L930EffectsEngine:
             logger.error("[L930EffectsEngine] %s", self._last_error)
             self._active_effect_name = None
             self._active_kind = None
+            if isinstance(self._app_state, dict):
+                self._app_state["effect_status"] = "failed"
+                self._app_state["last_error"] = self._last_error
             return False
 
     def _flush_pending_firmware_upload(self):
@@ -1219,12 +1265,10 @@ class L930EffectsEngine:
 
     def _stream_run(self, stop_event: threading.Event, generation: int):
         """
-        Slow streamed loop (1 to 2 updates/s).
+        Slow streamed loop (<= 2 updates/s).
         Transition_ms matches update interval so the device hardware does the smooth crossfading.
+        Firmware-run effects are strictly kept on firmware path; only procedural streamed effects run here.
         """
-        interval = 0.8  # ~1.25 updates per second
-        trans_ms = int(interval * 1000)
-
         while not stop_event.is_set() and generation == self._effect_generation:
             try:
                 eff = self._active_effect_name
@@ -1236,170 +1280,89 @@ class L930EffectsEngine:
                 now = time.monotonic()
                 t = now - self._start_time
 
-                # ── Ambient Group Dispatching ────────────────────────────────
-                if eff == "tide":
-                    segs = self._render_tide(t)
-                    interval = 0.40
-                    trans_ms = 400
-                elif eff == "drift":
-                    segs = self._render_drift(t)
-                    interval = 0.45
-                    trans_ms = 450
-                elif eff == "dusk":
-                    segs = self._render_standing_wave_dusk(t)
-                    interval = 1.5
-                    trans_ms = 1500
-                elif eff == "breathe":
-                    segs = self._render_breathe(t)
-                    interval = 0.50
-                    trans_ms = 500
-                elif eff == "starfield":
-                    segs = self._render_autonomous_starfield(t)
-                    interval = 0.35
-                    trans_ms = 350
-                elif eff == "embers":
-                    segs = self._render_autonomous_embers(t)
-                    interval = 0.45
-                    trans_ms = 450
-                elif eff == "fireflies":
-                    segs = self._render_fireflies(t)
-                    interval = 0.35
-                    trans_ms = 350
-                elif eff == "lava_lamp":
+                # Base interval 0.5s strictly satisfies <= 2 updates per second limit
+                interval = 0.50
+
+                # ── Core Streamed Effects ────────────────────────────────────
+                if eff == "lava_lamp":
                     segs = self._render_lava_lamp(t)
-                    interval = 0.35
-                    trans_ms = 350
                 elif eff == "golden_hour":
                     segs = self._render_standing_wave_golden_hour(t)
-                    interval = 0.50
-                    trans_ms = 500
-                elif eff == "glitter_cascade":
-                    segs = self._render_glitter_cascade(t)
-                    interval = 0.30
-                    trans_ms = 300
-
-                # ── Motion Group Dispatching ─────────────────────────────────
-                elif eff in ("campfire_hearth", "hearth", "hearth_streamed"):
-                    segs = self._render_hearth_fire2012(t)
-                    interval = 0.35
-                    trans_ms = 350
                 elif eff == "comet":
                     segs = self._render_multi_pod_comet(t)
-                    interval = 0.32
-                    trans_ms = 320
-                elif eff == "meteor_shower":
-                    segs = self._render_meteor_shower(t)
-                    interval = 0.28
-                    trans_ms = 280
-                elif eff == "cyber_chase":
-                    segs = self._render_collider_chase(t)
-                    interval = 0.35
-                    trans_ms = 350
-                elif eff == "juggle":
-                    segs = self._render_harmonic_juggle(t)
-                    interval = 0.35
-                    trans_ms = 350
                 elif eff == "sinelon":
                     segs = self._render_sinelon_sweep(t)
-                    interval = 0.32
-                    trans_ms = 320
-                elif eff == "confetti":
-                    segs = self._render_confetti_burst(t)
-                    interval = 0.35
-                    trans_ms = 350
+                elif eff == "cyber_chase":
+                    segs = self._render_collider_chase(t)
                 elif eff == "radial_ripple":
                     segs = self._render_radial_ripple(t)
-                    interval = 0.35
-                    trans_ms = 350
-                elif eff == "spiral_vortex":
-                    segs = self._render_spiral_vortex(t)
-                    interval = 0.35
-                    trans_ms = 350
-                elif eff == "gravity_slosh":
-                    segs = self._render_gravity_slosh(t)
-                    interval = 0.35
-                    trans_ms = 350
-                elif eff == "lissajous_orbit":
-                    segs = self._render_lissajous_orbit(t)
-                    interval = 0.35
-                    trans_ms = 350
-                elif eff == "planar_wind":
-                    segs = self._render_planar_wind(t)
-                    interval = 0.35
-                    trans_ms = 350
-                elif eff == "radar_sweep":
-                    segs = self._render_radar_sweep(t)
-                    interval = 0.35
-                    trans_ms = 350
-                elif eff == "bpm_resonator":
-                    segs = self._render_bpm_resonator(t)
-                    interval = 0.35
-                    trans_ms = 350
-                elif eff == "prism_sparks":
-                    segs = self._render_prism_sparks(t)
-                    interval = 0.30
-                    trans_ms = 300
-                elif eff == "vaporwave_neon":
-                    segs = self._render_vaporwave_neon(t)
-                    interval = 0.40
-                    trans_ms = 400
-                elif eff == "sonar_sweep":
-                    segs = self._render_multi_pod_sonar(t)
-                    interval = 0.35
-                    trans_ms = 350
-                elif eff == "neon_heartbeat":
-                    segs = self._render_anatomical_heartbeat(t)
-                    interval = 0.35
-                    trans_ms = 350
-                elif eff == "lantern_sweep":
-                    segs = self._render_lantern_sweep(t)
-                    interval = 0.35
-                    trans_ms = 350
                 elif eff == "aurora":
                     segs = self._render_aurora(t)
-                    interval = 0.50
-                    trans_ms = 500
-                elif eff == "deep_ocean":
-                    segs = self._render_deep_ocean(t)
-                    interval = 0.50
-                    trans_ms = 500
                 elif eff == "raindrop":
                     segs = self._render_raindrop(t)
-                    interval = 0.35
-                    trans_ms = 350
                 elif eff == "lightning":
                     segs = self._render_lightning(t)
-                    interval = 0.25
-                    trans_ms = 250
-                elif eff == "coordinated_lightning":
-                    segs = self._render_coordinated_lightning(t)
-                    interval = 0.28
-                    trans_ms = 280
-
-                # ── Seasonal & Novelty Group Dispatching ─────────────────────
-                elif eff == "police":
-                    segs = self._render_police(t)
-                    interval = 0.25
-                    trans_ms = 200
-                elif eff == "candy_cane":
-                    segs = self._render_candy_cane(t)
-                    interval = 0.35
-                    trans_ms = 350
-                elif eff == "haunted_mansion":
-                    segs = self._render_haunted_mansion(t)
-                    interval = 0.35
-                    trans_ms = 350
                 elif eff == "rainbow":
                     segs = self._render_rainbow(t)
-                    interval = 0.35
-                    trans_ms = 350
+
+                # ── Advanced Streamed Effects ────────────────────────────────
+                elif eff == "meteor_shower":
+                    segs = self._render_meteor_shower(t)
+                elif eff == "juggle":
+                    segs = self._render_harmonic_juggle(t)
+                elif eff == "spiral_vortex":
+                    segs = self._render_spiral_vortex(t)
+                elif eff == "gravity_slosh":
+                    segs = self._render_gravity_slosh(t)
+                elif eff == "lissajous_orbit":
+                    segs = self._render_lissajous_orbit(t)
+                elif eff == "planar_wind":
+                    segs = self._render_planar_wind(t)
+                elif eff == "radar_sweep":
+                    segs = self._render_radar_sweep(t)
+                elif eff == "vaporwave_neon":
+                    segs = self._render_vaporwave_neon(t)
+                elif eff == "neon_heartbeat":
+                    segs = self._render_anatomical_heartbeat(t)
+                elif eff == "lantern_sweep":
+                    segs = self._render_lantern_sweep(t)
+
+                # ── Seasonal & Novelty Group Dispatching ─────────────────────
+                elif eff == "candy_cane":
+                    segs = self._render_candy_cane(t)
+                elif eff == "haunted_mansion":
+                    segs = self._render_haunted_mansion(t)
+                elif eff == "police":
+                    segs = self._render_police(t)
                 else:
                     segs = [[30, 60, 50]] * NUM_SEGMENTS
+
+                # Enforce <= 2 updates/s limit (interval >= 0.50s)
+                interval = max(0.50, interval)
+
+                # Dynamic hardware adaptation: if controller throttled under AIMD or RTT latency, lengthen interval
+                if hasattr(self._ctrl, "current_interval"):
+                    interval = max(interval, float(self._ctrl.current_interval))
+                elif hasattr(self._ctrl, "_current_interval") and self._ctrl._current_interval:
+                    interval = max(interval, float(self._ctrl._current_interval))
+                elif hasattr(self._ctrl, "frame_sender") and self._ctrl.frame_sender:
+                    aimd_cap = getattr(self._ctrl.frame_sender, "_aimd_rate_cap", 2.0)
+                    interval = max(interval, 1.0 / max(0.5, aimd_cap))
+
+                trans_ms = max(500, int(round(interval * 1000)))
+
+                # Early stale frame guard before CPU color correction
+                if generation != self._effect_generation or stop_event.is_set():
+                    break
 
                 # Master brightness and gamma correction
                 b = self._brightness
                 master_ceiling = b / 100.0
                 corrected = self._pipeline.correct_hsv_sequence(segs, master_ceiling=master_ceiling)
+
+                # Stale frame guard right before publishing or submitting
+                if generation != self._effect_generation or stop_event.is_set():
+                    break
 
                 if self._frame_bus:
                     published = self._frame_bus.publish(FramePacket(
@@ -1424,11 +1387,18 @@ class L930EffectsEngine:
                     })
 
                 self._last_successful_frame = time.time()
+                if isinstance(self._app_state, dict):
+                    self._app_state["effect_status"] = "accepted"
+                    self._app_state["last_error"] = None
+
                 if stop_event.wait(interval):
                     break
             except Exception as e:
                 logger.exception(f"[L930EffectsEngine] Exception in stream worker ({eff}): {e}")
                 self._last_error = str(e)
+                if isinstance(self._app_state, dict):
+                    self._app_state["effect_status"] = "failed"
+                    self._app_state["last_error"] = str(e)
                 if stop_event.wait(1.0):
                     break
 
