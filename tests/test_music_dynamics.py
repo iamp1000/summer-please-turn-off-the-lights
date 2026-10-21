@@ -101,7 +101,9 @@ def test_l900_analyzer_path_fades_cached_active_color_to_true_black():
     # After its short hold, the release is monotonic; no brightness spikes or permanent floor.
     release = observed[1:]
     assert all(b <= a for a, b in zip(release, release[1:]))
-    assert first_brightness > observed[0] >= observed[-1]
+    # A short hold before decay is intentional; equality at the first sample is valid.
+    assert first_brightness >= observed[0] >= observed[-1]
+    assert observed[-1] < observed[0], "brightness should fade after the short hold"
 
 
 def test_l930_analyzer_path_fades_cached_zones_to_true_black():
