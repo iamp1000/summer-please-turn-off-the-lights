@@ -141,3 +141,30 @@ def test_music_worker_exposes_shared_capture_error(engine_cls):
     assert engine.is_running() is False
     assert state["active_label"] == "Audio Error"
     assert "No audio input source found" in state["last_error"]
+
+
+@pytest.mark.parametrize(
+    ("engine_cls", "source_patch", "label"),
+    [
+        (MusicReactive, "src.music_reactive.get_audio_input_source", "Audio Reactive"),
+        (MusicReactiveL930, "src.music_reactive_l930.get_audio_input_source", "Audio Spectrum (IC)"),
+    ],
+)
+def test_standalone_music_worker_reports_missing_audio_device(monkeypatch, engine_cls, source_patch, label):
+    monkeypatch.setattr(source_patch, lambda *args, **kwargs: None)
+    state = {"brightness": 50, "active_label": label}
+    controller = FakeController()
+    engine = engine_cls(controller=controller, loop_runner=None, app_state=state)
+
+    engine.start()
+    thread = engine._thread
+    assert thread is not None
+    thread.join(timeout=1.5)
+    assert not thread.is_alive()
+
+    assert engine.is_running() is False
+    assert state["active_label"] == "Audio Error"
+    assert state["last_error"]
+    assert "audio input" in state["last_error"].lower()
+    assert controller.frames, "failure should publish a final black frame"
+    assert controller.frames[-1].get("b", controller.frames[-1].get("brightness")) == 0
