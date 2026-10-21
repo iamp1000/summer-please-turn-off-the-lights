@@ -112,6 +112,8 @@ class LightController:
         # Telemetry & Frame Sender
         self.diagnostics = DeviceDiagnostics(dev_id=self.dev_id)
         self.frame_sender: Optional[LatestFrameSender] = None
+        self._frame_authorizer = None
+        self._framebus_managed = False
         if self._loop:
             self._init_sender(self._loop)
 
@@ -131,12 +133,31 @@ class LightController:
                 max_updates_per_s=max_ups,
                 min_zone_delta=min_delta,
             )
+            if self._frame_authorizer is not None:
+                self.frame_sender.set_frame_authorizer(self._frame_authorizer)
             self.frame_sender.start()
 
+    def set_frame_authorizer(self, authorizer):
+        """Bind this controller to the Hub's authoritative FrameBus consumer."""
+        self._frame_authorizer = authorizer
+        self._framebus_managed = authorizer is not None
+        if self.frame_sender is not None:
+            self.frame_sender.set_frame_authorizer(authorizer)
+
     def submit_frame(self, frame: Any):
-        """Submit frame to decoupled sender. Latest frame overwrites pending."""
+        """Submit a bus-authorized frame; managed controllers reject direct producer calls."""
+        if self._framebus_managed:
+            if not isinstance(frame, dict) or "_producer_id" not in frame or "_generation" not in frame:
+                return False
+            try:
+                if not self._frame_authorizer(frame):
+                    return False
+            except Exception:
+                return False
         if self.frame_sender and self._is_on:
             self.frame_sender.submit_frame(frame)
+            return True
+        return False
 
     def clear_frames(self):
         """Immediately purge pending animation frames."""
