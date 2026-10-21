@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 from src.device import LightController
 from src.event_loop import BackgroundLoop
+from src.frame_bus import FramePacket, OutputProducer
 
 
 def build_mode_segments(mode: dict, num_zones: int = 50) -> list[list[int]]:
@@ -82,10 +83,15 @@ def build_mode_segments(mode: dict, num_zones: int = 50) -> list[list[int]]:
 
 
 class ModeManager:
-    def __init__(self, modes: dict, controller: LightController, loop_runner: BackgroundLoop):
+    def __init__(self, modes: dict, controller: LightController, loop_runner: BackgroundLoop,
+                 frame_bus=None, dev_id: str = "strip1", arbiter=None, on_relinquish=None):
         self._modes = modes
         self._controller = controller
         self._loop_runner = loop_runner
+        self._frame_bus = frame_bus
+        self._dev_id = dev_id
+        self._arbiter = arbiter
+        self._on_relinquish = on_relinquish
 
     def names(self):
         return list(self._modes.keys())
@@ -95,11 +101,19 @@ class ModeManager:
         mode = self._modes.get(name)
         if mode is None:
             raise KeyError(f"Unknown mode: {name!r}. Known modes: {self.names()}")
+        if self._frame_bus and self._arbiter:
+            self._arbiter.claim_output(
+                self._dev_id, OutputProducer.STATIC, on_relinquish=self._on_relinquish
+            )
         future = self._loop_runner.run(self._apply_async(mode))
         return future
 
     async def _apply_async(self, mode: dict):
-        """Crossfade over 600ms for a premium '$200 smart light' feel."""
+        """Crossfade over 600ms, publishing each rendered scene through FrameBus."""
+        output_token = (
+            self._frame_bus.capture_token(self._dev_id, OutputProducer.STATIC)
+            if self._frame_bus else None
+        )
         # Grab current global state so we crossfade smoothly even if coming from an effect
         self._last_b = getattr(self._controller, "last_b", 50)
         self._last_h = getattr(self._controller, "last_h", 0)
@@ -111,11 +125,20 @@ class ModeManager:
         target_s = mode.get("saturation", self._last_s)
         target_k = mode.get("color_temp", self._last_k)
 
-        # Multi-Zone L930 Optimization: Push 50-IC spatial canvas if supported
+        # Multi-Zone L930: scene frames use the same ownership-checked route.
         if hasattr(self._controller, "set_segments"):
             segs = build_mode_segments(mode, num_zones=50)
             await self._controller.turn_on(priority=0)
-            await self._controller.set_segments(segs, brightness=target_b, transition=600, priority=0)
+            if self._frame_bus:
+                if output_token:
+                    generation, producer_id = output_token
+                    self._frame_bus.publish(FramePacket(
+                        dev_id=self._dev_id, producer=OutputProducer.STATIC,
+                        segments=segs, brightness=target_b, transition=600,
+                        generation=generation, producer_id=producer_id,
+                    ))
+            else:
+                await self._controller.set_segments(segs, brightness=target_b, transition=600, priority=0)
             self._last_b = target_b
             if "hue" in mode: self._last_h = mode["hue"]
             if "saturation" in mode: self._last_s = mode["saturation"]
@@ -131,18 +154,39 @@ class ModeManager:
         for i in range(1, steps + 1):
             alpha = i / float(steps)
             b = int(self._last_b + (target_b - self._last_b) * alpha)
-            
+
             if has_temp:
                 k = int(self._last_k + (target_k - self._last_k) * alpha)
-                await self._controller.set_color_temperature(k, priority=0)
-                await self._controller.set_brightness(b, priority=0)
+                norm_k = max(0.0, min(1.0, (k - 2500) / 4000.0))
+                h_target = int(30 + (210 - 30) * norm_k)
+                s_target = int(55 - 40 * norm_k)
+                h_diff = h_target - self._last_h
+                if h_diff > 180: h_diff -= 360
+                elif h_diff < -180: h_diff += 360
+                h = int((self._last_h + h_diff * alpha) % 360)
+                s = int(self._last_s + (s_target - self._last_s) * alpha)
             elif has_color:
                 h_diff = target_h - self._last_h
                 if h_diff > 180: h_diff -= 360
                 elif h_diff < -180: h_diff += 360
-                
                 h = int((self._last_h + h_diff * alpha) % 360)
                 s = int(self._last_s + (target_s - self._last_s) * alpha)
+            else:
+                h, s = self._last_h, self._last_s
+
+            if self._frame_bus:
+                if output_token:
+                    generation, producer_id = output_token
+                    self._frame_bus.publish(FramePacket(
+                        dev_id=self._dev_id, producer=OutputProducer.STATIC,
+                        hsv=(h, s, b), brightness=b, transition=80,
+                        generation=generation, producer_id=producer_id,
+                    ))
+            elif has_temp:
+                k = int(self._last_k + (target_k - self._last_k) * alpha)
+                await self._controller.set_color_temperature(k, priority=0)
+                await self._controller.set_brightness(b, priority=0)
+            elif has_color:
                 if hasattr(self._controller, "set_state"):
                     await self._controller.set_state(h, s, b, priority=0)
                 else:
@@ -150,7 +194,7 @@ class ModeManager:
                     await self._controller.set_brightness(b, priority=0)
             else:
                 await self._controller.set_brightness(b, priority=0)
-                
+
             if i < steps:
                 await asyncio.sleep(0.08)
             
