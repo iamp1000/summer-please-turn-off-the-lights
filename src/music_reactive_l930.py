@@ -13,6 +13,7 @@ from src.audio_dsp import SpectralFluxOnsetDetector, BPMTracker, DynamicAudioCal
 from src.visual_styles import get_visual_style, STYLE_REGISTRY, create_style_instances, AccentCompositor, DirectorStyle
 from src.frame_bus import FramePacket, OutputProducer
 from src.music_dynamics import MusicBrightnessFloor, music_is_genuinely_active, fade_segments, silence_fade_duration
+from src.music_dynamics import MusicBrightnessFloor, music_is_genuinely_active, fade_segments, silence_fade_duration
 
 NUM_SEGMENTS = 50
 
@@ -582,25 +583,47 @@ class MusicReactiveL930:
 
         # ── DEFAULT STATE: STRICTLY 100% OFF WHEN SILENT ──────────────────────
         silence_thresh = max(0.0020, min(0.010, self._calibrator.noise_floor * 1.20))
-        if rms < silence_thresh:
+        if rms < silence_thresh and self._visual_mode != "movie":
             self._silence_duration += dt
             self._silence_count += 1
-            if self._silence_count > 5:
-                # Fast linear decay down to complete blackness / OFF
-                dark = [[0, 0, 0] for _ in range(NUM_SEGMENTS)]
-                self._target_segs = dark
-                self._white_punch = 0.0
-                self._beat_punch = 0.0
-                self._ripple_pos = -1.0
-                self._levels *= 0.50
-                if np.max(self._levels) < 1.0:
-                    self._levels.fill(0.0)
-                    self._rendered_segs = dark
-                    self.latest_spectrum = [0.0] * NUM_SEGMENTS
-                    self._publish_frame({"segments": dark, "brightness": 0, "transition": 0, "_pre_corrected": True})
-                else:
-                    self._smooth_to_rendered(dark, alpha=0.45)
-                    self.latest_spectrum = [0.0] * NUM_SEGMENTS
+            self._brightness_floor.update(
+                self.latest_music_state, dt,
+                master_ceiling=self._app_state.get("brightness", 100) / 100.0,
+                enabled=False, force_inactive=True,
+            )
+            self._white_punch = 0.0
+            self._beat_punch = 0.0
+            self._ripple_pos = -1.0
+
+            fade_duration = silence_fade_duration(self._ctrl, fallback_rate=8.0)
+            fade_start = 0.12
+            factor = 1.0 if self._silence_duration <= fade_start else max(
+                0.0, 1.0 - (self._silence_duration - fade_start) / fade_duration
+            )
+            base = self._last_active_segs or [[0, 0, 0] for _ in range(NUM_SEGMENTS)]
+            faded = fade_segments(base, factor)
+            self._target_segs = faded
+            self._rendered_segs = faded
+            self._levels *= factor
+            self.latest_spectrum = [0.0] * NUM_SEGMENTS
+            sender = getattr(self._ctrl, "frame_sender", None)
+            configured_ups = max(0.5, float(getattr(self._ctrl, "_max_updates_per_s", 8.0)))
+            effective_ups = configured_ups
+            if sender:
+                effective_ups = max(0.5, min(
+                    configured_ups,
+                    float(getattr(sender, "_aimd_rate_cap", configured_ups)),
+                ))
+            transition = min(6000, max(
+                int(getattr(self._ctrl, "music_transition_ms", 120)),
+                int(round(980.0 / effective_ups)),
+            ))
+            self._publish_frame({
+                "segments": faded,
+                "brightness": max((zone[2] for zone in faded), default=0),
+                "transition": transition,
+                "_pre_corrected": True,
+            })
 
             # True black: on sustained silence (> 3 s) turn the strip off
             if self._silence_duration >= 3.0 and not self._powered_down_for_silence:
@@ -900,7 +923,7 @@ class MusicReactiveL930:
         self._target_segs = segs
         self._smooth_to_rendered(segs, alpha=0.60)
 
-    def _smooth_to_rendered(self, target_segs: list[list[int]], alpha: float = 0.55):
+    def _smooth_to_rendered(self, target_segs: list[list[int]], alpha: float = 0.55, cache_active: bool = True):
         smoothed = []
         all_dark = True
         for i in range(NUM_SEGMENTS):
@@ -936,7 +959,16 @@ class MusicReactiveL930:
 
         self._rendered_segs = smoothed
         master_ceiling = self._app_state.get("brightness", 85) / 100.0
+        active = cache_active and self._visual_mode != "movie" and music_is_genuinely_active(self.latest_music_state)
+        floor_value = self._brightness_floor.update(
+            self.latest_music_state, 0.05, master_ceiling=master_ceiling,
+            enabled=(self._visual_mode != "movie"), force_inactive=not active,
+        )
         corrected = self._pipeline.correct_hsv_sequence(smoothed, master_ceiling=master_ceiling)
+        if active:
+            corrected = self._brightness_floor.apply_l930(corrected, floor_value)
+            if any(zone[2] > 0 for zone in corrected):
+                self._last_active_segs = [list(zone) for zone in corrected]
         music_trans = getattr(self._ctrl, "music_transition_ms", None)
         trans = music_trans if music_trans is not None and music_trans > 0 else 120
         self._publish_frame({"segments": corrected, "brightness": 100, "transition": trans, "_pre_corrected": True})
