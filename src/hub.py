@@ -477,7 +477,7 @@ class LightHub:
                 ctx.state["active_label"] = "Off"
                 self.loop_runner.run(ctx.controller.turn_off(priority=0))
             else:
-                self.arbiter.claim_output(ctx.dev_id, OutputProducer.STATIC, on_relinquish=ctx.stop_all_active)
+                self.arbiter.claim_output(ctx.dev_id, OutputProducer.STATIC, on_relinquish=ctx.stop_all_active, force_new_generation=True)
                 ctx.state["active_label"] = "Idle"
                 self.loop_runner.run(ctx.controller.turn_on(priority=0))
         self.notify_change()
@@ -572,7 +572,7 @@ class LightHub:
         for ctx in targets:
             ctx.state["effect_status"] = "requested"
             ctx.state["last_error"] = None
-            self.arbiter.claim_output(ctx.dev_id, OutputProducer.EFFECT, on_relinquish=ctx.fx_engine.stop)
+            self.arbiter.claim_output(ctx.dev_id, OutputProducer.EFFECT, on_relinquish=ctx.fx_engine.stop, force_new_generation=True)
             ctx.audio_sync.stop()
             ctx.screen_sync.stop()
             cur_b = ctx.state.get("brightness", 50)
