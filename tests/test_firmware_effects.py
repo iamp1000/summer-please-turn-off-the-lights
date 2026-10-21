@@ -330,9 +330,9 @@ def test_output_arbiter_strict_ownership():
     arbiter = OutputArbiter()
     dev = "strip2"
 
-    # IDLE allows initial static or idle release
-    assert arbiter.can_submit(dev, OutputProducer.STATIC)
-    assert arbiter.can_submit(dev, OutputProducer.IDLE)
+    # No producer, including STATIC, may enqueue until it explicitly owns the device.
+    assert not arbiter.can_submit(dev, OutputProducer.STATIC)
+    assert not arbiter.can_submit(dev, OutputProducer.IDLE)
     assert not arbiter.can_submit(dev, OutputProducer.EFFECT)
 
     # Claim EFFECT
