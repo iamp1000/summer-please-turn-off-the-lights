@@ -290,6 +290,39 @@ class MusicReactive:
     def _run_shared(self):
         self._render_loop()
 
+    def _submit_output_frame(self, frame: dict, metadata: Optional[Dict[str, Any]] = None):
+        """Publish rendered audio frames through FrameBus; retain direct fallback for standalone tests."""
+        meta = dict(metadata or {})
+        for key in ("t_audio_recv", "t_analysis_done", "t_frame_rendered"):
+            if key in frame:
+                meta[key] = frame[key]
+        if self._frame_bus:
+            if "segments" in frame:
+                packet = FramePacket(
+                    dev_id=self._dev_id,
+                    producer=OutputProducer.AUDIO,
+                    segments=frame["segments"],
+                    brightness=int(frame.get("brightness", 100)),
+                    transition=int(frame.get("transition", 0)),
+                    pre_corrected=bool(frame.get("_pre_corrected", False)),
+                    metadata=meta,
+                )
+            else:
+                hsv = (int(frame.get("h", 0)), int(frame.get("s", 0)), int(frame.get("b", 0)))
+                packet = FramePacket(
+                    dev_id=self._dev_id,
+                    producer=OutputProducer.AUDIO,
+                    hsv=hsv,
+                    brightness=int(frame.get("brightness", hsv[2])),
+                    transition=int(frame.get("transition", 0)),
+                    pre_corrected=bool(frame.get("_pre_corrected", False)),
+                    metadata=meta,
+                )
+            return self._frame_bus.publish(packet)
+        if hasattr(self._controller, "submit_frame"):
+            return self._controller.submit_frame(frame)
+        return False
+
     def _render_from_music_state(self, st: MusicState, dt: float, timing: Optional[Dict[str, float]] = None):
         master_ceiling = self._app_state.get("brightness", 100) / 100.0
         is_movie = (self.style_name == "movie")
@@ -302,8 +335,9 @@ class MusicReactive:
                     producer=OutputProducer.AUDIO,
                     hsv=(0, 0, 0),
                     brightness=0,
+                    pre_corrected=True,
                 ))
-            if hasattr(self._controller, "submit_frame"):
+            if not self._frame_bus and hasattr(self._controller, "submit_frame"):
                 self._controller.submit_frame({"h": 0, "s": 0, "b": 0, "_pre_corrected": True})
             return
 
@@ -358,10 +392,11 @@ class MusicReactive:
                 producer=OutputProducer.AUDIO,
                 hsv=(hc, sc, vc),
                 brightness=vc,
-                metadata={"music_state": st},
+                pre_corrected=True,
+                metadata={"music_state": st, **({k: frame_dict[k] for k in ("t_audio_recv", "t_analysis_done", "t_frame_rendered") if k in frame_dict})},
             ))
 
-        if hasattr(self._controller, "submit_frame"):
+        if not self._frame_bus and hasattr(self._controller, "submit_frame"):
             self._controller.submit_frame(frame_dict)
 
     def stop(self):
@@ -371,7 +406,7 @@ class MusicReactive:
         self._target_state = (0, 0, 0)
         if hasattr(self._controller, "clear_frames"):
             self._controller.clear_frames()
-        if hasattr(self._controller, "submit_frame"):
+        if not self._frame_bus and hasattr(self._controller, "submit_frame"):
             self._controller.submit_frame({"h": 0, "s": 0, "b": 0})
 
     def _should_send(self, b, h, s):
@@ -428,9 +463,9 @@ class MusicReactive:
                 else:
                     self._target_state = (int(self._smoothed_brightness), int(self._smoothed_hue), 100)
                 self.latest_spectrum = [0.0] * 50
-                if hasattr(self._controller, "submit_frame"):
-                    b_out = int(self._smoothed_brightness)
-                    self._controller.submit_frame({"h": int(self._smoothed_hue) if b_out > 0 else 0, "s": 100 if b_out > 0 else 0, "b": b_out, "_pre_corrected": True})
+                b_out = int(self._smoothed_brightness)
+                frame_out = {"h": int(self._smoothed_hue) if b_out > 0 else 0, "s": 100 if b_out > 0 else 0, "b": b_out, "_pre_corrected": True}
+                self._submit_output_frame(frame_out)
 
             # True black: on sustained silence (> 3 s) turn the strip off
             if self._silence_duration >= 3.0 and not self._powered_down_for_silence:
@@ -562,9 +597,10 @@ class MusicReactive:
                     producer=OutputProducer.AUDIO,
                     hsv=(hc, sc, vc),
                     brightness=vc,
+                    pre_corrected=True,
                     metadata={"music_state": self.latest_music_state},
                 ))
-            if hasattr(self._controller, "submit_frame"):
+            if not self._frame_bus and hasattr(self._controller, "submit_frame"):
                 self._controller.submit_frame({"h": hc, "s": sc, "b": vc, "_pre_corrected": True})
             return
 
@@ -670,6 +706,5 @@ class MusicReactive:
             if self._should_send(b_val, h_val, s_val):
                 self._last_sent_state = (b_val, h_val, s_val)
                 self._last_sent_time = now
-                if hasattr(self._controller, "submit_frame"):
-                    hc, sc, vc = self._pipeline.correct_hsv_tuple(h_val, s_val, b_val, master_ceiling=master_ceiling)
-                    self._controller.submit_frame({"h": hc, "s": sc, "b": vc, "_pre_corrected": True})
+                hc, sc, vc = self._pipeline.correct_hsv_tuple(h_val, s_val, b_val, master_ceiling=master_ceiling)
+                self._submit_output_frame({"h": hc, "s": sc, "b": vc, "_pre_corrected": True}, metadata={"music_state": self.latest_music_state} if self.latest_music_state else None)
