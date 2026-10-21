@@ -45,6 +45,14 @@ from src.geometry import get_l930_topology
 
 NUM_SEGMENTS = 50
 
+
+def _smoothstep(edge0: float, edge1: float, x: float) -> float:
+    """Cubic interpolation with zero slope at both edges."""
+    if edge1 <= edge0:
+        return 1.0 if x >= edge1 else 0.0
+    u = max(0.0, min(1.0, (x - edge0) / (edge1 - edge0)))
+    return u * u * (3.0 - 2.0 * u)
+
 # Native firmware presets
 NATIVE_PRESETS: Dict[str, LightEffectPreset] = {
     "sunrise":          LightEffectPreset.Sunrise,
@@ -202,7 +210,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'kind': 'streamed_slow',
         'group': 'Motion',
         'category': 'core',
-        'desc': 'Two opposing colored pulses colliding at center with bright mixed flash and passing through',
+        'desc': 'Two opposing colored pulses with broad continuous tails, smooth reversal, and a softened center bloom',
         'default_palette': 'dusk',
         'supported_controls': ['speed', 'brightness', 'palette', 'flash_strength'],
     },
@@ -218,7 +226,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'kind': 'streamed_slow',
         'group': 'Motion',
         'category': 'core',
-        'desc': 'Broad, slow-moving green, teal, and violet curtains with long overlapping transitions',
+        'desc': 'Broad, slow-moving green, teal, and violet curtains with continuously blended hues',
         'default_palette': 'forest',
         'supported_controls': ['speed', 'brightness', 'wave_width'],
     },
@@ -234,7 +242,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'kind': 'streamed_slow',
         'group': 'Motion',
         'category': 'core',
-        'desc': 'Dark background punctuated by isolated drops that travel and fade at varied intervals',
+        'desc': 'Dark background with slow multi-direction drops, soft heads, and long fading tails',
         'default_palette': 'tide',
         'supported_controls': ['speed', 'brightness', 'particle_density'],
     },
@@ -351,7 +359,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'group': 'Seasonal & Novelty',
         'subgroup': 'Seasonal',
         'category': 'seasonal',
-        'desc': 'Wide alternating red and white bands visibly moving along strip with clean edges',
+        'desc': 'Wide red and warm-white bands moving with softened transitions and slower motion',
         'default_palette': 'sunset',
         'supported_controls': ['speed', 'brightness'],
     },
@@ -360,7 +368,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'group': 'Seasonal & Novelty',
         'subgroup': 'Seasonal / Spooky',
         'category': 'seasonal',
-        'desc': 'Near-black base with rare emerald glows, eerie violet pools, and sudden flashes',
+        'desc': 'Near-black base with gradual, localized emerald glows and eerie violet pools',
         'default_palette': 'forest',
         'supported_controls': ['speed', 'brightness'],
     },
@@ -369,7 +377,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'group': 'Seasonal & Novelty',
         'subgroup': 'Novelty',
         'category': 'novelty',
-        'desc': 'Crisp red and blue alternating sections with tiny dark gaps between flashes',
+        'desc': 'Slow alternating red and blue siren pulses with smooth brightness envelopes',
         'warning': 'Rapid flashing / strobe warning: contains high-contrast alternating red/blue pulses.',
         'default_palette': 'sunset',
         'supported_controls': ['speed', 'brightness'],
@@ -1645,6 +1653,29 @@ class L930EffectsEngine:
 
     # ── Non-Linear Procedural Renderers (Eliminates Start-to-End Bias) ────────
 
+    def _effective_render_interval(self) -> float:
+        """Best current estimate of physical send cadence, including AIMD protection."""
+        interval = 0.50
+        ctrl = self._ctrl
+        if ctrl is not None:
+            for attr in ("current_interval", "_current_interval"):
+                try:
+                    value = float(getattr(ctrl, attr, 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    value = 0.0
+                if value > 0.0:
+                    interval = max(interval, value)
+            sender = getattr(ctrl, "frame_sender", None)
+            if sender is not None:
+                try:
+                    configured = float(getattr(sender, "max_updates_per_s", 2.0))
+                    aimd = float(getattr(sender, "_aimd_rate_cap", configured))
+                    effective_rate = max(0.5, min(configured, aimd))
+                    interval = max(interval, 1.0 / effective_rate)
+                except (TypeError, ValueError, ZeroDivisionError):
+                    pass
+        return max(0.50, interval)
+
     def _render_collider_chase(self, t: float) -> List[List[int]]:
         """
         Procedural Moving Light Engine: Dual-End Convergence & Divergence with Inward/Outward Collision Effects.
@@ -1663,8 +1694,9 @@ class L930EffectsEngine:
         c3_rgb = tapo_hsv_to_rgb(*c3)
 
         sp = max(0.2, self._speed)
-        # Harmonically bounded 3.2s convergence-divergence cycle
-        cycle_period = 3.2 / sp
+        # Slow the full convergence/divergence cycle as the physical send rate falls.
+        render_interval = self._effective_render_interval()
+        cycle_period = max(3.2 / sp, 16.0 * render_interval)
         phase = (t % cycle_period) / cycle_period
         theta = 2.0 * math.pi * phase
 
@@ -1676,11 +1708,14 @@ class L930EffectsEngine:
         v_dir = -math.sin(theta)  # > 0: converging inward; < 0: diverging outward
 
         # Head 3: Asynchronous harmonic cross-oscillator
-        pos3 = 24.5 + 16.0 * math.sin(t * 2.3 * sp + 1.2)
+        pos3 = 24.5 + 16.0 * math.sin(t * 0.95 * sp + 1.2)
 
-        # Collision impact detection (active when heads are within 3.8 ICs of center)
+        # Broaden the center bloom so it persists across sampled frames.
         dist_between = pos2 - pos1
-        collision_factor = max(0.0, 1.0 - (dist_between / 3.8)) ** 2.0 if dist_between < 3.8 else 0.0
+        tail_mult = max(0.2, getattr(self, "_tail_length", 1.0))
+        collision_radius = 7.5 + 1.5 * tail_mult
+        collision_factor = (1.0 - _smoothstep(0.0, collision_radius, dist_between)) ** 2.0
+        inward_weight = _smoothstep(-0.35, 0.35, v_dir)
 
         segs = []
         for i in range(NUM_SEGMENTS):
@@ -1689,17 +1724,13 @@ class L930EffectsEngine:
             d2 = i - pos2
             d3 = abs(i - pos3)
 
-            # Tail length stretches behind direction of travel
-            tail_mult = max(0.2, getattr(self, "_tail_length", 1.0))
+            # Blend tail direction through each reversal to remove a hard snap.
             tail_len = 3.8 * tail_mult
-            if v_dir >= 0.0:
-                # Inward motion: tails trail toward outer edges
-                sigma1 = tail_len if d1 <= 0.0 else 1.8
-                sigma2 = tail_len if d2 >= 0.0 else 1.8
-            else:
-                # Outward motion: tails trail toward center
-                sigma1 = 1.8 if d1 <= 0.0 else tail_len
-                sigma2 = 1.8 if d2 >= 0.0 else tail_len
+            short_sigma = 1.8
+            outer_sigma = short_sigma + (tail_len - short_sigma) * inward_weight
+            inner_sigma = short_sigma + (tail_len - short_sigma) * (1.0 - inward_weight)
+            sigma1 = outer_sigma if d1 <= 0.0 else inner_sigma
+            sigma2 = outer_sigma if d2 >= 0.0 else inner_sigma
 
             w1 = math.exp(-0.5 * (d1 / sigma1) ** 2)
             w2 = math.exp(-0.5 * (d2 / sigma2) ** 2)
@@ -1715,11 +1746,11 @@ class L930EffectsEngine:
             g += c1_rgb[1] * w1 + c2_rgb[1] * w2 + c3_rgb[1] * w3
             b += c1_rgb[2] * w1 + c2_rgb[2] * w2 + c3_rgb[2] * w3
 
-            # High-energy collision flash / specular impact bloom at center scaled by flash_strength
-            flash_mult = max(0.2, getattr(self, "_flash_strength", 1.0))
+            # Soft, bounded collision bloom (not a single sampled flash).
+            flash_mult = max(0.2, min(1.6, getattr(self, "_flash_strength", 1.0)))
             if collision_factor > 0.0:
                 center_dist = abs(i - 24.5)
-                impact_bloom = collision_factor * math.exp(-0.5 * (center_dist / 2.2) ** 2) * flash_mult
+                impact_bloom = collision_factor * math.exp(-0.5 * (center_dist / 3.0) ** 2) * flash_mult * 0.70
                 r += impact_bloom * 0.85
                 g += impact_bloom * 0.85
                 b += impact_bloom * 0.95
@@ -2240,28 +2271,39 @@ class L930EffectsEngine:
         return segs
 
     def _render_aurora(self, t: float) -> List[List[int]]:
-        """Broad, slow-moving green, teal, and violet curtains consuming wave width."""
+        """Broad aurora curtains blended continuously through emerald, teal, and violet."""
+        from src.pipeline import tapo_hsv_to_rgb, rgb_to_tapo_hsv
+
         sp = self._speed
         ww = max(0.3, min(3.0, getattr(self, "_wave_width", 1.0)))
+        colors = ((140, 95), (185, 90), (275, 85))
         segs = []
         for i in range(NUM_SEGMENTS):
             x = i / float(NUM_SEGMENTS - 1)
-            # Overlapping atmospheric curtain ribbons
             c1 = math.sin(x * (2.2 / ww) * math.pi + t * 0.25 * sp)
             c2 = math.cos(x * (3.1 / ww) * math.pi - t * 0.18 * sp + 1.2)
             c3 = math.sin(x * (1.5 / ww) * math.pi + t * 0.32 * sp + 2.4)
+            waves = (c1, c2, c3)
 
-            # Dominant wavelength selection
-            if c1 > c2 and c1 > c3:
-                h, s = 140, 95  # Emerald aurora
-                v = int(max(10, min(90, 25 + (c1 + 1.0) * 30)))
-            elif c2 > c3:
-                h, s = 185, 90  # Cyan-teal ribbon
-                v = int(max(10, min(90, 20 + (c2 + 1.0) * 32)))
-            else:
-                h, s = 275, 85  # Violet curtain
-                v = int(max(10, min(90, 18 + (c3 + 1.0) * 30)))
-            segs.append([h, s, v])
+            # Softmax weights preserve all three curtains; no hue can abruptly win a zone.
+            weights_raw = [math.exp(1.4 * value) for value in waves]
+            weight_total = sum(weights_raw)
+            weights = [value / weight_total for value in weights_raw]
+            brightnesses = (
+                max(12, min(88, 22 + (c1 + 1.0) * 31)),
+                max(12, min(90, 20 + (c2 + 1.0) * 33)),
+                max(12, min(86, 18 + (c3 + 1.0) * 31)),
+            )
+            rgb_candidates = [
+                tapo_hsv_to_rgb(colors[j][0], colors[j][1], int(brightnesses[j]))
+                for j in range(3)
+            ]
+            rgb = tuple(
+                sum(rgb_candidates[j][channel] * weights[j] for j in range(3))
+                for channel in range(3)
+            )
+            h, sat, val = rgb_to_tapo_hsv(*rgb)
+            segs.append([h, sat, max(10, min(90, val))])
         return segs
 
     def _render_deep_ocean(self, t: float) -> List[List[int]]:
@@ -2285,28 +2327,48 @@ class L930EffectsEngine:
         return segs
 
     def _render_raindrop(self, t: float) -> List[List[int]]:
-        """Dark background punctuated by isolated drops consuming particle density."""
-        sp = self._speed
+        """Slow multi-direction droplets with soft cores and long, coherent fading wakes."""
+        sp = max(0.2, self._speed)
         dens = max(0.2, min(3.0, getattr(self, "_particle_density", 1.0)))
-        segs = [[220, 90, 3]] * NUM_SEGMENTS
-        all_drops = [
-            ((t * 14.0 * sp + 2.0) % (NUM_SEGMENTS + 8.0) - 4.0, 0.9),
-            ((t * 11.0 * sp + 18.0) % (NUM_SEGMENTS + 12.0) - 6.0, 0.75),
-            ((t * 16.0 * sp + 31.0) % (NUM_SEGMENTS + 10.0) - 5.0, 0.85),
-            ((t * 9.5 * sp + 44.0) % (NUM_SEGMENTS + 15.0) - 7.0, 0.65),
-            ((t * 13.0 * sp + 8.0) % (NUM_SEGMENTS + 9.0) - 4.5, 0.80),
-            ((t * 17.5 * sp + 25.0) % (NUM_SEGMENTS + 11.0) - 5.5, 0.90),
+        interval = self._effective_render_interval()
+        tail_len = 5.5 + 0.6 * dens
+        travel_span = NUM_SEGMENTS + 2.0 * tail_len
+        base = [212, 88, 3]
+        out = [list(base) for _ in range(NUM_SEGMENTS)]
+        drops = [
+            (0.03, 10.0, 0.92, 1),
+            (0.19, 12.2, 0.76, -1),
+            (0.37, 9.8, 0.84, 1),
+            (0.54, 13.0, 0.67, -1),
+            (0.72, 11.1, 0.81, 1),
+            (0.88, 14.0, 0.90, -1),
         ]
-        num_drops = max(1, min(len(all_drops), int(round(4 * dens))))
-        drops = all_drops[:num_drops]
-        out = [list(c) for c in segs]
-        for head, str_val in drops:
+        count = max(1, min(len(drops), int(round(4.0 * dens))))
+        for phase, nominal_period, strength, direction in drops[:count]:
+            # Cap motion to roughly four zones per physical update at the current AIMD rate.
+            minimum_period = travel_span * interval / 4.2
+            period = max(nominal_period / sp, minimum_period)
+            progress = ((t / period) + phase) % 1.0
+            if direction > 0:
+                head = progress * travel_span - tail_len
+            else:
+                head = (1.0 - progress) * travel_span - tail_len
+
             for i in range(NUM_SEGMENTS):
-                behind = head - i
-                if 0.0 <= behind <= 3.5:
-                    decay = (1.0 - behind / 3.5) ** 1.5 * str_val * min(1.0, math.sqrt(dens))
-                    v = int(max(out[i][2], min(100, 10 + decay * 88)))
-                    out[i] = [195, max(15, int(90 - decay * 55)), v]
+                behind = head - i if direction > 0 else i - head
+                core = math.exp(-0.5 * (behind / 1.15) ** 2)
+                if behind >= 0.0:
+                    trail = math.exp(-2.5 * behind / tail_len) * (1.0 - _smoothstep(0.72, 1.0, behind / tail_len))
+                elif behind > -1.8:
+                    trail = 0.12 * math.exp(-0.5 * (behind / 1.15) ** 2)
+                else:
+                    trail = 0.0
+                intensity = strength * max(core, trail)
+                val = int(max(out[i][2], min(82, 3 + 74 * intensity)))
+                hue = int(190 + 16 * max(0.0, min(1.0, 1.0 - max(0.0, behind) / tail_len)))
+                sat = int(max(58, min(92, 86 - 18 * max(0.0, behind) / tail_len)))
+                if val > out[i][2]:
+                    out[i] = [hue, sat, val]
         return out
 
     def _render_lightning(self, t: float) -> List[List[int]]:
@@ -2346,66 +2408,97 @@ class L930EffectsEngine:
         return segs
 
     def _render_police(self, t: float) -> List[List[int]]:
-        """Crisp red and blue alternating sections with tiny dark gaps between flashes."""
-        sp = self._speed
-        phase = (t * 4.0 * sp) % 2.0  # 4 Hz strobe
+        """Slow alternating red/blue siren pulses with eased envelopes, not a strobe."""
+        sp = max(0.2, self._speed)
+        interval = self._effective_render_interval()
+        period = max(4.0 / sp, 3.5 * interval, 3.4)
+        phase = (t / period) % 1.0
+        red_envelope = 0.0
+        blue_envelope = 0.0
+
+        if phase < 0.5:
+            local = phase * 2.0
+            red_envelope = _smoothstep(0.0, 0.24, local) * (1.0 - _smoothstep(0.76, 1.0, local))
+        else:
+            local = (phase - 0.5) * 2.0
+            blue_envelope = _smoothstep(0.0, 0.24, local) * (1.0 - _smoothstep(0.76, 1.0, local))
+
         half = NUM_SEGMENTS // 2
         segs = []
-        is_red_phase = (phase < 1.0)
-        strobe_on = (phase % 0.5) < 0.28  # Strobe pulse with dark gap
-
+        red_val = int(7 + 86 * red_envelope)
+        blue_val = int(7 + 86 * blue_envelope)
         for i in range(NUM_SEGMENTS):
             if i < half:
-                # Left half: Red
-                if is_red_phase and strobe_on:
-                    segs.append([0, 100, 100])
-                else:
-                    segs.append([0, 100, 0])
+                segs.append([0, 100, red_val])
             else:
-                # Right half: Blue
-                if (not is_red_phase) and strobe_on:
-                    segs.append([240, 100, 100])
-                else:
-                    segs.append([240, 100, 0])
+                segs.append([240, 100, blue_val])
         return segs
 
     def _render_candy_cane(self, t: float) -> List[List[int]]:
-        """Wide alternating red and white bands visibly moving along strip with clean edges."""
-        sp = self._speed
-        offset = t * 6.0 * sp
+        """Slow red and warm-cream bands with soft interpolated boundaries."""
+        from src.pipeline import tapo_hsv_to_rgb, rgb_to_tapo_hsv
+
+        sp = max(0.2, self._speed)
+        interval = self._effective_render_interval()
+        band_width = 7.0
+        period = band_width * 2.0
+        # Keep motion legible without letting each frame skip a whole band edge.
+        zones_per_update = 3.2
+        minimum_period = period * interval / zones_per_update
+        travel_period = max(9.0 / sp, minimum_period)
+        offset = (t / travel_period) * NUM_SEGMENTS
+
+        red_rgb = tapo_hsv_to_rgb(355, 92, 95)
+        cream_rgb = tapo_hsv_to_rgb(38, 18, 92)
+
         segs = []
-        band_width = 6.0
         for i in range(NUM_SEGMENTS):
-            pos = (i - offset) % (band_width * 2.0)
-            if pos < band_width:
-                # Peppermint Red
-                segs.append([355, 100, 100])
+            pos = (i - offset) % period
+            if pos < 1.5:
+                blend = _smoothstep(0.0, 3.0, pos + 1.5)
+                rgb = tuple(cream_rgb[c] * (1.0 - blend) + red_rgb[c] * blend for c in range(3))
+            elif pos > period - 1.5:
+                blend = _smoothstep(period - 1.5, period + 1.5, pos)
+                rgb = tuple(cream_rgb[c] * (1.0 - blend) + red_rgb[c] * blend for c in range(3))
+            elif abs(pos - band_width) <= 1.5:
+                blend = _smoothstep(band_width - 1.5, band_width + 1.5, pos)
+                rgb = tuple(red_rgb[c] * (1.0 - blend) + cream_rgb[c] * blend for c in range(3))
+            elif pos < band_width:
+                rgb = red_rgb
             else:
-                # Crisp White
-                segs.append([0, 0, 100])
+                rgb = cream_rgb
+            h, sat, val = rgb_to_tapo_hsv(*rgb)
+            segs.append([h, sat, val])
         return segs
 
     def _render_haunted_mansion(self, t: float) -> List[List[int]]:
-        """Near-black base with rare emerald glows, eerie violet pools, and sudden flashes."""
-        sp = self._speed
-        segs = []
-        flash_time = (t * 0.4 * sp) % 5.0
-        is_flash = (flash_time < 0.12)
-        for i in range(NUM_SEGMENTS):
-            x = i / float(NUM_SEGMENTS - 1)
-            eerie_violet = math.sin(x * 3.0 * math.pi + t * 0.3 * sp)
-            emerald_pool = math.cos(x * 4.5 * math.pi - t * 0.22 * sp)
+        """Near-black with gradual, localized emerald and violet glows; never a full-strip flash."""
+        from src.pipeline import tapo_hsv_to_rgb, rgb_to_tapo_hsv
 
-            if is_flash:
-                segs.append([140, 30, 95])  # Spooky flash
-            elif emerald_pool > 0.65:
-                # Eerie emerald glow
-                segs.append([135, 100, int(max(8, min(80, (emerald_pool - 0.65) * 200)))])
-            elif eerie_violet > 0.50:
-                # Eerie violet pool
-                segs.append([285, 95, int(max(6, min(65, (eerie_violet - 0.50) * 120)))])
-            else:
-                segs.append([270, 95, 2])  # Near-black base
+        sp = max(0.2, self._speed)
+        base_rgb = tapo_hsv_to_rgb(270, 90, 2)
+        emerald_rgb = tapo_hsv_to_rgb(137, 95, 100)
+        violet_rgb = tapo_hsv_to_rgb(282, 92, 100)
+
+        center_emerald_a = 7.0 + 4.5 * math.sin(t * 0.16 * sp + 0.4)
+        center_emerald_b = 34.0 + 5.5 * math.sin(t * 0.12 * sp + 1.7)
+        center_violet = 23.5 + 12.0 * math.sin(t * 0.14 * sp + 2.1)
+
+        env_a = 0.12 + 0.88 * (0.5 + 0.5 * math.sin(t * 0.34 * sp + 0.6))
+        env_b = 0.10 + 0.90 * (0.5 + 0.5 * math.sin(t * 0.27 * sp + 2.0))
+        env_v = 0.10 + 0.90 * (0.5 + 0.5 * math.sin(t * 0.22 * sp + 3.2))
+
+        segs = []
+        for i in range(NUM_SEGMENTS):
+            green_a = 0.46 * env_a * math.exp(-0.5 * ((i - center_emerald_a) / 3.8) ** 2)
+            green_b = 0.38 * env_b * math.exp(-0.5 * ((i - center_emerald_b) / 4.5) ** 2)
+            violet = 0.43 * env_v * math.exp(-0.5 * ((i - center_violet) / 4.0) ** 2)
+            rgb = tuple(
+                min(1.0, base_rgb[c] + emerald_rgb[c] * (green_a + green_b) + violet_rgb[c] * violet)
+                for c in range(3)
+            )
+            h, sat, val = rgb_to_tapo_hsv(*rgb)
+            segs.append([h, sat, max(1, min(64, val))])
         return segs
 
     def _render_rainbow(self, t: float) -> List[List[int]]:
