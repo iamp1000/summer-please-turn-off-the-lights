@@ -585,7 +585,15 @@ def test_edm_mode_drop_strike_and_shockwave():
     assert all(v == 0 for _, _, v in f_silent)
 
     # 2. Massive drop hit: drop_strength > 0.8 -> saturation collapses to 0 (blinding white flash)
-    st_drop = MusicState(energy=0.95, kick=0.88, drop_strength=0.92, impact=0.85, section=Section.DROP)
+    bass_led_bands = np.concatenate([
+        np.full(10, 0.90),
+        np.full(25, 0.30),
+        np.full(15, 0.15),
+    ]).astype(np.float32)
+    st_drop = MusicState(
+        bands=bass_led_bands, energy=0.95, kick=0.88, bass=0.90, mid=0.30,
+        drop_strength=0.92, impact=0.85, section=Section.DROP, silent=False,
+    )
     f_drop = edm.render(st_drop, dt=0.02, num_zones=50)
     assert len(f_drop) == 50
     assert len(edm.ripples) >= 1
