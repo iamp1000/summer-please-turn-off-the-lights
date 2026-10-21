@@ -153,6 +153,7 @@ class OutputArbiter:
         self._generations: Dict[str, int] = {}
         self._relinquish_cbs: Dict[str, Callable] = {}
         self._owner_change_cbs: List[Callable[[str, str, str, int], None]] = []
+        self._transitions: set[str] = set()
         self._lock = threading.RLock()
 
     def add_owner_change_callback(self, callback: Callable[[str, str, str, int], None]):
@@ -170,6 +171,8 @@ class OutputArbiter:
                 self._relinquish_cbs[dev_id] = on_relinquish
                 return True
 
+            # Block every producer for this device until all old pending frames are purged.
+            self._transitions.add(dev_id)
             old_cb = self._relinquish_cbs.get(dev_id)
             self._owners[dev_id] = producer
             generation = self._generations.get(dev_id, 0) + 1
@@ -177,18 +180,20 @@ class OutputArbiter:
             self._relinquish_cbs[dev_id] = on_relinquish
             listeners = list(self._owner_change_cbs)
 
-        # Owner/token changes are visible before shutdown callbacks run: any late publish
-        # from the old producer is rejected, then pending queues are purged.
-        if old_cb:
-            try:
-                old_cb()
-            except Exception:
-                pass
-        for callback in listeners:
-            try:
-                callback(dev_id, old_producer, producer, generation)
-            except Exception:
-                pass
+        try:
+            if old_cb:
+                try:
+                    old_cb()
+                except Exception:
+                    pass
+            for callback in listeners:
+                try:
+                    callback(dev_id, old_producer, producer, generation)
+                except Exception:
+                    pass
+        finally:
+            with self._lock:
+                self._transitions.discard(dev_id)
         return True
 
     def release_output(self, dev_id: str, producer: str):
@@ -197,6 +202,7 @@ class OutputArbiter:
         with self._lock:
             if self._owners.get(dev_id) != producer:
                 return
+            self._transitions.add(dev_id)
             old_producer = producer
             self._owners[dev_id] = OutputProducer.IDLE
             generation = self._generations.get(dev_id, 0) + 1
@@ -204,14 +210,20 @@ class OutputArbiter:
             self._relinquish_cbs.pop(dev_id, None)
             listeners = list(self._owner_change_cbs)
 
-        for callback in listeners:
-            try:
-                callback(dev_id, old_producer, OutputProducer.IDLE, generation)
-            except Exception:
-                pass
+        try:
+            for callback in listeners:
+                try:
+                    callback(dev_id, old_producer, OutputProducer.IDLE, generation)
+                except Exception:
+                    pass
+        finally:
+            with self._lock:
+                self._transitions.discard(dev_id)
 
     def can_submit(self, dev_id: str, producer: str, generation: Optional[int] = None) -> bool:
         with self._lock:
+            if dev_id in self._transitions:
+                return False
             if self._owners.get(dev_id, OutputProducer.IDLE) != producer:
                 return False
             if generation is not None and generation != self._generations.get(dev_id, 0):
