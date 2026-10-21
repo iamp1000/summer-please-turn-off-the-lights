@@ -101,19 +101,20 @@ class ModeManager:
         mode = self._modes.get(name)
         if mode is None:
             raise KeyError(f"Unknown mode: {name!r}. Known modes: {self.names()}")
+        output_token = None
         if self._frame_bus and self._arbiter:
             self._arbiter.claim_output(
-                self._dev_id, OutputProducer.STATIC, on_relinquish=self._on_relinquish
+                self._dev_id, OutputProducer.STATIC, on_relinquish=self._on_relinquish,
+                renew=True,
             )
-        future = self._loop_runner.run(self._apply_async(mode))
+            output_token = self._frame_bus.capture_token(self._dev_id, OutputProducer.STATIC)
+        future = self._loop_runner.run(self._apply_async(mode, output_token=output_token))
         return future
 
-    async def _apply_async(self, mode: dict):
+    async def _apply_async(self, mode: dict, output_token=None):
         """Crossfade over 600ms, publishing each rendered scene through FrameBus."""
-        output_token = (
-            self._frame_bus.capture_token(self._dev_id, OutputProducer.STATIC)
-            if self._frame_bus else None
-        )
+        if output_token is None and self._frame_bus:
+            output_token = self._frame_bus.capture_token(self._dev_id, OutputProducer.STATIC)
         # Grab current global state so we crossfade smoothly even if coming from an effect
         self._last_b = getattr(self._controller, "last_b", 50)
         self._last_h = getattr(self._controller, "last_h", 0)
