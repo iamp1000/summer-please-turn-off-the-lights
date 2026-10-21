@@ -1100,12 +1100,11 @@ class AudioRingBuffer:
 
 class AudioCaptureCoordinator:
     """
-    Central Single-Capture and Analysis Coordinator (Phase 1).
-    - Captures loopback audio once using a single soundcard thread.
-    - Writes into AudioRingBuffer.
-    - Runs a single shared MusicAnalyzer on the sample clock: t = sample_count / fs.
-    - Emits immutable MusicState snapshots to a single-slot buffer.
-    - Dedicated per-device 60Hz render threads query the slot with zero locking.
+    Shared audio capture and analysis worker with explicit lifecycle status.
+
+    Status values are "stopped", "starting", "active", and "error". A capture
+    failure is terminal for this run and is exposed to the UI instead of leaving
+    _running=True after the worker has silently returned.
     """
     def __init__(
         self,
@@ -1131,6 +1130,9 @@ class AudioCaptureCoordinator:
         self._lock = threading.Lock()
         self._subscribers: set = set()
         self.new_frame_event = threading.Event()
+        self._stop_event = threading.Event()
+        self.status = "stopped"
+        self.last_error: Optional[str] = None
 
         t_now = time.perf_counter()
         self._latest_slot: Tuple[MusicState, Dict[str, float]] = (
@@ -1151,38 +1153,87 @@ class AudioCaptureCoordinator:
     def get_latest_state(self) -> Tuple[MusicState, Dict[str, float]]:
         return self._latest_slot
 
+    def _set_error(self, message: str):
+        with self._lock:
+            self._running = False
+            self.status = "error"
+            self.last_error = str(message)
+            event = self._stop_event
+        event.set()
+        self.new_frame_event.set()
+
     def start(self):
         with self._lock:
             if self._running:
                 return
+            if self._thread is not None and self._thread.is_alive():
+                self.status = "error"
+                self.last_error = "Previous audio-capture worker is still running; refusing to start a second worker."
+                return
             self._running = True
-            self._thread = threading.Thread(target=self._worker, daemon=True, name="AudioCaptureCoordinatorWorker")
+            self.status = "starting"
+            self.last_error = None
+            self._stop_event = threading.Event()
+            stop_event = self._stop_event
+            self._thread = threading.Thread(
+                target=self._worker,
+                args=(stop_event,),
+                daemon=True,
+                name="AudioCaptureCoordinatorWorker",
+            )
             self._thread.start()
 
     def stop(self):
         with self._lock:
             self._running = False
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=1.0)
-            self._thread = None
+            event = self._stop_event
+            thread = self._thread
+        event.set()
+        self.new_frame_event.set()
+        if thread and thread.is_alive() and thread is not threading.current_thread():
+            thread.join(timeout=2.0)
+        with self._lock:
+            if thread and thread.is_alive():
+                self.status = "error"
+                self.last_error = "Audio-capture worker did not stop within 2 seconds."
+            elif self.status != "error":
+                self.status = "stopped"
+                self.last_error = None
+            if thread and not thread.is_alive() and self._thread is thread:
+                self._thread = None
 
     def is_running(self) -> bool:
         return self._running
 
-    def _worker(self):
+    def _worker(self, stop_event: Optional[threading.Event] = None):
         from src.music_reactive import get_audio_input_source
         from src.master_volume import get_master_volume_probe
 
-        vol_probe = get_master_volume_probe()
-        mic = get_audio_input_source(self.samplerate, self.blocksize, self.preferred_device)
+        stop_event = stop_event or self._stop_event
+        try:
+            mic = get_audio_input_source(self.samplerate, self.blocksize, self.preferred_device)
+        except Exception as exc:
+            self._set_error(f"Audio input discovery failed: {exc}")
+            return
         if not mic:
+            self._set_error(
+                "No audio input source was found. Check the selected loopback device and audio permissions."
+            )
+            return
+        if stop_event.is_set() or not self._running:
             return
 
-        silent_chunks = 0
-        while self._running:
-            try:
+        try:
+            vol_probe = get_master_volume_probe()
+            with self._lock:
+                if stop_event.is_set() or not self._running:
+                    return
+                self.status = "active"
+
+            silent_chunks = 0
+            while self._running and not stop_event.is_set():
                 with mic.recorder(samplerate=self.samplerate, blocksize=self.blocksize, channels=1) as rec:
-                    while self._running:
+                    while self._running and not stop_event.is_set():
                         t_recv = time.perf_counter()
                         data = rec.record(numframes=self.blocksize)
                         raw_samples = data[:, 0]
@@ -1191,7 +1242,9 @@ class AudioCaptureCoordinator:
                         if rms < 0.0005:
                             silent_chunks += 1
                             if silent_chunks > 180:
-                                new_mic = get_audio_input_source(self.samplerate, self.blocksize, self.preferred_device)
+                                new_mic = get_audio_input_source(
+                                    self.samplerate, self.blocksize, self.preferred_device
+                                )
                                 if new_mic and new_mic.id != mic.id:
                                     mic = new_mic
                                     silent_chunks = 0
@@ -1203,7 +1256,9 @@ class AudioCaptureCoordinator:
                         self.total_samples += len(samples)
                         self.sample_clock = self.total_samples / float(self.samplerate)
 
-                        state = self.analyzer.process_samples(samples, now=self.sample_clock, t_recv=t_recv)
+                        state = self.analyzer.process_samples(
+                            samples, now=self.sample_clock, t_recv=t_recv
+                        )
                         t_done = time.perf_counter()
                         self._latest_slot = (
                             state,
@@ -1214,5 +1269,14 @@ class AudioCaptureCoordinator:
                             },
                         )
                         self.new_frame_event.set()
-            except Exception:
-                time.sleep(0.3)
+        except Exception as exc:
+            if self._running and not stop_event.is_set():
+                self._set_error(f"Audio capture failed: {exc}")
+        finally:
+            with self._lock:
+                if stop_event.is_set() or not self._running:
+                    if self.status != "error":
+                        self.status = "stopped"
+                        self.last_error = None
+                    self._running = False
+            self.new_frame_event.set()
