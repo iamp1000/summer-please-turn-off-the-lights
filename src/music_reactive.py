@@ -121,6 +121,7 @@ class MusicReactive:
         self._app_state = app_state
         self._frame_bus = frame_bus
         self._dev_id = dev_id
+        self._output_generation = 0
         self._samplerate = samplerate
         self._blocksize = blocksize
         self._preferred_device = preferred_device
@@ -245,6 +246,8 @@ class MusicReactive:
         if self._running:
             return
         self._running = True
+        if self._frame_bus:
+            self._output_generation = self._frame_bus.current_generation(self._dev_id, OutputProducer.AUDIO)
         if self._coordinator:
             self._coordinator.register_subscriber(self)
             self._coordinator.start()
@@ -306,6 +309,8 @@ class MusicReactive:
                     transition=int(frame.get("transition", 0)),
                     pre_corrected=bool(frame.get("_pre_corrected", False)),
                     metadata=meta,
+                    generation=self._output_generation,
+                    generation=self._output_generation,
                 )
             else:
                 hsv = (int(frame.get("h", 0)), int(frame.get("s", 0)), int(frame.get("b", 0)))
@@ -336,6 +341,7 @@ class MusicReactive:
                     hsv=(0, 0, 0),
                     brightness=0,
                     pre_corrected=True,
+                    generation=self._output_generation,
                 ))
             if not self._frame_bus and hasattr(self._controller, "submit_frame"):
                 self._controller.submit_frame({"h": 0, "s": 0, "b": 0, "_pre_corrected": True})
@@ -394,6 +400,7 @@ class MusicReactive:
                 brightness=vc,
                 pre_corrected=True,
                 metadata={"music_state": st, **({k: frame_dict[k] for k in ("t_audio_recv", "t_analysis_done", "t_frame_rendered") if k in frame_dict})},
+                generation=self._output_generation,
             ))
 
         if not self._frame_bus and hasattr(self._controller, "submit_frame"):
@@ -599,6 +606,7 @@ class MusicReactive:
                     brightness=vc,
                     pre_corrected=True,
                     metadata={"music_state": self.latest_music_state},
+                    generation=self._output_generation,
                 ))
             if not self._frame_bus and hasattr(self._controller, "submit_frame"):
                 self._controller.submit_frame({"h": hc, "s": sc, "b": vc, "_pre_corrected": True})
