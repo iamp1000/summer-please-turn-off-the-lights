@@ -103,7 +103,8 @@ class PresetManager:
                         from src.frame_bus import FramePacket, OutputProducer
                         segs = build_mode_segments(st, num_zones=50)
                         b = st.get("brightness", 50)
-                        hub.arbiter.claim_output(dev_id, OutputProducer.STATIC, on_relinquish=ctx.stop_all_active)
+                        hub.arbiter.claim_output(dev_id, OutputProducer.STATIC, on_relinquish=ctx.stop_all_active, renew=True)
+                        output_token = hub.frame_bus.capture_token(dev_id, OutputProducer.STATIC)
                         ctx.stop_all_active()
                         ctx.state["power"] = True
                         ctx.state["active_label"] = name
@@ -113,6 +114,8 @@ class PresetManager:
                             segments=segs,
                             brightness=b,
                             transition=600,
+                            generation=output_token[0] if output_token else None,
+                            producer_id=output_token[1] if output_token else None,
                         )
 
                         async def _apply_segments(c=ctx, p=packet):
