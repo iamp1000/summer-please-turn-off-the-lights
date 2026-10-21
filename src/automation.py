@@ -107,13 +107,19 @@ class PresetManager:
                         ctx.stop_all_active()
                         ctx.state["power"] = True
                         ctx.state["active_label"] = name
-                        hub.frame_bus.publish(FramePacket(
+                        packet = FramePacket(
                             dev_id=dev_id,
                             producer=OutputProducer.STATIC,
                             segments=segs,
                             brightness=b,
                             transition=600,
-                        ))
+                        )
+
+                        async def _apply_segments(c=ctx, p=packet):
+                            await c.controller.turn_on(priority=0)
+                            hub.frame_bus.publish(p)
+
+                        hub.loop_runner.run(_apply_segments())
                     elif "h" in st and "s" in st:
                         hub.apply_custom_color(dev_id, st["h"], st["s"], st.get("brightness", 50))
                     elif "effect" in st:
