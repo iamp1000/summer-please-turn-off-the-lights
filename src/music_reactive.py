@@ -131,6 +131,7 @@ class MusicReactive:
         self._thread: Optional[threading.Thread] = None
         self._stop_event: Optional[threading.Event] = None
         self._run_generation = 0
+        self._worker_context = threading.local()
         self._last_error: Optional[str] = None
         self._updater_future = None
 
@@ -253,6 +254,11 @@ class MusicReactive:
 
     def _publish_frame(self, frame: dict, output_token=None, allow_stopped: bool = False) -> bool:
         """Send frames through the token captured by this audio session."""
+        worker_generation = getattr(self._worker_context, "generation", None)
+        if (worker_generation is not None
+                and worker_generation != self._run_generation
+                and not allow_stopped):
+            return False
         if self._frame_bus:
             token = output_token if output_token is not None else self._output_token
             if token is None:
@@ -262,10 +268,6 @@ class MusicReactive:
                 self._dev_id, OutputProducer.AUDIO, frame,
                 generation=generation, producer_id=producer_id,
             )
-        # In standalone mode there is no arbiter at send time, so suppress a
-        # stale worker locally. stop()/error paths can explicitly send their final black frame.
-        if not self._running and not allow_stopped:
-            return False
         submit = getattr(self._controller, "submit_frame", None)
         if submit:
             submit(frame)
@@ -355,6 +357,7 @@ class MusicReactive:
         self, generation: Optional[int] = None, stop_event: Optional[threading.Event] = None
     ):
         generation = self._run_generation if generation is None else generation
+        self._worker_context.generation = generation
         stop_event = self._stop_event or threading.Event() if stop_event is None else stop_event
         last_t = time.perf_counter()
         target_fps = 60.0
@@ -502,6 +505,7 @@ class MusicReactive:
         self, generation: Optional[int] = None, stop_event: Optional[threading.Event] = None
     ):
         generation = self._run_generation if generation is None else generation
+        self._worker_context.generation = generation
         stop_event = self._stop_event or threading.Event() if stop_event is None else stop_event
         try:
             mic = get_audio_input_source(
