@@ -718,6 +718,7 @@ class SegmentedVUStyle(VisualStyle):
         self.break_offset: int = 0
         self._last_impact_time: float = 0.0
         self._single_level: float = 0.0
+        self._output_interval_s: float = 0.5
         self._cached_pal: Optional[Tuple[Tuple[int, int, int], ...]] = None
         self._cached_gradient: List[Tuple[int, int]] = []
         self.pod_levels = [0.0] * 5
@@ -728,10 +729,12 @@ class SegmentedVUStyle(VisualStyle):
         self._tension = BuildTensionAccent()
         self._bloom = DropBloomAccent()
 
-    def set_params(self, layout: Optional[str] = None, **kwargs: Any):
+    def set_params(self, layout: Optional[str] = None, output_interval_s: Optional[float] = None, **kwargs: Any):
         super().set_params(**kwargs)
         if layout is not None:
             self.layout = layout.strip().lower()
+        if output_interval_s is not None:
+            self._output_interval_s = max(0.125, min(2.0, float(output_interval_s)))
 
     def render(self, state: MusicState, dt: float, num_zones: int, **kwargs: Any) -> List[Tuple[int, int, int]]:
         if self.is_silent_state(state):
@@ -885,12 +888,13 @@ class SegmentedVUStyle(VisualStyle):
 
             if self.pod_levels[p] >= self.pod_peaks[p]:
                 self.pod_peaks[p] = self.pod_levels[p]
-                self.pod_peak_timers[p] = POD_PEAK_HOLDS[p]
+                self.pod_peak_timers[p] = max(POD_PEAK_HOLDS[p], self._output_interval_s * 1.30)
             else:
                 if self.pod_peak_timers[p] > 0.0:
-                    self.pod_peak_timers[p] -= dt
+                    self.pod_peak_timers[p] = max(0.0, self.pod_peak_timers[p] - dt)
                 else:
-                    self.pod_peaks[p] = max(0.0, self.pod_peaks[p] - dt * (POD_PEAK_FALLS[p] * self.speed))
+                    decay_tau = max(0.55, self._output_interval_s * 1.60)
+                    self.pod_peaks[p] = max(self.pod_levels[p], exp_smooth_fast(self.pod_peaks[p], self.pod_levels[p], dt, decay_tau))
 
             pod_center = p * pod_size + (pod_size - 1) / 2.0
             h, s, _ = sample_palette_oklab(pal, p / float(num_pods - 1))
@@ -1598,11 +1602,17 @@ class CenterBurstStyle(VisualStyle):
 
     def __init__(self):
         super().__init__()
+        self._output_interval_s: float = 0.5
         self._ripples: List[Dict[str, Any]] = []
         self._accum_phase: float = 0.0
         self._single_v: float = 0.0
         self._last_spawn_time: float = 0.0
         self._prev_onset: float = 0.0
+
+    def set_params(self, output_interval_s: Optional[float] = None, **kwargs: Any):
+        super().set_params(**kwargs)
+        if output_interval_s is not None:
+            self._output_interval_s = max(0.125, min(2.0, float(output_interval_s)))
 
     def render(self, state: MusicState, dt: float, num_zones: int, **kwargs: Any) -> List[Tuple[int, int, int]]:
         if self.is_silent_state(state):
@@ -1868,15 +1878,25 @@ class HydroAcousticStyle(VisualStyle):
 
         # Kick produces hydraulic expanding shockwave
         if kick > 0.5:
-            self._waves.append((0.0, (14.0 + kick * 20.0) * self.speed, kick))
+            # A center burst survives several physical output frames at the
+            # current protected cadence instead of being gone between sends.
+            lifetime = max(0.70, self._output_interval_s * 2.0)
+            requested_speed = (14.0 + kick * 20.0) * self.speed
+            speed = min(requested_speed, max(5.0, (num_zones / 2.0) / lifetime))
+            self._waves.append((0.0, speed, kick, lifetime))
 
-        # Update shockwaves
+        # Update center shockwaves with time-based envelopes.
         updated_waves = []
-        for r, v, str_val in self._waves:
+        for item in self._waves:
+            if len(item) == 4:
+                r, v, str_val, lifetime = item
+            else:
+                r, v, str_val = item
+                lifetime = max(0.70, self._output_interval_s * 2.0)
             new_r = r + v * dt
-            new_str = str_val - dt * 1.8
-            if new_str > 0.0 and new_r < (num_zones / 2.0 + 8.0):
-                updated_waves.append((new_r, v, new_str))
+            new_str = str_val * math.exp(-dt / max(0.5, lifetime))
+            if new_str > 0.025 and new_r < (num_zones / 2.0 + 8.0):
+                updated_waves.append((new_r, v, new_str, lifetime))
         self._waves = updated_waves
 
         # Hi-hat percussion produces droplets at the outer 25% of both sides
