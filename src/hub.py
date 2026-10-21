@@ -427,8 +427,7 @@ class LightHub:
             ctx.stop_all_active()
             ctx.state["power"] = True
             ctx.state["active_label"] = mode_name
-            # Keep power control separate; scene colors are sent only through FrameBus.
-            self.loop_runner.run(ctx.controller.turn_on(priority=0))
+            # Power up before publishing so turn_on() cannot clear the newly queued frame.
             b = mode_data.get("brightness", 50)
             h = mode_data.get("hue", 0)
             s = mode_data.get("saturation", 0)
@@ -443,13 +442,19 @@ class LightHub:
                     transition=600,
                 ))
             else:
-                self.frame_bus.publish(FramePacket(
+                packet = FramePacket(
                     dev_id=ctx.dev_id,
                     producer=OutputProducer.STATIC,
                     hsv=(h, s, b),
                     brightness=b,
                     transition=600,
-                ))
+                )
+
+            async def _apply_static_output(c=ctx, p=packet):
+                await c.controller.turn_on(priority=0)
+                self.frame_bus.publish(p)
+
+            self.loop_runner.run(_apply_static_output())
         self.notify_change()
 
     def apply_effect(self, dev_id: str, effect_name: str) -> bool:
@@ -608,23 +613,28 @@ class LightHub:
             ctx.state["power"] = True
             ctx.state["active_label"] = "Custom Wheel"
             ctx.state["brightness"] = v
-            self.loop_runner.run(ctx.controller.turn_on(priority=0))
             if ctx.model == "L930":
-                self.frame_bus.publish(FramePacket(
+                packet = FramePacket(
                     dev_id=ctx.dev_id,
                     producer=OutputProducer.STATIC,
                     segments=[[h, s, v]] * 50,
                     brightness=v,
                     transition=600,
-                ))
+                )
             else:
-                self.frame_bus.publish(FramePacket(
+                packet = FramePacket(
                     dev_id=ctx.dev_id,
                     producer=OutputProducer.STATIC,
                     hsv=(h, s, v),
                     brightness=v,
                     transition=600,
-                ))
+                )
+
+            async def _apply_custom_output(c=ctx, p=packet):
+                await c.controller.turn_on(priority=0)
+                self.frame_bus.publish(p)
+
+            self.loop_runner.run(_apply_custom_output())
         self.notify_change()
 
     def shutdown(self):
