@@ -379,7 +379,7 @@ class MusicReactiveL930:
             force_inactive=not active_audio,
         )
 
-        if not active_audio:
+        if not active_audio and not is_movie:
             if not is_movie:
                 self._silence_duration += dt
                 self._silence_count += 1
