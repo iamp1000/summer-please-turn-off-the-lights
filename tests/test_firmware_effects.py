@@ -1130,3 +1130,19 @@ def test_rainbow_spatial_and_temporal_hue_cycles_remain_continuous():
     temporal_deltas = [_hue_delta(a[0], b[0]) for a, b in zip(first, later)]
     assert max(temporal_deltas) - min(temporal_deltas) <= 1
     assert later != first
+
+
+def test_cadence_helper_respects_aimd_without_changing_sender_rate():
+    from types import SimpleNamespace
+
+    sender = SimpleNamespace(max_updates_per_s=5.0, _aimd_rate_cap=1.0)
+    controller = SimpleNamespace(current_interval=0.75, frame_sender=sender)
+    engine = L930EffectsEngine(controller, None, {})
+    before = (sender.max_updates_per_s, sender._aimd_rate_cap)
+
+    interval = engine._effective_render_interval()
+
+    assert interval >= 1.0, "renderer should respect 1 Hz device-protection fallback"
+    assert (sender.max_updates_per_s, sender._aimd_rate_cap) == before, (
+        "cadence-aware rendering must not raise or reset the sender rate cap"
+    )
