@@ -419,6 +419,15 @@ def run_click_flasher_calibration(lookahead_ms: float = 40.0, bpm: float = 128.0
     except Exception as e:
         print(f"[Visual Flasher] Hub connection note: {e}")
 
+    output_tokens = {}
+    if hub and getattr(hub, "frame_bus", None):
+        from src.frame_bus import OutputProducer
+        for dev_id, dev in hub.devices.items():
+            hub.arbiter.claim_output(dev_id, OutputProducer.STATIC, on_relinquish=dev.stop_all_active)
+            token = hub.frame_bus.capture_token(dev_id, OutputProducer.STATIC)
+            if token:
+                output_tokens[dev_id] = token
+
     beat_interval = 60.0 / bpm
     lead_sec = lookahead_ms / 1000.0
     start_time = time.monotonic()
@@ -431,22 +440,40 @@ def run_click_flasher_calibration(lookahead_ms: float = 40.0, bpm: float = 128.0
         if now < flash_send_time:
             time.sleep(max(0.001, flash_send_time - now))
 
-        if hub:
-            for dev in hub.devices.values():
-                if hasattr(dev.controller, "submit_frame"):
-                    if dev.model == "L900":
-                        dev.controller.submit_frame({"b": 100, "h": 180, "s": 0})
-                    else:
-                        dev.controller.submit_frame({"segments": [[180, 0, 100]] * 50, "brightness": 100, "transition": 0})
+        if hub and getattr(hub, "frame_bus", None):
+            from src.frame_bus import OutputProducer
+            for dev_id, dev in hub.devices.items():
+                token = output_tokens.get(dev_id)
+                if not token:
+                    continue
+                generation, producer_id = token
+                frame = (
+                    {"h": 180, "s": 0, "b": 100}
+                    if dev.model == "L900"
+                    else {"segments": [[180, 0, 100]] * 50, "brightness": 100, "transition": 0}
+                )
+                hub.frame_bus.publish_frame(
+                    dev_id, OutputProducer.STATIC, frame,
+                    generation=generation, producer_id=producer_id,
+                )
 
         time.sleep(0.060)
-        if hub:
-            for dev in hub.devices.values():
-                if hasattr(dev.controller, "submit_frame"):
-                    if dev.model == "L900":
-                        dev.controller.submit_frame({"b": 0, "h": 0, "s": 0})
-                    else:
-                        dev.controller.submit_frame({"segments": [[0, 0, 0]] * 50, "brightness": 0, "transition": 0})
+        if hub and getattr(hub, "frame_bus", None):
+            from src.frame_bus import OutputProducer
+            for dev_id, dev in hub.devices.items():
+                token = output_tokens.get(dev_id)
+                if not token:
+                    continue
+                generation, producer_id = token
+                frame = (
+                    {"h": 0, "s": 0, "b": 0}
+                    if dev.model == "L900"
+                    else {"segments": [[0, 0, 0]] * 50, "brightness": 0, "transition": 0}
+                )
+                hub.frame_bus.publish_frame(
+                    dev_id, OutputProducer.STATIC, frame,
+                    generation=generation, producer_id=producer_id,
+                )
 
         beat_idx += 1
 
