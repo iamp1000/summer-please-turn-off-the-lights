@@ -782,12 +782,16 @@ class SegmentedVUStyle(VisualStyle):
 
             if self.fill_level >= self.peak_zone:
                 self.peak_zone = self.fill_level
-                self.peak_hold_timer = 0.12
+                self.peak_hold_timer = max(0.12, self._output_interval_s * 1.25)
             else:
                 if self.peak_hold_timer > 0.0:
-                    self.peak_hold_timer -= dt
+                    self.peak_hold_timer = max(0.0, self.peak_hold_timer - dt)
                 else:
-                    self.peak_zone = max(0.0, self.peak_zone - dt * (28.0 * self.speed))
+                    decay_tau = max(0.55, self._output_interval_s * 1.5)
+                    self.peak_zone = max(
+                        self.fill_level,
+                        exp_smooth_fast(self.peak_zone, self.fill_level, dt, decay_tau),
+                    )
 
             now = time.time()
             if (state.hat > 0.45 or state.impact > 0.5) and (now - self._last_impact_time > 0.12):
@@ -1645,10 +1649,16 @@ class CenterBurstStyle(VisualStyle):
             self._last_spawn_time = now
             phase = float(getattr(state, "beat_phase", 0.0))
             wave_color = sample_palette_oklab(pal, phase, cyclic=True)
+            # Keep the moving ring alive for multiple device sends, while slowing
+            # its travel to a distance the hardware can visibly sample.
+            lifetime = max(0.70, self._output_interval_s * 2.0)
+            requested_speed = (40.0 + kick_val * 35.0) * self.speed
+            speed = min(requested_speed, max(5.0, half / lifetime))
             self._ripples.append({
                 "radius": 0.0,
-                "speed": (40.0 + kick_val * 35.0) * self.speed,
+                "speed": speed,
                 "life": 1.0,
+                "lifetime": lifetime,
                 "color": wave_color,
                 "energy": beat_strength,
                 "sigma": 2.5 + kick_val * 1.5,
@@ -1658,8 +1668,9 @@ class CenterBurstStyle(VisualStyle):
         alive_ripples = []
         for r in self._ripples:
             r["radius"] += r["speed"] * dt
-            r["life"] -= dt * (1.8 * self.speed)
-            if r["life"] > 0.0 and r["radius"] <= half + 4.0:
+            lifetime = max(0.5, float(r.get("lifetime", 0.70)))
+            r["life"] *= math.exp(-max(0.0, dt) / lifetime)
+            if r["life"] > 0.025 and r["radius"] <= half + 4.0:
                 alive_ripples.append(r)
         self._ripples = alive_ripples
 
