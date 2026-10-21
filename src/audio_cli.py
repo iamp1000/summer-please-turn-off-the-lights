@@ -419,6 +419,15 @@ def run_click_flasher_calibration(lookahead_ms: float = 40.0, bpm: float = 128.0
     except Exception as e:
         print(f"[Visual Flasher] Hub connection note: {e}")
 
+    if hub:
+        for dev in hub.devices.values():
+            hub.arbiter.claim_output(dev.dev_id, OutputProducer.STATIC)
+            try:
+                if not getattr(dev.controller, "_is_on", True):
+                    hub.loop_runner.run(dev.controller.turn_on(priority=0)).result(timeout=10.0)
+            except Exception as e:
+                print(f"[Visual Flasher] Could not power on {dev.dev_id}: {e}")
+
     beat_interval = 60.0 / bpm
     lead_sec = lookahead_ms / 1000.0
     start_time = time.monotonic()
@@ -434,16 +443,17 @@ def run_click_flasher_calibration(lookahead_ms: float = 40.0, bpm: float = 128.0
         if hub:
             from src.frame_bus import FramePacket, OutputProducer
             for dev in hub.devices.values():
-                hub.arbiter.claim_output(dev.dev_id, OutputProducer.STATIC)
                 if dev.model == "L900":
                     hub.frame_bus.publish(FramePacket(
                         dev_id=dev.dev_id, producer=OutputProducer.STATIC,
                         hsv=(180, 0, 100), brightness=100,
+                        generation=hub.arbiter.get_generation(dev.dev_id),
                     ))
                 else:
                     hub.frame_bus.publish(FramePacket(
                         dev_id=dev.dev_id, producer=OutputProducer.STATIC,
                         segments=[[180, 0, 100]] * 50, brightness=100,
+                        generation=hub.arbiter.get_generation(dev.dev_id),
                     ))
 
         time.sleep(0.060)
@@ -453,11 +463,13 @@ def run_click_flasher_calibration(lookahead_ms: float = 40.0, bpm: float = 128.0
                     hub.frame_bus.publish(FramePacket(
                         dev_id=dev.dev_id, producer=OutputProducer.STATIC,
                         hsv=(0, 0, 0), brightness=0,
+                        generation=hub.arbiter.get_generation(dev.dev_id),
                     ))
                 else:
                     hub.frame_bus.publish(FramePacket(
                         dev_id=dev.dev_id, producer=OutputProducer.STATIC,
                         segments=[[0, 0, 0]] * 50, brightness=0,
+                        generation=hub.arbiter.get_generation(dev.dev_id),
                     ))
 
         beat_idx += 1
