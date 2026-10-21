@@ -575,14 +575,25 @@ class L930Controller:
             return 1.0 / max(0.5, aimd_cap)
         return 0.5
 
-    async def set_native_effect(self, effect: LightEffect, priority: int = 1) -> bool:
-        """Push a firmware-accelerated effect and report whether the device accepted it."""
+    async def set_native_effect(
+        self,
+        effect: LightEffect,
+        priority: int = 1,
+        frame_token: Optional[dict] = None,
+    ) -> bool:
+        """Push a native scene only when its FrameBus ownership token is still current."""
+        if not self._is_frame_authorized(frame_token):
+            return False
         self.clear_frames()
         if priority > 0 and self._lock.locked():
             return False
         async with self._lock:
             try:
                 await self._ensure_connected()
+                # A command may have waited behind an in-flight request while ownership
+                # changed. Validate once more at the actual hardware call boundary.
+                if not self._is_frame_authorized(frame_token):
+                    return False
                 res = await self._device.set_light_effect(effect)
                 self._is_on = True
                 self._last_successful_response = time.time()
