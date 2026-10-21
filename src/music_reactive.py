@@ -685,7 +685,12 @@ class MusicReactive:
         self._bass_history.append(bass_energy)
         avg_bass = float(np.mean(self._bass_history)) if self._bass_history else 0.1
 
-        if is_kick and (bass_energy > max(0.03, avg_bass * 1.40)) and (bass_energy > 0.10 or vol_norm > 0.80):
+        bass_led = (
+            bass_energy > max(0.03, avg_bass * 1.40)
+            and (bass_energy > 0.10 or vol_norm > 0.80)
+            and bass_energy >= mid_energy * 0.55
+        )
+        if is_kick and bass_led:
             self._white_punch = 100.0
             self._beat_pop = 60.0
             self._last_beat_time = now
