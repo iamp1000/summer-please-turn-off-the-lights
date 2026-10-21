@@ -191,6 +191,9 @@ class L930Controller:
         if self._loop:
             self._init_sender(self._loop)
 
+        # Output-token validator installed by FrameBus when this controller is bound.
+        self._output_token_authorizer = None
+
         # Watchdog task
         self._watchdog_task: Optional[asyncio.Task] = None
 
@@ -543,14 +546,37 @@ class L930Controller:
             return 1.0 / max(0.5, aimd_cap)
         return 0.5
 
-    async def set_native_effect(self, effect: LightEffect, priority: int = 1) -> bool:
-        """Push a firmware-accelerated effect and report whether the device accepted it."""
+    def set_output_token_authorizer(self, authorizer):
+        """Install FrameBus ownership validation for non-frame output commands."""
+        self._output_token_authorizer = authorizer
+
+    def _native_effect_token_is_current(self, output_token) -> bool:
+        if output_token is None:
+            return True  # standalone hardware tools can use the controller without a FrameBus
+        authorizer = self._output_token_authorizer
+        if authorizer is None:
+            return False
+        try:
+            producer, generation, producer_id = output_token
+            return bool(authorizer(producer, generation, producer_id))
+        except Exception:
+            return False
+
+    async def set_native_effect(
+        self, effect: LightEffect, priority: int = 1, *, output_token=None
+    ) -> bool:
+        """Push a firmware effect, rejecting sessions that no longer own the strip."""
+        if not self._native_effect_token_is_current(output_token):
+            return False
         self.clear_frames()
         if priority > 0 and self._lock.locked():
             return False
         async with self._lock:
             try:
                 await self._ensure_connected()
+                # Check again after connection awaits and just before physical I/O.
+                if not self._native_effect_token_is_current(output_token):
+                    return False
                 res = await self._device.set_light_effect(effect)
                 self._is_on = True
                 self._last_successful_response = time.time()
