@@ -308,6 +308,9 @@ class LightController:
         if not self._is_on:
             return False
 
+        # The L900 combined-HSB request below submits hue/saturation/brightness
+        # only. Any "transition" key on an animation frame is metadata, not a native
+        # fade command; callers must keep successive target changes gentle themselves.
         pre_corrected = False
         if isinstance(frame, dict):
             h = frame.get("h", self.last_h)
