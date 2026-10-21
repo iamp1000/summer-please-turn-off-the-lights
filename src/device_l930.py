@@ -551,9 +551,11 @@ class L930Controller:
         self._output_token_authorizer = authorizer
 
     def _native_effect_token_is_current(self, output_token) -> bool:
-        if output_token is None:
-            return True  # standalone hardware tools can use the controller without a FrameBus
         authorizer = self._output_token_authorizer
+        if output_token is None:
+            # Standalone tools have no FrameBus bound; a live bound controller
+            # must not accept an untagged firmware command.
+            return authorizer is None
         if authorizer is None:
             return False
         try:
