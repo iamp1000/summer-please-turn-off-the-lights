@@ -1,0 +1,125 @@
+from __future__ import annotations
+
+import asyncio
+
+from src.diagnostics import DeviceDiagnostics
+from src.frame_bus import FrameBus, FramePacket, OutputArbiter, OutputProducer
+from src.frame_sender import LatestFrameSender
+
+
+def test_frame_bus_stamps_owner_generation_and_rejects_superseded_packet():
+    arbiter = OutputArbiter()
+    bus = FrameBus(arbiter)
+    delivered = []
+    cleared = []
+
+    bus.set_consumer("strip1", delivered.append)
+    arbiter.add_owner_change_callback(
+        lambda dev_id, old, new, generation: (
+            bus.clear_device(dev_id),
+            cleared.append((dev_id, old, new, generation)),
+        )
+    )
+
+    arbiter.claim_output("strip1", OutputProducer.STATIC)
+    first = FramePacket(
+        dev_id="strip1",
+        producer=OutputProducer.STATIC,
+        hsv=(280, 80, 45),
+        brightness=45,
+    )
+    assert bus.publish(first) is True
+    assert first.producer_id == OutputProducer.STATIC
+    assert first.generation == arbiter.get_generation("strip1")
+    assert delivered == [first]
+    assert bus.get_latest_frame("strip1") is first
+
+    stale_generation = first.generation
+    arbiter.claim_output("strip1", OutputProducer.AUDIO)
+    assert bus.get_latest_frame("strip1") is None
+    assert cleared[-1][1:3] == (OutputProducer.STATIC, OutputProducer.AUDIO)
+
+    stale = FramePacket(
+        dev_id="strip1",
+        producer=OutputProducer.STATIC,
+        generation=stale_generation,
+        hsv=(10, 90, 70),
+        brightness=70,
+    )
+    assert bus.publish(stale) is False
+    assert delivered == [first]
+
+
+def test_frame_bus_has_one_hardware_consumer_per_device():
+    bus = FrameBus()
+    first_consumer = lambda packet: None
+    second_consumer = lambda packet: None
+    bus.set_consumer("strip1", first_consumer)
+    try:
+        bus.set_consumer("strip1", second_consumer)
+    except RuntimeError as exc:
+        assert "already has a hardware consumer" in str(exc)
+    else:
+        raise AssertionError("FrameBus accepted two hardware consumers for one device")
+
+
+async def _run_sender_ownership_test():
+    arbiter = OutputArbiter()
+    arbiter.claim_output("strip1", OutputProducer.AUDIO)
+    sent = []
+
+    async def transmit(frame):
+        sent.append(frame)
+        return True
+
+    sender = LatestFrameSender(
+        dev_id="strip1",
+        transmit_fn=transmit,
+        diagnostics=DeviceDiagnostics(dev_id="strip1"),
+        loop=asyncio.get_running_loop(),
+    )
+    sender.set_frame_authorizer(
+        lambda frame: arbiter.is_authorized(
+            "strip1", frame.get("_producer_id", ""), frame.get("_generation", -1)
+        )
+    )
+    sender.start()
+    old_generation = arbiter.get_generation("strip1")
+    sender.submit_frame({
+        "h": 220,
+        "s": 80,
+        "b": 60,
+        "_producer_id": OutputProducer.AUDIO,
+        "_generation": old_generation,
+    })
+
+    # No event-loop yield occurs between enqueue and ownership change, so the worker
+    # sees only the newer owner when it reaches the final send-time check.
+    arbiter.claim_output("strip1", OutputProducer.EFFECT)
+    await asyncio.sleep(0.03)
+    sender.stop()
+    await asyncio.sleep(0)
+    assert sent == []
+
+
+def test_frame_sender_drops_stale_owner_frame_before_transmission():
+    asyncio.run(_run_sender_ownership_test())
+
+
+def test_frame_sender_counts_saturation_only_changes_for_hsv_and_segments():
+    sender = LatestFrameSender(
+        dev_id="strip1",
+        transmit_fn=None,
+        diagnostics=DeviceDiagnostics(dev_id="strip1"),
+        loop=asyncio.new_event_loop(),
+        min_zone_delta=3,
+    )
+    sender._last_sent_hsb = (210, 10, 60)
+    assert sender._is_change_significant({"h": 210, "s": 20, "b": 60}) is True
+    assert sender._is_change_significant({"h": 210, "s": 11, "b": 60}) is False
+
+    sender._last_sent_segments = [[210, 10, 60] for _ in range(50)]
+    new_frame = [[210, 20, 60] for _ in range(50)]
+    assert sender._is_change_significant({"segments": new_frame}) is True
+    small_change = [[210, 11, 60] for _ in range(50)]
+    assert sender._is_change_significant({"segments": small_change}) is False
