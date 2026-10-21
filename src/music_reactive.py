@@ -412,7 +412,7 @@ class MusicReactive:
             force_inactive=not active_audio,
         )
 
-        if not active_audio:
+        if not active_audio and not is_movie:
             if not is_movie:
                 self._silence_duration += dt
                 fade_duration = silence_fade_duration(self._controller, fallback_rate=5.0)
