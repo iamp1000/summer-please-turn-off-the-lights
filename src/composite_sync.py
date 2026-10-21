@@ -45,6 +45,7 @@ class CompositeSystemManager:
         self.mode = "off"
         self._running = False
         self._thread: Optional[threading.Thread] = None
+        self._output_generation = 0
 
         # Time-based smoothers for brightness, chromaticity, and saturation
         self._v_smoother = AsymmetricSmoother(tau_attack=0.06, tau_decay=0.30)
@@ -83,6 +84,9 @@ class CompositeSystemManager:
         if self._running:
             return
         self._running = True
+        l900_id = self._get_l900_dev_id() or "strip1"
+        if getattr(self.hub, "frame_bus", None):
+            self._output_generation = self.hub.frame_bus.current_generation(l900_id, OutputProducer.COMPOSITE_FOLLOWER)
         self._last_time = time.time()
         self._thread = threading.Thread(target=self._run, daemon=True, name="CompositeSystemWorker")
         self._thread.start()
@@ -265,6 +269,7 @@ class CompositeSystemManager:
                         producer=OutputProducer.COMPOSITE_FOLLOWER,
                         hsv=(final_h, final_s, final_v),
                         brightness=final_v,
+                        generation=self._output_generation,
                     )
                     self.hub.frame_bus.publish(packet)
 
