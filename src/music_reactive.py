@@ -577,9 +577,14 @@ class MusicReactive:
         if rms < silence_thresh:
             self._silence_duration += dt
             self._silence_count += 1
+            self._brightness_floor.update(
+                self.latest_music_state, dt,
+                master_ceiling=self._app_state.get("brightness", 100) / 100.0,
+                enabled=False, force_inactive=True,
+            )
             if self._silence_count > 5:
-                # Fast linear decay to absolute blackness OFF
-                self._smoothed_brightness *= 0.55
+                # Time-based release independent of sample block size.
+                self._smoothed_brightness *= math.exp(-dt / 0.55)
                 if self._smoothed_brightness < 1.0:
                     self._smoothed_brightness = 0.0
                     self._white_punch = 0.0
@@ -821,4 +826,11 @@ class MusicReactive:
                 self._last_sent_state = (b_val, h_val, s_val)
                 self._last_sent_time = now
                 hc, sc, vc = self._pipeline.correct_hsv_tuple(h_val, s_val, b_val, master_ceiling=master_ceiling)
+                floor_value = self._brightness_floor.update(
+                    self.latest_music_state, dt, master_ceiling=master_ceiling,
+                    enabled=(self._mode != "movie"),
+                )
+                hc, sc, vc = self._brightness_floor.apply_l900((hc, sc, vc), floor_value)
+                if self._mode != "movie" and music_is_genuinely_active(self.latest_music_state) and vc > 0:
+                    self._last_active_hsv = (hc, sc, vc)
                 self._publish_frame({"h": hc, "s": sc, "b": vc, "_pre_corrected": True})
