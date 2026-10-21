@@ -932,9 +932,12 @@ class MusicReactiveL930:
                     segs.append([205, 85, score_v])
 
         self._target_segs = segs
-        self._smooth_to_rendered(segs, alpha=0.60)
+        self._smooth_to_rendered(segs, alpha=0.60, dt=dt)
 
-    def _smooth_to_rendered(self, target_segs: list[list[int]], alpha: float = 0.55, cache_active: bool = True):
+    def _smooth_to_rendered(
+        self, target_segs: list[list[int]], alpha: float = 0.55,
+        cache_active: bool = True, dt: float = 0.05,
+    ):
         smoothed = []
         all_dark = True
         for i in range(NUM_SEGMENTS):
@@ -972,7 +975,7 @@ class MusicReactiveL930:
         master_ceiling = self._app_state.get("brightness", 85) / 100.0
         active = cache_active and self._visual_mode != "movie" and music_is_genuinely_active(self.latest_music_state)
         floor_value = self._brightness_floor.update(
-            self.latest_music_state, 0.05, master_ceiling=master_ceiling,
+            self.latest_music_state, dt, master_ceiling=master_ceiling,
             enabled=(self._visual_mode != "movie"), force_inactive=not active,
         )
         corrected = self._pipeline.correct_hsv_sequence(smoothed, master_ceiling=master_ceiling)
