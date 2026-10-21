@@ -1428,7 +1428,7 @@ class L930EffectsEngine:
                             break
                         continue
 
-                if hasattr(self._ctrl, "submit_frame"):
+                if not self._frame_bus and hasattr(self._ctrl, "submit_frame"):
                     self._ctrl.submit_frame({
                         "segments": corrected,
                         "brightness": b,
