@@ -144,16 +144,20 @@ class LightController:
         if self.frame_sender is not None:
             self.frame_sender.set_frame_authorizer(authorizer)
 
+    def _is_frame_authorized(self, frame: Any) -> bool:
+        if not self._framebus_managed:
+            return True
+        if not isinstance(frame, dict) or "_producer_id" not in frame or "_generation" not in frame:
+            return False
+        try:
+            return bool(self._frame_authorizer and self._frame_authorizer(frame))
+        except Exception:
+            return False
+
     def submit_frame(self, frame: Any):
         """Submit a bus-authorized frame; managed controllers reject direct producer calls."""
-        if self._framebus_managed:
-            if not isinstance(frame, dict) or "_producer_id" not in frame or "_generation" not in frame:
-                return False
-            try:
-                if not self._frame_authorizer(frame):
-                    return False
-            except Exception:
-                return False
+        if not self._is_frame_authorized(frame):
+            return False
         if self.frame_sender and self._is_on:
             self.frame_sender.submit_frame(frame)
             return True
@@ -319,7 +323,67 @@ class LightController:
 
     # ── Decoupled Transmit ────────────────────────────────────────────────────
 
+    async def _transmit_color_temp_frame(self, frame: dict) -> bool:
+        """Transmit a native colour-temperature scene after rechecking its owner token."""
+        if not self._is_frame_authorized(frame) or not self._is_on:
+            return False
+        kelvin = max(2500, min(6500, int(frame.get("color_temp", self.last_k))))
+        brightness = max(0, min(100, int(frame.get("brightness", self.last_b))))
+        need_reauth = False
+        async with self._lock:
+            try:
+                await self._ensure_connected()
+                if not self._is_frame_authorized(frame):
+                    return False
+                if brightness <= 0:
+                    await self._device.turn_off()
+                    self._is_on = False
+                else:
+                    if not self._is_on:
+                        await self._device.turn_on()
+                        self._is_on = True
+                    await self._device.set_color_temperature(kelvin)
+                    await self._device.set_brightness(max(1, brightness))
+                self.last_k = kelvin
+                self.last_h = 0
+                self.last_s = 0
+                self.last_b = brightness
+                self._last_successful_response = time.time()
+                self._failure_streak = 0
+                return True
+            except Exception as e:
+                if is_session_timeout(e):
+                    need_reauth = True
+                else:
+                    asyncio.create_task(self._handle_failure(e))
+                    return False
+
+        if need_reauth:
+            reconnected = await self._handle_session_reauth()
+            if not reconnected or not self._is_frame_authorized(frame):
+                return False
+            async with self._lock:
+                try:
+                    if not self._is_frame_authorized(frame):
+                        return False
+                    await self._device.set_color_temperature(kelvin)
+                    await self._device.set_brightness(max(1, brightness))
+                    self.last_k = kelvin
+                    self.last_h = 0
+                    self.last_s = 0
+                    self.last_b = brightness
+                    self._last_successful_response = time.time()
+                    return True
+                except Exception:
+                    return False
+        return False
+
     async def transmit_frame(self, frame: Any) -> bool:
+        # A queued frame can wait on the device lock after ownership changes.
+        if not self._is_frame_authorized(frame):
+            return False
+        if isinstance(frame, dict) and "color_temp" in frame:
+            return await self._transmit_color_temp_frame(frame)
         """
         Transmits a rendered frame to the physical device.
         Accepts:
@@ -351,6 +415,8 @@ class LightController:
         async with self._lock:
             try:
                 await self._ensure_connected()
+                if not self._is_frame_authorized(frame):
+                    return False
                 await self._send_combined_hsb(hc, sc, gamma_b)
                 self.last_h = hc
                 self.last_s = sc
@@ -373,6 +439,8 @@ class LightController:
                 # Retry frame once with identical computed values
                 async with self._lock:
                     try:
+                        if not self._is_frame_authorized(frame):
+                            return False
                         await self._send_combined_hsb(hc, sc, gamma_b)
                         self.last_h = hc
                         self.last_s = sc
