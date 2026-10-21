@@ -1878,25 +1878,15 @@ class HydroAcousticStyle(VisualStyle):
 
         # Kick produces hydraulic expanding shockwave
         if kick > 0.5:
-            # A center burst survives several physical output frames at the
-            # current protected cadence instead of being gone between sends.
-            lifetime = max(0.70, self._output_interval_s * 2.0)
-            requested_speed = (14.0 + kick * 20.0) * self.speed
-            speed = min(requested_speed, max(5.0, (num_zones / 2.0) / lifetime))
-            self._waves.append((0.0, speed, kick, lifetime))
+            self._waves.append((0.0, (14.0 + kick * 20.0) * self.speed, kick))
 
-        # Update center shockwaves with time-based envelopes.
+        # Update shockwaves
         updated_waves = []
-        for item in self._waves:
-            if len(item) == 4:
-                r, v, str_val, lifetime = item
-            else:
-                r, v, str_val = item
-                lifetime = max(0.70, self._output_interval_s * 2.0)
+        for r, v, str_val in self._waves:
             new_r = r + v * dt
-            new_str = str_val * math.exp(-dt / max(0.5, lifetime))
-            if new_str > 0.025 and new_r < (num_zones / 2.0 + 8.0):
-                updated_waves.append((new_r, v, new_str, lifetime))
+            new_str = str_val - dt * 1.8
+            if new_str > 0.0 and new_r < (num_zones / 2.0 + 8.0):
+                updated_waves.append((new_r, v, new_str))
         self._waves = updated_waves
 
         # Hi-hat percussion produces droplets at the outer 25% of both sides
@@ -1934,6 +1924,8 @@ class HydroAcousticStyle(VisualStyle):
                 s = max(5, int(s * 0.3))  # Seafoam / sparkling droplet
             frame.append((h, s, total_v))
         return frame
+
+
 
 
 class LofiVinylStyle(VisualStyle):
