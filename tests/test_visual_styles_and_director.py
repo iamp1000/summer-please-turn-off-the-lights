@@ -574,7 +574,7 @@ def test_chill_style_smooth_breathing_envelope():
 
 
 def test_edm_mode_drop_strike_and_shockwave():
-    """Verify EdmModeStyle collapses saturation on drop hits and emits expanding neon ripples."""
+    """A bass-qualified drop gets a bounded white accent and expanding colored ripples."""
     from src.visual_styles import EdmModeStyle
 
     edm = EdmModeStyle()
@@ -584,7 +584,7 @@ def test_edm_mode_drop_strike_and_shockwave():
     f_silent = edm.render(st_silent, dt=0.03, num_zones=50)
     assert all(v == 0 for _, _, v in f_silent)
 
-    # 2. Massive drop hit: drop_strength > 0.8 -> saturation collapses to 0 (blinding white flash)
+    # 2. Massive bass-led drop: a bounded white accent is allowed, but not an all-white blast.
     bass_led_bands = np.concatenate([
         np.full(10, 0.90),
         np.full(25, 0.30),
@@ -598,9 +598,9 @@ def test_edm_mode_drop_strike_and_shockwave():
     assert len(f_drop) == 50
     assert len(edm.ripples) >= 1
 
-    # Center zone (24) is within core flash radius (<12) -> saturation must be 0 (pure white)
-    assert f_drop[24][1] == 0  # S = 0
-    assert f_drop[24][2] == 100  # V = 100
+    # Center zone may desaturate substantially, but should remain below full white.
+    assert f_drop[24][1] < 35
+    assert 88 <= f_drop[24][2] < 100
 
     # 3. Expanding ripple propagation over successive frames
     for _ in range(5):
