@@ -322,6 +322,7 @@ class MusicReactive:
                     transition=int(frame.get("transition", 0)),
                     pre_corrected=bool(frame.get("_pre_corrected", False)),
                     metadata=meta,
+                    generation=self._output_generation,
                 )
             return self._frame_bus.publish(packet)
         if hasattr(self._controller, "submit_frame"):
