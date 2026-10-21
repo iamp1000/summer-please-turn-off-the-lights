@@ -60,6 +60,11 @@ class FrameBus:
             sender = getattr(controller, "frame_sender", None)
             if sender and hasattr(sender, "set_frame_authorizer"):
                 sender.set_frame_authorizer(lambda frame, d=dev_id: self.is_frame_current(d, frame))
+            if hasattr(controller, "set_output_token_authorizer"):
+                controller.set_output_token_authorizer(
+                    lambda producer, generation, producer_id, d=dev_id:
+                    self.is_token_current(d, producer, generation, producer_id)
+                )
 
     @staticmethod
     def _packet_frame(packet: FramePacket) -> dict:
@@ -195,6 +200,13 @@ class FrameBus:
             if packet and not self.is_packet_current(packet):
                 return None
             return packet
+
+    def is_token_current(self, dev_id: str, producer: Optional[str],
+                         generation: Optional[int], producer_id: Optional[str]) -> bool:
+        """Validate a producer token for non-frame device commands as well."""
+        if not self._arbiter:
+            return bool(producer and generation is not None and producer_id)
+        return self._arbiter.is_token_current(dev_id, producer, generation, producer_id)
 
     def is_packet_current(self, packet: FramePacket) -> bool:
         if not self._arbiter:
