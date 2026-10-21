@@ -23,6 +23,7 @@ class FramePacket:
     segments: Optional[List[List[int]]] = None
     hsv: Optional[Sequence[int]] = None
     color_temp: Optional[int] = None
+    native_effect: Any = None
     brightness: int = 100
     transition: int = 0
     pre_corrected: bool = False
@@ -98,9 +99,12 @@ class FrameBus:
             elif packet.generation <= 0:
                 packet.generation = 1
 
-            if packet.segments is None and packet.hsv is None and packet.color_temp is None:
+            if packet.segments is None and packet.hsv is None and packet.color_temp is None and packet.native_effect is None:
                 return False
-            self._latest_frames[packet.dev_id] = packet
+            # Firmware commands are outputs, but not visual frames; do not replace a
+            # useful latest-zone snapshot with a packet that has no zones to preview.
+            if packet.segments is not None or packet.hsv is not None or packet.color_temp is not None:
+                self._latest_frames[packet.dev_id] = packet
             consumer = self._consumers.get(packet.dev_id)
             callbacks = list(self._subscribers.get(packet.dev_id, []))
             global_callbacks = list(self._subscribers.get("*", []))
