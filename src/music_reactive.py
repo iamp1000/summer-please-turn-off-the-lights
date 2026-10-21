@@ -285,10 +285,16 @@ class MusicReactive:
         token = self._output_token
         if hasattr(self._controller, "clear_frames"):
             self._controller.clear_frames()
-        if token is not None:
+        if self._frame_bus:
+            if token is not None:
+                self._publish_frame(
+                    {"h": 0, "s": 0, "b": 0, "_pre_corrected": True},
+                    output_token=token, allow_stopped=True,
+                )
+        else:
             self._publish_frame(
                 {"h": 0, "s": 0, "b": 0, "_pre_corrected": True},
-                output_token=token, allow_stopped=True,
+                allow_stopped=True,
             )
         self._last_error = message
         if isinstance(self._app_state, dict):
