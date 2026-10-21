@@ -88,6 +88,26 @@ class DeviceContext:
         if not self.arbiter.is_authorized(self.dev_id, producer_id, packet.generation):
             return False
 
+        # Native firmware scenes use the same authoritative consumer. The controller
+        # revalidates this token after acquiring its async device lock.
+        if packet.native_effect is not None:
+            token = {"_producer_id": producer_id, "_generation": packet.generation}
+            future = self.loop_runner.run(
+                self.controller.set_native_effect(
+                    packet.native_effect, priority=0, frame_token=token
+                )
+            )
+            try:
+                if asyncio.get_running_loop() is self.loop_runner.loop:
+                    # Never block the device's own loop waiting for itself.
+                    return True
+            except RuntimeError:
+                pass
+            try:
+                return future.result(timeout=10.0) is not False
+            except Exception:
+                return False
+
         frame = {
             "_producer_id": producer_id,
             "_generation": packet.generation,
