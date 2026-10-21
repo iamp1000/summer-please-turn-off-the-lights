@@ -432,21 +432,33 @@ def run_click_flasher_calibration(lookahead_ms: float = 40.0, bpm: float = 128.0
             time.sleep(max(0.001, flash_send_time - now))
 
         if hub:
+            from src.frame_bus import FramePacket, OutputProducer
             for dev in hub.devices.values():
-                if hasattr(dev.controller, "submit_frame"):
-                    if dev.model == "L900":
-                        dev.controller.submit_frame({"b": 100, "h": 180, "s": 0})
-                    else:
-                        dev.controller.submit_frame({"segments": [[180, 0, 100]] * 50, "brightness": 100, "transition": 0})
+                hub.arbiter.claim_output(dev.dev_id, OutputProducer.STATIC)
+                if dev.model == "L900":
+                    hub.frame_bus.publish(FramePacket(
+                        dev_id=dev.dev_id, producer=OutputProducer.STATIC,
+                        hsv=(180, 0, 100), brightness=100,
+                    ))
+                else:
+                    hub.frame_bus.publish(FramePacket(
+                        dev_id=dev.dev_id, producer=OutputProducer.STATIC,
+                        segments=[[180, 0, 100]] * 50, brightness=100,
+                    ))
 
         time.sleep(0.060)
         if hub:
             for dev in hub.devices.values():
-                if hasattr(dev.controller, "submit_frame"):
-                    if dev.model == "L900":
-                        dev.controller.submit_frame({"b": 0, "h": 0, "s": 0})
-                    else:
-                        dev.controller.submit_frame({"segments": [[0, 0, 0]] * 50, "brightness": 0, "transition": 0})
+                if dev.model == "L900":
+                    hub.frame_bus.publish(FramePacket(
+                        dev_id=dev.dev_id, producer=OutputProducer.STATIC,
+                        hsv=(0, 0, 0), brightness=0,
+                    ))
+                else:
+                    hub.frame_bus.publish(FramePacket(
+                        dev_id=dev.dev_id, producer=OutputProducer.STATIC,
+                        segments=[[0, 0, 0]] * 50, brightness=0,
+                    ))
 
         beat_idx += 1
 
