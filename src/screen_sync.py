@@ -178,6 +178,7 @@ class ScreenSync:
         self._app_state = app_state
         self._frame_bus = frame_bus
         self._dev_id = dev_id
+        self._output_generation = 0
         self._running = False
         self._thread: Optional[threading.Thread] = None
 
@@ -222,6 +223,8 @@ class ScreenSync:
         if self._running:
             return
         self._running = True
+        if self._frame_bus:
+            self._output_generation = self._frame_bus.current_generation(self._dev_id, OutputProducer.SCREEN_SYNC)
         self._thread = threading.Thread(target=self._run, daemon=True, name="ScreenSyncDXGIWorker")
         self._thread.start()
 
@@ -348,6 +351,7 @@ class ScreenSync:
                     segments=smoothed_segs,
                     brightness=scaled_b,
                     transition=0,
+                    generation=self._output_generation,
                 ))
 
             if not self._frame_bus and hasattr(self._controller, "submit_frame"):
@@ -363,6 +367,7 @@ class ScreenSync:
                     producer=OutputProducer.SCREEN_SYNC,
                     hsv=(gh, gs, final_b),
                     brightness=final_b,
+                    generation=self._output_generation,
                 ))
 
             if not self._frame_bus and hasattr(self._controller, "submit_frame"):
