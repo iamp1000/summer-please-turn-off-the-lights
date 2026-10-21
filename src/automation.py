@@ -112,11 +112,8 @@ class PresetManager:
                             producer=OutputProducer.STATIC,
                             segments=segs,
                             brightness=b,
+                            transition=600,
                         ))
-                        if hasattr(ctx.controller, "set_segments"):
-                            hub.loop_runner.run(ctx.controller.set_segments(segs, brightness=b, transition=600, priority=0))
-                        elif hasattr(ctx.controller, "submit_frame"):
-                            ctx.controller.submit_frame({"segments": segs, "brightness": b, "transition": 600})
                     elif "h" in st and "s" in st:
                         hub.apply_custom_color(dev_id, st["h"], st["s"], st.get("brightness", 50))
                     elif "effect" in st:
