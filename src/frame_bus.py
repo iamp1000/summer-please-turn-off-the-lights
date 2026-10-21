@@ -231,14 +231,17 @@ class OutputArbiter:
             if callback in self._ownership_callbacks:
                 self._ownership_callbacks.remove(callback)
 
-    def claim_output(self, dev_id: str, producer: str, on_relinquish: Optional[Callable] = None) -> bool:
+    def claim_output(self, dev_id: str, producer: str, on_relinquish: Optional[Callable] = None,
+                     *, renew: bool = False) -> bool:
         with self._transition_lock:
             with self._lock:
                 old_owner = self._owners.get(dev_id, OutputProducer.IDLE)
                 old_cb = self._relinquish_cbs.get(dev_id)
-                if old_owner == producer:
+                if old_owner == producer and not renew:
                     self._relinquish_cbs[dev_id] = on_relinquish
                     return True
+                # renew=True starts a fresh session even when the logical producer
+                # category is unchanged, invalidating frames from the previous scene.
                 generation = self._generations.get(dev_id, 0) + 1
                 producer_id = f"{dev_id}:{producer}:{generation}"
                 self._generations[dev_id] = generation
