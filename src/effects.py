@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger("tapo")
 
 from src.frame_bus import FramePacket, OutputProducer
+from src.music_dynamics import effective_send_rate
 from src.pipeline import lerp_oklab, rgb_to_tapo_hsv, tapo_hsv_to_rgb
 from src.firmware_effects import PALETTES, get_palette_hsv
 
@@ -138,6 +139,8 @@ class AnimationEngine:
             interval = max(1.0, 3.0 / sp_mult)
         else:
             interval = max(0.5, 2.0 / sp_mult)
+        # Don't render targets faster than the existing sender protection rate.
+        interval = max(interval, 1.0 / effective_send_rate(self._controller, fallback_rate=5.0))
         # Metadata only: this transport does not send a native L900 transition duration.
         return interval, int(round(interval * 1000.0))
 
