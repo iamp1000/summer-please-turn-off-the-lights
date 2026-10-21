@@ -1290,7 +1290,14 @@ function updateTelemetry(diagnostics) {
   if (topDot) topDot.style.background = diag.error_count > 0 ? "#ef4444" : "#3dd68c";
   if (expStatus) {
     const effName = formatName(activeDev.active_label || "Idle");
-    expStatus.textContent = `${effName} · ${diag.send_fps} FPS · ${diag.error_count} err`;
+    const audioUnavailable = activeDev.active_label === "Audio Error";
+    const statusSuffix = audioUnavailable ? " · audio unavailable" : "";
+    expStatus.textContent = `${effName}${statusSuffix} · ${diag.send_fps} FPS · ${diag.error_count} err`;
+    if (audioUnavailable && activeDev.last_error) {
+      expStatus.title = activeDev.last_error;
+    } else {
+      expStatus.removeAttribute("title");
+    }
   }
 
   const connText = document.getElementById("connText");
