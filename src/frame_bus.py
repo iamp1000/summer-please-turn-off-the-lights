@@ -298,8 +298,12 @@ class OutputArbiter:
             return owner == producer and current_generation == generation and current_id == producer_id
 
     def can_submit(self, dev_id: str, producer: str) -> bool:
+        """Compatibility preflight: an idle strip may be claimed by STATIC or IDLE."""
         with self._lock:
-            return self._owners.get(dev_id, OutputProducer.IDLE) == producer
+            owner = self._owners.get(dev_id, OutputProducer.IDLE)
+            if owner == OutputProducer.IDLE:
+                return producer in (OutputProducer.IDLE, OutputProducer.STATIC)
+            return owner == producer
 
     def get_owner(self, dev_id: str) -> str:
         with self._lock:
