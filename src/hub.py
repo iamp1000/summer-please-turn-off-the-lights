@@ -426,7 +426,8 @@ class LightHub:
         targets = self._resolve_targets(dev_id)
         mode_data = self.config.get("modes", {}).get(mode_name, {})
         for ctx in targets:
-            self.arbiter.claim_output(ctx.dev_id, OutputProducer.STATIC, on_relinquish=ctx.stop_all_active)
+            self.arbiter.claim_output(ctx.dev_id, OutputProducer.STATIC, on_relinquish=ctx.stop_all_active, renew=True)
+            output_token = self.frame_bus.capture_token(ctx.dev_id, OutputProducer.STATIC)
             ctx.stop_all_active()
             ctx.state["power"] = True
             ctx.state["active_label"] = mode_name
@@ -443,6 +444,8 @@ class LightHub:
                     segments=segs,
                     brightness=b,
                     transition=600,
+                    generation=output_token[0] if output_token else None,
+                    producer_id=output_token[1] if output_token else None,
                 )
             else:
                 packet = FramePacket(
@@ -451,6 +454,8 @@ class LightHub:
                     hsv=(h, s, b),
                     brightness=b,
                     transition=600,
+                    generation=output_token[0] if output_token else None,
+                    producer_id=output_token[1] if output_token else None,
                 )
 
             async def _apply_static_output(c=ctx, p=packet):
@@ -477,7 +482,7 @@ class LightHub:
         for ctx in targets:
             ctx.state["effect_status"] = "requested"
             ctx.state["last_error"] = None
-            self.arbiter.claim_output(ctx.dev_id, OutputProducer.EFFECT, on_relinquish=ctx.fx_engine.stop)
+            self.arbiter.claim_output(ctx.dev_id, OutputProducer.EFFECT, on_relinquish=ctx.fx_engine.stop, renew=True)
             ctx.audio_sync.stop()
             ctx.screen_sync.stop()
             cur_b = ctx.state.get("brightness", 50)
@@ -522,7 +527,7 @@ class LightHub:
                 # an AUDIO black frame that would be invalidated on release.
                 self.arbiter.claim_output(
                     ctx.dev_id, OutputProducer.STATIC,
-                    on_relinquish=ctx.stop_all_active,
+                    on_relinquish=ctx.stop_all_active, renew=True,
                 )
                 self.frame_bus.publish(FramePacket(
                     dev_id=ctx.dev_id,
@@ -544,7 +549,7 @@ class LightHub:
             if l930_ctx and l930_ctx in targets:
                 l930_ctx.fx_engine.stop()
                 l930_ctx.screen_sync.stop()
-                self.arbiter.claim_output(l930_ctx.dev_id, OutputProducer.AUDIO, on_relinquish=l930_ctx.audio_sync.stop)
+                self.arbiter.claim_output(l930_ctx.dev_id, OutputProducer.AUDIO, on_relinquish=l930_ctx.audio_sync.stop, renew=True)
                 l930_ctx.state["power"] = True
                 l930_ctx.state["active_label"] = "Audio Spectrum (IC)"
                 l930_ctx.audio_sync.start()
@@ -559,7 +564,7 @@ class LightHub:
                     else:
                         if hasattr(l930_ctx.audio_sync, "get_analyzer"):
                             l900_ctx.audio_sync.set_shared_analyzer(l930_ctx.audio_sync.get_analyzer())
-                        self.arbiter.claim_output(l900_ctx.dev_id, OutputProducer.AUDIO, on_relinquish=l900_ctx.audio_sync.stop)
+                        self.arbiter.claim_output(l900_ctx.dev_id, OutputProducer.AUDIO, on_relinquish=l900_ctx.audio_sync.stop, renew=True)
                         l900_ctx.state["power"] = True
                         l900_ctx.state["active_label"] = "Audio Reactive"
                         l900_ctx.audio_sync.start()
@@ -567,7 +572,7 @@ class LightHub:
                 for ctx in targets:
                     ctx.fx_engine.stop()
                     ctx.screen_sync.stop()
-                    self.arbiter.claim_output(ctx.dev_id, OutputProducer.AUDIO, on_relinquish=ctx.audio_sync.stop)
+                    self.arbiter.claim_output(ctx.dev_id, OutputProducer.AUDIO, on_relinquish=ctx.audio_sync.stop, renew=True)
                     ctx.state["power"] = True
                     ctx.state["active_label"] = "Audio Reactive"
                     ctx.audio_sync.start()
@@ -615,7 +620,7 @@ class LightHub:
                 self.arbiter.release_output(ctx.dev_id, OutputProducer.SCREEN_SYNC)
                 ctx.state["active_label"] = "Idle"
             else:
-                self.arbiter.claim_output(ctx.dev_id, OutputProducer.SCREEN_SYNC, on_relinquish=ctx.screen_sync.stop)
+                self.arbiter.claim_output(ctx.dev_id, OutputProducer.SCREEN_SYNC, on_relinquish=ctx.screen_sync.stop, renew=True)
                 ctx.state["power"] = True
                 ctx.state["active_label"] = "Screen Reactive"
                 ctx.screen_sync.start()
@@ -624,7 +629,8 @@ class LightHub:
     def apply_custom_color(self, dev_id: str, h: int, s: int, v: int):
         targets = self._resolve_targets(dev_id)
         for ctx in targets:
-            self.arbiter.claim_output(ctx.dev_id, OutputProducer.STATIC, on_relinquish=ctx.stop_all_active)
+            self.arbiter.claim_output(ctx.dev_id, OutputProducer.STATIC, on_relinquish=ctx.stop_all_active, renew=True)
+            output_token = self.frame_bus.capture_token(ctx.dev_id, OutputProducer.STATIC)
             ctx.stop_all_active()
             ctx.state["power"] = True
             ctx.state["active_label"] = "Custom Wheel"
@@ -636,6 +642,8 @@ class LightHub:
                     segments=[[h, s, v]] * 50,
                     brightness=v,
                     transition=600,
+                    generation=output_token[0] if output_token else None,
+                    producer_id=output_token[1] if output_token else None,
                 )
             else:
                 packet = FramePacket(
@@ -644,6 +652,8 @@ class LightHub:
                     hsv=(h, s, v),
                     brightness=v,
                     transition=600,
+                    generation=output_token[0] if output_token else None,
+                    producer_id=output_token[1] if output_token else None,
                 )
 
             async def _apply_custom_output(c=ctx, p=packet):
