@@ -268,7 +268,7 @@ class CompositeSystemManager:
                     )
                     self.hub.frame_bus.publish(packet)
 
-                if l900_ctx and hasattr(l900_ctx.controller, "submit_frame"):
+                if (not getattr(self.hub, "frame_bus", None)) and l900_ctx and hasattr(l900_ctx.controller, "submit_frame"):
                     l900_ctx.controller.submit_frame({"h": final_h, "s": final_s, "b": final_v})
 
                 time.sleep(0.033)  # ~30 Hz smooth update pacing
