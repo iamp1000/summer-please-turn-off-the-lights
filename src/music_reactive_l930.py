@@ -12,7 +12,7 @@ from src.music_reactive import get_audio_input_source
 from src.audio_dsp import SpectralFluxOnsetDetector, BPMTracker, DynamicAudioCalibrator, MusicAnalyzer, MusicState, Section
 from src.visual_styles import get_visual_style, STYLE_REGISTRY, create_style_instances, AccentCompositor, DirectorStyle
 from src.frame_bus import FramePacket, OutputProducer
-from src.music_dynamics import MusicBrightnessFloor, music_is_genuinely_active, fade_segments, silence_fade_duration
+from src.music_dynamics import MusicBrightnessFloor, music_is_genuinely_active, fade_segments, silence_fade_duration, effective_send_rate
 from src.music_dynamics import MusicBrightnessFloor, music_is_genuinely_active, fade_segments, silence_fade_duration
 
 NUM_SEGMENTS = 50
@@ -446,7 +446,8 @@ class MusicReactiveL930:
         else:
             style = self._styles.get(style_key, self._styles.get("pulse", self._styles.get("auto")))
         measured_lat = getattr(getattr(self._ctrl, "diagnostics", None), "total_latency_ms", 0.0) / 1000.0
-        style.set_params(measured_latency_s=measured_lat)
+        output_rate = effective_send_rate(self._ctrl, fallback_rate=8.0)
+        style.set_params(measured_latency_s=measured_lat, output_interval_s=1.0 / output_rate)
 
         sd = getattr(self, "screen_data", None)
         if sd is None and hasattr(self, "_screen_sync") and getattr(self._screen_sync, "latest_screen_data", None):
