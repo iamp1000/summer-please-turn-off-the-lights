@@ -470,7 +470,66 @@ class LightHub:
                 self.loop_runner.run(ctx.controller.set_brightness(val, priority=1))
         self.notify_change()
 
+    def publish_static_frame(self, ctx: DeviceContext, packet: FramePacket):
+        """Power on if needed, then publish a generation-pinned static frame."""
+        async def _publish():
+            if not getattr(ctx.controller, "_is_on", True):
+                await ctx.controller.turn_on(priority=0)
+            producer_id = packet.producer_id or packet.producer
+            if not self.arbiter.is_authorized(ctx.dev_id, producer_id, packet.generation):
+                return False
+            return self.frame_bus.publish(packet)
+        return self.loop_runner.run(_publish())
+
     def apply_mode(self, dev_id: str, mode_name: str):
+        targets = self._resolve_targets(dev_id)
+        mode_data = self.config.get("modes", {}).get(mode_name, {})
+        for ctx in targets:
+            self.arbiter.claim_output(ctx.dev_id, OutputProducer.STATIC, on_relinquish=ctx.stop_all_active)
+            ctx.stop_all_active()
+            ctx.state["power"] = True
+            ctx.state["active_label"] = mode_name
+            b = int(mode_data.get("brightness", 50))
+            h = int(mode_data.get("hue", 0))
+            sat = int(mode_data.get("saturation", 0))
+            generation = self.arbiter.get_generation(ctx.dev_id)
+
+            if ctx.model == "L930":
+                from src.modes import build_mode_segments
+                packet = FramePacket(
+                    dev_id=ctx.dev_id,
+                    producer=OutputProducer.STATIC,
+                    segments=build_mode_segments(mode_data, num_zones=50),
+                    brightness=b,
+                    transition=600,
+                    generation=generation,
+                )
+            elif "color_temp" in mode_data:
+                kelvin = int(mode_data["color_temp"])
+                norm_k = max(0.0, min(1.0, (kelvin - 2500) / 4000.0))
+                preview_h = int(30 + (210 - 30) * norm_k)
+                preview_s = int(55 - 40 * norm_k)
+                packet = FramePacket(
+                    dev_id=ctx.dev_id,
+                    producer=OutputProducer.STATIC,
+                    color_temp=kelvin,
+                    hsv=(preview_h, preview_s, b),
+                    brightness=b,
+                    transition=600,
+                    generation=generation,
+                )
+            else:
+                packet = FramePacket(
+                    dev_id=ctx.dev_id,
+                    producer=OutputProducer.STATIC,
+                    hsv=(h, sat, b),
+                    brightness=b,
+                    transition=600,
+                    generation=generation,
+                )
+            self.publish_static_frame(ctx, packet)
+        self.notify_change()
+
         targets = self._resolve_targets(dev_id)
         mode_data = self.config.get("modes", {}).get(mode_name, {})
         for ctx in targets:
@@ -673,22 +732,24 @@ class LightHub:
             ctx.state["power"] = True
             ctx.state["active_label"] = "Custom Wheel"
             ctx.state["brightness"] = v
-            # turn_on clears queued state; do it before publishing the scene frame.
-            self.loop_runner.run(ctx.controller.turn_on(priority=0))
+            generation = self.arbiter.get_generation(ctx.dev_id)
             if ctx.model == "L930":
-                self.frame_bus.publish(FramePacket(
+                packet = FramePacket(
                     dev_id=ctx.dev_id,
                     producer=OutputProducer.STATIC,
                     segments=[[h, s, v]] * 50,
                     brightness=v,
-                ))
+                    generation=generation,
+                )
             else:
-                self.frame_bus.publish(FramePacket(
+                packet = FramePacket(
                     dev_id=ctx.dev_id,
                     producer=OutputProducer.STATIC,
                     hsv=(h, s, v),
                     brightness=v,
-                ))
+                    generation=generation,
+                )
+            self.publish_static_frame(ctx, packet)
         self.notify_change()
 
     def shutdown(self):
