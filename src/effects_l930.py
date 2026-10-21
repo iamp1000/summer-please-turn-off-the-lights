@@ -528,6 +528,7 @@ class L930EffectsEngine:
         self._thread: Optional[threading.Thread] = None
         self._stop_event: Optional[threading.Event] = None
         self._effect_generation: int = 0
+        self._output_generation: int = 0
         self._last_error: Optional[str] = None
         self._last_successful_frame: float = 0.0
 
@@ -620,8 +621,10 @@ class L930EffectsEngine:
                 self._app_state["last_error"] = self._last_error
             return False
 
-        # Increment effect generation immediately
+        # Increment effect generation immediately and pin the bus ownership token.
         self._effect_generation += 1
+        if self._frame_bus:
+            self._output_generation = self._frame_bus.current_generation(self._dev_id, OutputProducer.EFFECT)
 
         # Invalidate any pending firmware timers from previous effects immediately
         with self._fw_lock:
@@ -1422,6 +1425,7 @@ class L930EffectsEngine:
                         brightness=b,
                         transition=trans_ms,
                         pre_corrected=True,
+                        generation=self._output_generation,
                     ))
                     if not published:
                         # Another producer has output ownership; yield gracefully
