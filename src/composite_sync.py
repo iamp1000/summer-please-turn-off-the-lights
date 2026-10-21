@@ -264,6 +264,14 @@ class CompositeSystemManager:
                     final_s = max(0, min(100, smoothed_s))
                     final_v = max(1, min(100, smoothed_v))
 
+                # Respect the L900 master brightness inside the rendered frame, so
+                # composite output never needs a direct controller brightness write.
+                if l900_ctx is not None:
+                    brightness_ceiling = max(0, min(100, int(l900_ctx.state.get("brightness", 100)))) / 100.0
+                    final_v = max(0, min(100, int(round(final_v * brightness_ceiling))))
+                    if final_v == 0:
+                        final_h, final_s = 0, 0
+
                 # 4. Submit only to the authoritative FrameBus consumer.
                 if getattr(self.hub, "frame_bus", None) and self._output_token:
                     generation, producer_id = self._output_token
