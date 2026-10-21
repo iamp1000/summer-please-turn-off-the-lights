@@ -418,13 +418,61 @@ class LightHub:
         self.notify_change()
 
     def set_brightness(self, dev_id: str, val: int):
+        """Adjust brightness through the active producer, never via a competing hardware write."""
         val = max(1, min(100, int(val)))
         targets = self._resolve_targets(dev_id)
         for ctx in targets:
             ctx.state["brightness"] = val
+
             if hasattr(ctx, "fx_engine") and hasattr(ctx.fx_engine, "set_parameters"):
                 ctx.fx_engine.set_parameters(brightness=val)
-            if ctx.state["active_label"] not in ["Screen Reactive", "Audio Reactive", "Audio Spectrum (IC)"]:
+
+            # In the live application every device is bound to FrameBus. Dynamic
+            # producers consume the updated app state/engine parameter and publish
+            # their next frame; they must not be overridden by a direct brightness API.
+            if getattr(self, "frame_bus", None) and getattr(self, "arbiter", None):
+                owner = self.arbiter.get_owner(ctx.dev_id)
+                if owner != OutputProducer.STATIC:
+                    continue
+
+                token = self.frame_bus.capture_token(ctx.dev_id, OutputProducer.STATIC)
+                if token is None:
+                    continue
+                generation, producer_id = token
+                current = self.frame_bus.get_latest_frame(ctx.dev_id)
+
+                if ctx.model == "L930":
+                    segments = current.segments if current and current.segments else getattr(ctx.controller, "last_segments", None)
+                    if not segments:
+                        continue
+                    packet = FramePacket(
+                        dev_id=ctx.dev_id,
+                        producer=OutputProducer.STATIC,
+                        segments=[list(zone) for zone in segments],
+                        brightness=val,
+                        transition=current.transition if current else 600,
+                        pre_corrected=current.pre_corrected if current else False,
+                        generation=generation,
+                        producer_id=producer_id,
+                    )
+                else:
+                    if current and current.hsv:
+                        h, s, _old_b = current.hsv[:3]
+                    else:
+                        h = getattr(ctx.controller, "last_h", 0)
+                        s = getattr(ctx.controller, "last_s", 0)
+                    packet = FramePacket(
+                        dev_id=ctx.dev_id,
+                        producer=OutputProducer.STATIC,
+                        hsv=(int(h), int(s), val),
+                        brightness=val,
+                        transition=current.transition if current else 600,
+                        generation=generation,
+                        producer_id=producer_id,
+                    )
+                self.frame_bus.publish(packet)
+            else:
+                # Compatibility for isolated controller use without the hub's FrameBus.
                 self.loop_runner.run(ctx.controller.set_brightness(val, priority=1))
         self.notify_change()
 
