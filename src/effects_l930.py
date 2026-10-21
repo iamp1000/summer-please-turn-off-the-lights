@@ -725,7 +725,29 @@ class L930EffectsEngine:
 
     # ── Firmware Effect Deployment ────────────────────────────────────────────
 
+    def _output_session_is_current(self) -> bool:
+        if not self._frame_bus:
+            return True
+        if not self._output_token:
+            return False
+        generation, producer_id = self._output_token
+        return self._frame_bus.is_token_current(
+            self._dev_id, OutputProducer.EFFECT, generation, producer_id
+        )
+
+    def _native_effect_token_kwargs(self) -> dict:
+        if self._frame_bus and hasattr(self._ctrl, "set_output_token_authorizer"):
+            if not self._output_token:
+                return {"output_token": None}
+            generation, producer_id = self._output_token
+            return {"output_token": (OutputProducer.EFFECT, generation, producer_id)}
+        return {}
+
     def _deploy_firmware_effect(self, name: str, force: bool = False) -> bool:
+        if not self._output_session_is_current():
+            self._last_error = "Output ownership changed before firmware effect deployment"
+            return False
+
         fx = self._build_effect_payload(name)
         if fx is None:
             self._last_error = f"No firmware payload could be built for L930 effect {name!r}"
@@ -762,7 +784,14 @@ class L930EffectsEngine:
                 self._pending_fw_timer = None
 
         try:
-            future = self._loop_runner.run(self._ctrl.set_native_effect(fx, priority=0))
+            if not self._output_session_is_current():
+                self._last_error = "Output ownership changed before firmware effect transmission"
+                return False
+            future = self._loop_runner.run(
+                self._ctrl.set_native_effect(
+                    fx, priority=0, **self._native_effect_token_kwargs()
+                )
+            )
             # BackgroundLoop.run returns a Future: wait for the hardware ACK so
             # we can distinguish "accepted" from merely "queued in asyncio".
             result_method = getattr(future, "result", None)
@@ -794,7 +823,14 @@ class L930EffectsEngine:
                 logger.debug(f"[L930EffectsEngine] Dropping stale firmware upload for '{name}' (gen {gen} != {self._effect_generation})")
                 return
             self._last_firmware_upload = time.monotonic()
-        self._loop_runner.run(self._ctrl.set_native_effect(fx, priority=0))
+        if not self._output_session_is_current():
+            logger.debug("[L930EffectsEngine] Dropping pending firmware command after ownership changed")
+            return
+        self._loop_runner.run(
+            self._ctrl.set_native_effect(
+                fx, priority=0, **self._native_effect_token_kwargs()
+            )
+        )
 
     def _redeploy_current_firmware_effect(self):
         if self._active_effect_name and self._active_kind == "firmware":
