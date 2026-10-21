@@ -1977,11 +1977,46 @@ const previewParams = {
   palette_name: "sunset"
 };
 
+const FX_PALETTES = {
+  sunset:    [[12, 100, 100], [28, 95, 95], [335, 75, 80], [270, 70, 60]],
+  forest:    [[140, 85, 70], [95, 90, 80], [45, 95, 85], [165, 80, 60]],
+  fire:      [[8, 100, 100], [22, 100, 95], [38, 95, 90], [5, 100, 70]],
+  pastel:    [[330, 45, 95], [210, 40, 95], [160, 40, 95], [45, 45, 95]],
+  tide:      [[195, 90, 85], [175, 85, 90], [215, 80, 75], [155, 75, 70]],
+  dusk:      [[275, 80, 75], [320, 85, 80], [18, 95, 90], [240, 70, 60]],
+  ember:     [[15, 100, 90], [28, 95, 85], [5, 100, 75], [38, 90, 95]],
+  warm_mono: [[30, 90, 90], [35, 85, 95], [25, 95, 85], [40, 80, 100]],
+  auto:      [[200, 80, 85], [280, 75, 85], [340, 80, 85], [40, 85, 90]]
+};
+
+function sampleFxPalette(paletteName, normPos) {
+  const palKey = (paletteName || "sunset").toLowerCase();
+  const pal = FX_PALETTES[palKey] || FX_PALETTES.sunset;
+  const p = Math.max(0, Math.min(0.9999, ((normPos % 1) + 1) % 1));
+  const idx = Math.floor(p * pal.length);
+  const nextIdx = (idx + 1) % pal.length;
+  const frac = (p * pal.length) - idx;
+  const c1 = pal[idx];
+  const c2 = pal[nextIdx];
+  let hDiff = c2[0] - c1[0];
+  if (hDiff > 180) hDiff -= 360;
+  if (hDiff < -180) hDiff += 360;
+  const h = Math.round((c1[0] + hDiff * frac + 360) % 360);
+  const s = Math.round(c1[1] + (c2[1] - c1[1]) * frac);
+  const v = Math.round(c1[2] + (c2[2] - c1[2]) * frac);
+  return [h, s, v];
+}
+
 function computePreviewSegments(effectName, t, numZones, params) {
   const eff = (effectName || "tide").toLowerCase();
   const segments = [];
   const spd = params.speed || 1.0;
   const effT = t * spd;
+  const palName = params.palette_name || params.palette || "sunset";
+  const pal = FX_PALETTES[palName] || FX_PALETTES.sunset;
+  const c0 = pal[0];
+  const c1 = pal[1] || pal[0];
+  const c2 = pal[2] || pal[0];
 
   for (let i = 0; i < numZones; i++) {
     let h = 200, s = 80, v = 50;
@@ -1993,8 +2028,34 @@ function computePreviewSegments(effectName, t, numZones, params) {
         const w1 = Math.sin(i * 0.15 * waveWidth - effT * 1.5);
         const w2 = Math.cos(i * 0.28 - effT * 0.9);
         v = Math.max(12, Math.min(100, Math.round(50 + 45 * (w1 * 0.6 + w2 * 0.4))));
-        h = (175 + Math.round(w1 * 18) + 360) % 360;
-        s = 85;
+        const [ph, ps] = sampleFxPalette(palName, (i / numZones) * 0.4 + w1 * 0.12 - effT * 0.05);
+        h = ph;
+        s = Math.round(ps * 0.9);
+        break;
+      }
+      case "golden_hour":
+      case "dusk": {
+        const waveWidth = params.wave_width || 1.0;
+        const w = Math.sin(i * 0.14 * waveWidth - effT * 0.8) * 0.6 + Math.cos(i * 0.22 + effT * 0.5) * 0.4;
+        const norm = (w + 1) * 0.5;
+        const [ph, ps] = sampleFxPalette(palName, norm);
+        h = ph; s = ps;
+        v = Math.round(25 + 70 * norm);
+        break;
+      }
+      case "lava_lamp": {
+        const b1 = Math.sin(i * 0.18 - effT * 1.2);
+        const b2 = Math.cos(i * 0.25 + effT * 0.9);
+        const norm = (b1 * 0.55 + b2 * 0.45 + 1) * 0.5;
+        const [ph, ps] = sampleFxPalette(palName, norm);
+        h = ph; s = ps;
+        v = Math.round(20 + 75 * norm);
+        break;
+      }
+      case "drift": {
+        const [ph, ps] = sampleFxPalette(palName, (i / numZones) + effT * 0.1);
+        h = ph; s = ps;
+        v = Math.round(30 + 45 * Math.sin(i * 0.2 + effT * 0.8));
         break;
       }
       case "embers": {
@@ -2004,30 +2065,39 @@ function computePreviewSegments(effectName, t, numZones, params) {
         if (isSpark) {
           h = 36; s = 100; v = 100;
         } else {
-          h = 10; s = 95; v = baseV;
+          h = c0[0]; s = c0[1]; v = baseV;
         }
         break;
       }
-      case "aurora": {
+      case "flicker": {
+        const surge = Math.sin(effT * 5.0 + i * 7.7) * 0.35;
+        h = c0[0]; s = c0[1];
+        v = Math.max(5, Math.min(100, Math.round(50 + 45 * surge)));
+        break;
+      }
+      case "aurora":
+      case "reactive_aurora": {
         const width = params.wave_width || 1.0;
         const wave = Math.sin(i * 0.16 * width + effT * 1.3);
-        h = (145 + Math.round(wave * 75) + 360) % 360;
-        s = 90;
+        const [ph, ps] = sampleFxPalette(palName, (wave + 1) * 0.5);
+        h = ph;
+        s = Math.round(ps * 0.95);
         v = 30 + Math.round(60 * Math.abs(wave));
         break;
       }
-      case "cyber_chase": {
+      case "cyber_chase":
+      case "dual_wipe": {
         const flash = params.flash_strength || 1.0;
         const pos1 = Math.floor(effT * 24) % numZones;
         const pos2 = (numZones - 1 - (Math.floor(effT * 24) % numZones));
         const d1 = Math.min(Math.abs(i - pos1), Math.abs(i - pos1 + numZones));
         const d2 = Math.min(Math.abs(i - pos2), Math.abs(i - pos2 + numZones));
         if (d1 < 3) {
-          h = 185; s = 100; v = Math.min(100, Math.round(100 * flash * (1 - d1 / 3)));
+          h = c0[0]; s = c0[1]; v = Math.min(100, Math.round(100 * flash * (1 - d1 / 3)));
         } else if (d2 < 3) {
-          h = 320; s = 100; v = Math.min(100, Math.round(100 * flash * (1 - d2 / 3)));
+          h = c1[0]; s = c1[1]; v = Math.min(100, Math.round(100 * flash * (1 - d2 / 3)));
         } else {
-          h = 260; s = 70; v = 10;
+          h = c2[0]; s = Math.round(c2[1] * 0.7); v = 10;
         }
         break;
       }
@@ -2037,9 +2107,10 @@ function computePreviewSegments(effectName, t, numZones, params) {
         const dist = (head - i + numZones) % numZones;
         if (dist < tailLen) {
           const fade = 1.0 - (dist / tailLen);
-          h = 275; s = 85; v = Math.round(100 * fade * fade);
+          const [ph, ps] = sampleFxPalette(palName, 1.0 - fade * 0.5);
+          h = ph; s = ps; v = Math.round(100 * fade * fade);
         } else {
-          h = 250; s = 60; v = 4;
+          h = c0[0]; s = Math.round(c0[1] * 0.6); v = 4;
         }
         break;
       }
@@ -2047,14 +2118,26 @@ function computePreviewSegments(effectName, t, numZones, params) {
         const tailLen = 6 * (params.tail_length || 1.0);
         const center = (numZones / 2) + ((numZones / 2) - 2) * Math.sin(effT * 2.4);
         const d = Math.abs(i - center);
-        h = 220; s = 90;
+        const [ph, ps] = sampleFxPalette(palName, Math.min(1.0, d / tailLen));
+        h = ph; s = ps;
         v = d < tailLen ? Math.round(100 * (1 - d / tailLen)) : 8;
         break;
       }
-      case "starfield": {
+      case "radar_sweep":
+      case "sonar_sweep": {
+        const tailLen = 8 * (params.tail_length || 1.0);
+        const head = (effT * 22) % numZones;
+        const d = (head - i + numZones) % numZones;
+        const [ph, ps] = sampleFxPalette(palName, Math.min(1.0, d / tailLen));
+        h = ph; s = ps;
+        v = d < tailLen ? Math.round(100 * Math.exp(-d / (tailLen * 0.4))) : 6;
+        break;
+      }
+      case "starfield":
+      case "glitter_cascade": {
         const density = params.particle_density || 1.0;
         const isStar = Math.sin(i * 17.3 + Math.floor(effT * 2.5 * density)) > 0.88;
-        h = 210; s = isStar ? 20 : 90;
+        h = c0[0]; s = isStar ? 20 : c0[1];
         v = isStar ? 100 : 8;
         break;
       }
@@ -2066,17 +2149,37 @@ function computePreviewSegments(effectName, t, numZones, params) {
         break;
       }
       case "breathe": {
-        const env = (Math.sin(effT * 1.5) + 1.0) * 0.5;
-        h = 265; s = 75;
-        v = Math.round(15 + 75 * env);
+        const env = (Math.sin(effT * 1.2) + 1.0) * 0.5;
+        let hDiff = c1[0] - c0[0];
+        if (hDiff > 180) hDiff -= 360;
+        if (hDiff < -180) hDiff += 360;
+        h = Math.round((c0[0] + hDiff * env + 360) % 360);
+        s = Math.round(c0[1] * (1 - env * 0.3) + c1[1] * (env * 0.3));
+        v = Math.round(15 + 80 * env);
         break;
       }
-      case "rainbow": {
+      case "rainbow":
+      case "infinite_prism": {
         h = Math.round((i * (360 / numZones) + effT * 40) % 360);
         s = 100; v = 85;
         break;
       }
-      case "lightning": {
+      case "neon_heartbeat": {
+        const cycle = (effT * 1.6) % 2.0;
+        const lub = cycle < 0.4 ? Math.sin((cycle / 0.4) * Math.PI) : 0;
+        const dub = (cycle >= 0.3 && cycle < 0.7) ? Math.sin(((cycle - 0.3) / 0.4) * Math.PI) * 0.75 : 0;
+        const centerDist = Math.abs(i - (numZones / 2));
+        if (lub > 0 && centerDist < 6) {
+          h = c0[0]; s = c0[1]; v = Math.round(15 + 85 * lub);
+        } else if (dub > 0 && (centerDist > 10 && centerDist < 20)) {
+          h = c1[0]; s = c1[1]; v = Math.round(15 + 75 * dub);
+        } else {
+          h = c2[0]; s = c2[1]; v = 8;
+        }
+        break;
+      }
+      case "lightning":
+      case "coordinated_lightning": {
         const flash = params.flash_strength || 1.0;
         const isBolt = Math.sin(effT * 7.0) > 0.93;
         h = 215; s = 80;
@@ -2085,8 +2188,9 @@ function computePreviewSegments(effectName, t, numZones, params) {
       }
       default: {
         const wave = Math.sin(i * 0.2 + effT * 2.0);
-        h = Math.round((i * 6 + effT * 20) % 360);
-        s = 85; v = Math.round(30 + 50 * Math.abs(wave));
+        const [ph, ps] = sampleFxPalette(palName, (i / numZones) * 0.5 + Math.abs(wave) * 0.5);
+        h = ph; s = ps;
+        v = Math.round(30 + 50 * Math.abs(wave));
         break;
       }
     }

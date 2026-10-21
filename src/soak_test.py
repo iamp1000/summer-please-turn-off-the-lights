@@ -13,12 +13,62 @@ import os
 import sys
 import time
 import dotenv
+from pathlib import Path
+import socket
 
 from src.device_l930 import L930Controller
 from src.effects_l930 import L930EffectsEngine, EFFECT_CATALOG
 
 
-async def run_soak_test(duration_minutes: float = 30.0, dev_ip: str = "10.0.0.24"):
+def find_device_ip(default_ip: str = "10.0.0.24") -> str:
+    """Checks default IP, config.yaml, and probes candidate IPs on the local subnet."""
+    # 1. Test default_ip
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(0.15)
+        if s.connect_ex((default_ip, 80)) == 0:
+            s.close()
+            return default_ip
+        s.close()
+    except Exception:
+        pass
+
+    # 2. Check config.yaml
+    try:
+        import yaml
+        config_path = Path(__file__).resolve().parent.parent / "config.yaml"
+        if config_path.exists():
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg = yaml.safe_load(f)
+            devices = cfg.get("tapo", {}).get("devices", {})
+            for d in devices.values():
+                ip = d.get("ip")
+                if ip:
+                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    s.settimeout(0.15)
+                    if s.connect_ex((ip, 80)) == 0:
+                        s.close()
+                        return ip
+                    s.close()
+    except Exception:
+        pass
+
+    # 3. Probe common DHCP IPs
+    for cand in ("10.0.0.6", "10.0.0.8", "10.0.0.24", "10.0.0.26", "192.168.1.50", "192.168.1.24"):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.1)
+            if s.connect_ex((cand, 80)) == 0:
+                s.close()
+                return cand
+            s.close()
+        except Exception:
+            pass
+
+    return default_ip
+
+
+async def run_soak_test(duration_minutes: float = 30.0, dev_ip: str | None = None):
     env = dotenv.dotenv_values(".env")
     email = env.get("TAPO_EMAIL")
     password = env.get("TAPO_PASSWORD")
@@ -26,8 +76,9 @@ async def run_soak_test(duration_minutes: float = 30.0, dev_ip: str = "10.0.0.24
         print("Missing credentials in .env file.")
         sys.exit(1)
 
-    print(f"Connecting to Tapo L930 at {dev_ip}...")
-    ctrl = L930Controller(dev_ip, email, password)
+    resolved_ip = find_device_ip(dev_ip) if dev_ip else find_device_ip()
+    print(f"Connecting to Tapo L930 at {resolved_ip}...")
+    ctrl = L930Controller(resolved_ip, email, password)
     await ctrl.connect()
 
     firmware_effects = [k for k, v in EFFECT_CATALOG.items() if v["kind"] == "firmware"]

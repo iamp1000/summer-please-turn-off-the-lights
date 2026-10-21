@@ -612,6 +612,12 @@ class L930Controller:
         clears pending frames, and cleanly closes the session to prevent board overload.
         """
         self.clear_frames()
+        if self._watchdog_task is not None:
+            try:
+                self._watchdog_task.cancel()
+            except Exception:
+                pass
+            self._watchdog_task = None
         if self.frame_sender:
             self.frame_sender.stop()
         async with self._lock:

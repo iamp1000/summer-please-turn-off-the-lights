@@ -138,6 +138,61 @@ def test_gate_controls_responsiveness():
             f_wide = engine._compute(eff_id, t=1.0)
             assert f_narrow != f_wide, f"Wave width has no effect on {eff_id}"
 
+        # 6. Brightness control
+        if "brightness" in controls:
+            engine.set_parameters(brightness=20)
+            f_dim = engine._compute(eff_id, t=1.0, apply_brightness=True)
+            engine.set_parameters(brightness=100)
+            f_bright = engine._compute(eff_id, t=1.0, apply_brightness=True)
+            assert f_dim != f_bright, f"Brightness control has no effect on {eff_id}"
+            assert max(v for _, _, v in f_dim) < max(v for _, _, v in f_bright), f"Brightness does not scale values for {eff_id}"
+            if meta.get("kind") == "firmware":
+                engine.set_parameters(brightness=35)
+                fx = engine._build_effect_payload(eff_id)
+                assert fx.brightness == 35, f"Firmware payload does not reflect brightness for {eff_id}"
+
+        # 7. Flash strength control
+        if "flash_strength" in controls:
+            engine.set_parameters(flash_strength=0.2)
+            f_low = [engine._compute(eff_id, t=step / 10.0) for step in range(70)]
+            engine.set_parameters(flash_strength=2.5)
+            f_high = [engine._compute(eff_id, t=step / 10.0) for step in range(70)]
+            assert f_low != f_high, f"Flash strength control has no effect on {eff_id}"
+
+
+def test_gate_effects_are_mutually_distinctive():
+    """
+    Release Gate 3 - Mutual Visual Distinctiveness:
+    Every retained effect must produce a unique visual trajectory.
+    Compare every pair of distinct (non-alias) catalog effects to ensure
+    no two effects produce identical animations or share a flat fallback.
+    """
+    engine = L930EffectsEngine(controller=None, loop_runner=None, app_state={})
+
+    # Collect all primary non-alias effects
+    primary_effects = [
+        eff_id for eff_id, meta in EFFECT_CATALOG.items()
+        if "alias_of" not in meta
+    ]
+
+    # Compute multi-point visual signatures across time
+    time_steps = [0.2, 0.8, 1.5, 2.3, 3.2]
+    signatures = {}
+    for eff_id in primary_effects:
+        sig = tuple(
+            tuple(tuple(col) for col in engine._compute(eff_id, t=t_step))
+            for t_step in time_steps
+        )
+        signatures[eff_id] = sig
+
+    # Pairwise comparison: every pair of primary effects must have distinct signatures
+    for i, eff_a in enumerate(primary_effects):
+        for j in range(i + 1, len(primary_effects)):
+            eff_b = primary_effects[j]
+            assert signatures[eff_a] != signatures[eff_b], (
+                f"Visual identity violation: {eff_a} and {eff_b} produce identical visual output!"
+            )
+
 
 def test_gate_music_reactivity_end_to_end():
     """
