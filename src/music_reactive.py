@@ -584,18 +584,21 @@ class MusicReactive:
                 enabled=False, force_inactive=True,
             )
             if self._silence_count > 5:
-                # Time-based release independent of sample block size.
-                self._smoothed_brightness *= math.exp(-dt / 0.55)
-                if self._smoothed_brightness < 1.0:
-                    self._smoothed_brightness = 0.0
+                # Fade the last genuinely active color over multiple physical send periods.
+                fade_duration = silence_fade_duration(self._controller, fallback_rate=5.0)
+                fade_start = 0.12
+                factor = 1.0 if self._silence_duration <= fade_start else max(
+                    0.0, 1.0 - (self._silence_duration - fade_start) / fade_duration
+                )
+                target = fade_hsv(self._last_active_hsv, factor) if self._last_active_hsv else (0, 0, 0)
+                if target[2] < 1:
+                    target = (0, 0, 0)
                     self._white_punch = 0.0
                     self._beat_pop = 0.0
-                    self._target_state = (0, 0, 0)
-                else:
-                    self._target_state = (int(self._smoothed_brightness), int(self._smoothed_hue), 100)
+                self._smoothed_brightness = float(target[2])
+                self._target_state = (target[2], target[0], target[1])
                 self.latest_spectrum = [0.0] * 50
-                b_out = int(self._smoothed_brightness)
-                self._publish_frame({"h": int(self._smoothed_hue) if b_out > 0 else 0, "s": 100 if b_out > 0 else 0, "b": b_out, "_pre_corrected": True})
+                self._publish_frame({"h": target[0], "s": target[1], "b": target[2], "_pre_corrected": True})
 
             # True black: on sustained silence (> 3 s) turn the strip off
             if self._silence_duration >= 3.0 and not self._powered_down_for_silence:
