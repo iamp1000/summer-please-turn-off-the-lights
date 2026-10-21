@@ -492,10 +492,16 @@ class PulseStyle(VisualStyle):
         self._phrase_step: int = 0
         self._single_b: float = 0.0
         self._single_color: Tuple[int, int, int] = (215, 85, 75)
+        self._output_interval_s: float = 0.5
 
         # Internal shared event layers
         self._tension = BuildTensionAccent()
         self._bloom = DropBloomAccent()
+
+    def set_params(self, output_interval_s: Optional[float] = None, **kwargs: Any):
+        super().set_params(**kwargs)
+        if output_interval_s is not None:
+            self._output_interval_s = max(0.125, min(2.0, float(output_interval_s)))
 
     def render(self, state: MusicState, dt: float, num_zones: int, **kwargs: Any) -> List[Tuple[int, int, int]]:
         if self.is_silent_state(state):
@@ -514,7 +520,13 @@ class PulseStyle(VisualStyle):
                 self._phrase_step = (self._phrase_step + 1) % 4
             self._prev_bar = state.bar_pos
 
-        cur_color = pal[self._bar_color_idx % len(pal)]
+        cur_color = sample_palette_oklab(
+            pal,
+            (self._bar_color_idx / float(len(pal))
+             + float(getattr(state, "centroid_norm", 0.25)) * 0.18
+             + float(getattr(state, "beat_phase", 0.0)) * 0.12) % 1.0,
+            cyclic=True,
+        )
 
         # Dynamic Bar & Phrase Origins:
         # bar_pos 0: Center (24.5)
@@ -531,7 +543,9 @@ class PulseStyle(VisualStyle):
         if kick_hit:
             self._spawn_cooldown = max(0.06, 0.10 / self.speed)
             bpm = max(60.0, min(180.0, state.bpm)) if state.bpm_confidence > 0.5 else 120.0
-            speed_zones_per_sec = (50.0 + state.intensity * 45.0) * (bpm / 120.0) * self.speed
+            lifetime = max(0.65, self._output_interval_s * 2.2)
+            requested_speed = (50.0 + state.intensity * 45.0) * (bpm / 120.0) * self.speed
+            speed_zones_per_sec = min(requested_speed, max(6.0, max(1.0, half) / lifetime))
             init_pos = 0.0
             if getattr(self, "measured_latency_s", 0.0) > 0.0:
                 init_pos = min(float(half), speed_zones_per_sec * float(self.measured_latency_s))
@@ -542,6 +556,7 @@ class PulseStyle(VisualStyle):
                 "speed": speed_zones_per_sec,
                 "sigma": 3.0 + state.kick * 2.0,  # Broad, strong physical punch
                 "life": 1.0,
+                "lifetime": lifetime,
                 "energy": max(0.70, state.kick),
                 "color": cur_color,
             })
@@ -553,13 +568,17 @@ class PulseStyle(VisualStyle):
             snare_color = pal[(self._bar_color_idx + 2) % len(pal)]
             # Counter-pulse originates symmetrically or opposite to current phrase origin
             snare_origin = (num_zones - 1) - origin if abs(origin - half) > 2.0 else 0.0
+            snare_lifetime = max(0.55, self._output_interval_s * 1.75)
+            requested_snare_speed = (85.0 + state.intensity * 40.0) * self.speed
+            snare_speed = min(requested_snare_speed, max(6.0, max(1.0, half) / snare_lifetime))
             self.ripples.append({
                 "type": "snare",
                 "origin": snare_origin,
                 "pos": 0.0,
-                "speed": (85.0 + state.intensity * 40.0) * self.speed,
+                "speed": snare_speed,
                 "sigma": 1.5,  # Narrow, crisp shock
                 "life": 0.85,
+                "lifetime": snare_lifetime,
                 "energy": state.snare,
                 "color": snare_color,
             })
@@ -571,8 +590,9 @@ class PulseStyle(VisualStyle):
         alive = []
         for r in self.ripples:
             r["pos"] += r["speed"] * dt
-            decay_rate = 1.8 * self.speed if r["type"] == "kick" else 3.2 * self.speed
-            r["life"] -= dt * decay_rate
+            # Hold wave energy over multiple physical send periods, including 1 Hz fallback.
+            lifetime = max(0.4, float(r.get("lifetime", 0.65)))
+            r["life"] -= dt / lifetime
             max_dist = max(r.get("origin", half), num_zones - r.get("origin", half)) + 6.0
             if r["pos"] <= max_dist and r["life"] > 0.0:
                 alive.append(r)
@@ -603,8 +623,18 @@ class PulseStyle(VisualStyle):
         base_h, base_s, _ = pal[0]
         if base_s <= 5:
             base_h, base_s = cur_color[0], cur_color[1]
-        baseline_b = (state.energy * 20.0) * self.intensity
-        kick_punch = (state.kick * 40.0) * self.intensity
+        bands = state.bands if len(state.bands) >= 50 else np.full(50, state.energy, dtype=np.float32)
+        bass_band = float(np.mean(bands[:10]))
+        mid_band = float(np.mean(bands[10:35]))
+        high_band = float(np.mean(bands[35:]))
+        bass_drive = max(float(getattr(state, "bass", 0.0)), bass_band)
+        mid_drive = max(float(getattr(state, "mid", 0.0)), mid_band)
+        build_drive = max(0.0, float(getattr(state, "energy_trend", 0.0)))
+        baseline_b = (
+            state.energy * 22.0 + bass_drive * 10.0 + mid_drive * 8.0
+            + high_band * 5.0 + build_drive * 25.0
+        ) * self.intensity
+        kick_punch = (state.kick * 48.0) * self.intensity
 
         # Seed pseudo-random hi-hat sparks
         hat_active = state.hat > 0.35
@@ -612,8 +642,13 @@ class PulseStyle(VisualStyle):
 
         for i in range(num_zones):
             accum_b = 0.0
-            chosen_h = base_h
-            chosen_s = base_s
+            palette_position = (
+                i / float(max(1, num_zones - 1)) * 0.32
+                + float(getattr(state, "centroid_norm", 0.25)) * 0.20
+                + float(getattr(state, "beat_phase", 0.0)) * 0.10
+                + time.time() * 0.004
+            ) % 1.0
+            chosen_h, chosen_s, _ = sample_palette_oklab(pal, palette_position, cyclic=True)
             max_r_b = 0.0
 
             for r in self.ripples:
@@ -907,6 +942,7 @@ class SpectrumStyle(VisualStyle):
         self.peaks = [0.0] * NUM_SEGMENTS
         self.peak_hold_timers = [0.0] * NUM_SEGMENTS
         self._single_level: float = 0.0
+        self._output_interval_s: float = 0.5
         self._cached_pal: Optional[Tuple[Tuple[int, int, int], ...]] = None
         self._cached_gradient: List[Tuple[int, int]] = []
 
@@ -914,11 +950,13 @@ class SpectrumStyle(VisualStyle):
         self._tension = BuildTensionAccent()
         self._bloom = DropBloomAccent()
 
-    def set_params(self, layout: Optional[str] = None, **kwargs: Any):
+    def set_params(self, layout: Optional[str] = None, output_interval_s: Optional[float] = None, **kwargs: Any):
         super().set_params(**kwargs)
         if layout is not None:
             self.layout = layout.strip().lower()
-        self._segmented_delegate.set_params(**kwargs)
+        if output_interval_s is not None:
+            self._output_interval_s = max(0.125, min(2.0, float(output_interval_s)))
+        self._segmented_delegate.set_params(output_interval_s=self._output_interval_s, **kwargs)
 
     def render(self, state: MusicState, dt: float, num_zones: int, **kwargs: Any) -> List[Tuple[int, int, int]]:
         if self.layout in ("segmented", "vu", "staccato"):
@@ -980,15 +1018,17 @@ class SpectrumStyle(VisualStyle):
             else:
                 self.levels[i] = exp_smooth_fast(self.levels[i], raw_target, dt, (0.080 * self.smoothing) / self.speed)
 
-            # Peak-hold markers: hold for 140ms, fall slowly over ~600ms (>2 send periods)
+            # Keep the transient marker visible at the protected send cadence.
+            # At 1 Hz, a 140 ms hold would expire entirely between physical frames.
             if self.levels[i] >= self.peaks[i]:
                 self.peaks[i] = self.levels[i]
-                self.peak_hold_timers[i] = 0.14
+                self.peak_hold_timers[i] = max(0.14, self._output_interval_s * 1.35)
             else:
                 if self.peak_hold_timers[i] > 0.0:
-                    self.peak_hold_timers[i] -= dt
+                    self.peak_hold_timers[i] = max(0.0, self.peak_hold_timers[i] - dt)
                 else:
-                    self.peaks[i] = max(0.0, self.peaks[i] - dt * (100.0 * self.speed / max(0.2, self.smoothing)))
+                    decay_tau = max(0.55, self._output_interval_s * 1.6)
+                    self.peaks[i] = max(self.levels[i], exp_smooth_fast(self.peaks[i], self.levels[i], dt, decay_tau))
 
             # Continuous OKLab palette gradient across strip
             h, s = self._cached_gradient[i]
