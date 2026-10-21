@@ -350,7 +350,7 @@ class ScreenSync:
                     transition=0,
                 ))
 
-            if hasattr(self._controller, "submit_frame"):
+            if not self._frame_bus and hasattr(self._controller, "submit_frame"):
                 self._controller.submit_frame({"segments": smoothed_segs, "brightness": scaled_b, "transition": 0})
         else:
             gh, gs, gv = global_hsv
@@ -365,5 +365,5 @@ class ScreenSync:
                     brightness=final_b,
                 ))
 
-            if hasattr(self._controller, "submit_frame"):
+            if not self._frame_bus and hasattr(self._controller, "submit_frame"):
                 self._controller.submit_frame({"h": gh, "s": gs, "b": final_b})
