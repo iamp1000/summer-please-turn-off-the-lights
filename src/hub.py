@@ -64,6 +64,55 @@ class DeviceContext:
             self.audio_sync._screen_sync = self.screen_sync
         self.effects_cfg = effects_cfg
 
+        # FrameBus is the only frame-to-hardware route once managed by LightHub.
+        if self.frame_bus is not None and self.arbiter is not None:
+            if hasattr(self.controller, "set_frame_authorizer"):
+                self.controller.set_frame_authorizer(
+                    lambda frame, did=self.dev_id, arb=self.arbiter: (
+                        isinstance(frame, dict)
+                        and frame.get("_producer_id") is not None
+                        and frame.get("_generation") is not None
+                        and arb.is_authorized(
+                            did, str(frame.get("_producer_id")), int(frame.get("_generation"))
+                        )
+                    )
+                )
+            self.frame_bus.set_consumer(self.dev_id, self._consume_frame_packet)
+            self.arbiter.add_owner_change_callback(self._on_output_owner_changed)
+
+    def _consume_frame_packet(self, packet: FramePacket):
+        """Single authorized conversion/enqueue point from FrameBus to a device sender."""
+        if packet.dev_id != self.dev_id or self.arbiter is None:
+            return
+        producer_id = packet.producer_id or packet.producer
+        if not self.arbiter.is_authorized(self.dev_id, producer_id, packet.generation):
+            return
+
+        frame = {
+            "_producer_id": producer_id,
+            "_generation": packet.generation,
+            "_pre_corrected": bool(packet.pre_corrected),
+            "transition": int(packet.transition),
+            "brightness": int(packet.brightness),
+        }
+        if packet.segments is not None:
+            frame["segments"] = [list(zone) for zone in packet.segments]
+        elif packet.hsv is not None:
+            h, sat, value = packet.hsv[:3]
+            frame.update({"h": int(h), "s": int(sat), "b": int(value)})
+        else:
+            return
+
+        if self.arbiter.is_authorized(self.dev_id, producer_id, packet.generation):
+            self.controller.submit_frame(frame)
+
+    def _on_output_owner_changed(self, dev_id: str, old_owner: str, new_owner: str, generation: int):
+        if dev_id != self.dev_id:
+            return
+        self.frame_bus.clear_device(dev_id)
+        if hasattr(self.controller, "clear_frames"):
+            self.controller.clear_frames()
+
     def stop_all_active(self):
         self.fx_engine.stop()
         self.audio_sync.stop()
@@ -424,10 +473,15 @@ class LightHub:
             ctx.stop_all_active()
             ctx.state["power"] = True
             ctx.state["active_label"] = mode_name
-            self.loop_runner.run(ctx.mode_mgr._apply_async(mode_data))
+            # Turn-on is a device control; scene colour data itself is routed by FrameBus.
+            self.loop_runner.run(ctx.controller.turn_on(priority=0))
             b = mode_data.get("brightness", 50)
             h = mode_data.get("hue", 0)
             s = mode_data.get("saturation", 0)
+            if "color_temp" in mode_data:
+                norm_k = max(0.0, min(1.0, (int(mode_data["color_temp"]) - 2500) / 4000.0))
+                h = int(30 + (210 - 30) * norm_k)
+                s = int(55 - 40 * norm_k)
             if ctx.model == "L930":
                 from src.modes import build_mode_segments
                 segs = build_mode_segments(mode_data, num_zones=50)
@@ -436,6 +490,7 @@ class LightHub:
                     producer=OutputProducer.STATIC,
                     segments=segs,
                     brightness=b,
+                    transition=600,
                 ))
             else:
                 self.frame_bus.publish(FramePacket(
@@ -443,6 +498,7 @@ class LightHub:
                     producer=OutputProducer.STATIC,
                     hsv=(h, s, b),
                     brightness=b,
+                    transition=600,
                 ))
         self.notify_change()
 
@@ -616,13 +672,7 @@ class LightHub:
                     hsv=(h, s, v),
                     brightness=v,
                 ))
-            async def _do(c=ctx, h=h, s=s, v=v):
-                if hasattr(c.controller, "set_state"):
-                    await c.controller.set_state(h, s, v, priority=0)
-                else:
-                    await c.controller.set_brightness(v, priority=0)
-                    await c.controller.set_hue_saturation(h, s, priority=0)
-            self.loop_runner.run(_do())
+            self.loop_runner.run(ctx.controller.turn_on(priority=0))
         self.notify_change()
 
     def shutdown(self):
