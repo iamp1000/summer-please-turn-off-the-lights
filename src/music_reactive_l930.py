@@ -10,7 +10,7 @@ import numpy as np
 import soundcard as sc
 from src.music_reactive import get_audio_input_source
 from src.audio_dsp import SpectralFluxOnsetDetector, BPMTracker, DynamicAudioCalibrator, MusicAnalyzer, MusicState, Section
-from src.visual_styles import get_visual_style, STYLE_REGISTRY, create_style_instances, AccentCompositor, DirectorStyle
+from src.visual_styles import get_visual_style, STYLE_REGISTRY, create_style_instances, AccentCompositor, DirectorStyle, sample_palette_oklab
 from src.frame_bus import FramePacket, OutputProducer
 from src.music_dynamics import MusicBrightnessFloor, music_is_genuinely_active, fade_segments, silence_fade_duration, effective_send_rate
 from src.music_dynamics import MusicBrightnessFloor, music_is_genuinely_active, fade_segments, silence_fade_duration
@@ -711,7 +711,9 @@ class MusicReactiveL930:
         self._bass_history.append(bass_e)
         avg_bass = float(np.mean(self._bass_history)) if self._bass_history else 0.1
 
-        if is_kick and (bass_e > max(0.03, avg_bass * 1.40)) and (bass_e > 0.10 or vol_norm > 0.80):
+        bass_led = bass_e > max(0.03, avg_bass * 1.40) and (bass_e > 0.10 or vol_norm > 0.80)
+        bass_led = bass_led and bass_e >= mid_e * 0.65 and bass_e >= treble_e * 0.40
+        if is_kick and bass_led:
             self._white_punch = 100.0
             self._beat_punch = 65.0
             self._ripple_pos = 0.0  # Launch explosive shockwave from center!
@@ -826,8 +828,16 @@ class MusicReactiveL930:
                         shock_h = 320 if (dist % 4 == 0) else int(base_hue)
                     segs.append([shock_h, shock_s, shock_b])
                 elif (i < 6 or i > 43) and treble > 0.35 and rng.random() < 0.22:
-                    # Crisp laser white sparkles on outer boundary ICs (hi-hats / cymbals)
-                    segs.append([180, 0, 100])
+                    # High-frequency accents remain saturated and palette-led; only a
+                    # qualified bass-drop envelope is allowed to introduce white.
+                    palette = self.latest_music_state.palette if self.latest_music_state else [(185, 90, 85), (280, 85, 80), (335, 88, 75), (42, 90, 88)]
+                    palette_pos = (
+                        (i / float(NUM_SEGMENTS)) * 0.28
+                        + (self.latest_music_state.centroid_norm if self.latest_music_state else 0.5) * 0.42
+                        + (self.latest_music_state.beat_phase if self.latest_music_state else 0.0) * 0.30
+                    ) % 1.0
+                    spark_h, spark_s, _ = sample_palette_oklab(palette, palette_pos, cyclic=True)
+                    segs.append([int(spark_h), max(72, int(spark_s)), int(78 + min(18, treble * 18))])
                 else:
                     lvl_idx = min(NUM_SEGMENTS - 1, dist * 2)
                     direct_v = int(self._levels[lvl_idx] * 0.45) if self._levels[lvl_idx] > 20 else 0
