@@ -53,7 +53,9 @@ NATIVE_PRESETS: Dict[str, LightEffectPreset] = {
     "ocean":            LightEffectPreset.Ocean,
     "raindrop":         LightEffectPreset.Raindrop,
     "lightning":        LightEffectPreset.Lightning,
+    "aurora":           LightEffectPreset.Aurora,
     "aurora_native":    LightEffectPreset.Aurora,
+    "rainbow":          LightEffectPreset.Rainbow,
     "rainbow_native":   LightEffectPreset.Rainbow,
     "candy_cane":       LightEffectPreset.CandyCane,
     "haunted_mansion":  LightEffectPreset.HauntedMansion,
@@ -70,6 +72,9 @@ NATIVE_ALIASES: Dict[str, str] = {
     "rainbow_native": "rainbow",
     "candy_cane_native": "candy_cane",
     "haunted_mansion_native": "haunted_mansion",
+    "cyberchase": "cyber_chase",
+    "cyberpunk": "cyber_chase",
+    "cyber_punk": "cyber_chase",
 }
 
 
@@ -199,7 +204,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness', 'palette', 'tail_length'],
     },
     'cyber_chase': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Motion',
         'category': 'core',
         'desc': 'Two opposing colored pulses colliding at center with bright mixed flash and passing through',
@@ -215,7 +220,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness', 'palette', 'wave_width'],
     },
     'aurora': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Motion',
         'category': 'core',
         'desc': 'Broad, slow-moving green, teal, and violet curtains with long overlapping transitions',
@@ -231,7 +236,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness'],
     },
     'raindrop': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Motion',
         'category': 'core',
         'desc': 'Dark background punctuated by isolated drops that travel and fade at varied intervals',
@@ -247,7 +252,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness', 'flash_strength'],
     },
     'rainbow': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Seasonal & Novelty',
         'category': 'core',
         'desc': 'Continuous seamless circulating rainbow gradient without abrupt jumps',
