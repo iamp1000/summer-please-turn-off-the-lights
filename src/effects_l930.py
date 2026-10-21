@@ -2480,13 +2480,14 @@ class L930EffectsEngine:
         emerald_rgb = tapo_hsv_to_rgb(137, 95, 100)
         violet_rgb = tapo_hsv_to_rgb(282, 92, 100)
 
-        center_emerald_a = 7.0 + 4.5 * math.sin(t * 0.16 * sp + 0.4)
-        center_emerald_b = 34.0 + 5.5 * math.sin(t * 0.12 * sp + 1.7)
-        center_violet = 23.5 + 12.0 * math.sin(t * 0.14 * sp + 2.1)
+        center_emerald_a = 7.0 + 4.5 * math.sin(t * 0.10 * sp + 0.4)
+        center_emerald_b = 34.0 + 5.5 * math.sin(t * 0.08 * sp + 1.7)
+        center_violet = 23.5 + 12.0 * math.sin(t * 0.09 * sp + 2.1)
 
-        env_a = 0.12 + 0.88 * (0.5 + 0.5 * math.sin(t * 0.34 * sp + 0.6))
-        env_b = 0.10 + 0.90 * (0.5 + 0.5 * math.sin(t * 0.27 * sp + 2.0))
-        env_v = 0.10 + 0.90 * (0.5 + 0.5 * math.sin(t * 0.22 * sp + 3.2))
+        # Long release/attack curves keep the atmosphere calm across 0.5–1 Hz sends.
+        env_a = 0.12 + 0.88 * (0.5 + 0.5 * math.sin(t * 0.18 * sp + 0.6))
+        env_b = 0.10 + 0.90 * (0.5 + 0.5 * math.sin(t * 0.14 * sp + 2.0))
+        env_v = 0.10 + 0.90 * (0.5 + 0.5 * math.sin(t * 0.12 * sp + 3.2))
 
         segs = []
         for i in range(NUM_SEGMENTS):
