@@ -220,16 +220,20 @@ class L930Controller:
         if self.frame_sender is not None:
             self.frame_sender.set_frame_authorizer(authorizer)
 
+    def _is_frame_authorized(self, frame: Any) -> bool:
+        if not self._framebus_managed:
+            return True
+        if not isinstance(frame, dict) or "_producer_id" not in frame or "_generation" not in frame:
+            return False
+        try:
+            return bool(self._frame_authorizer and self._frame_authorizer(frame))
+        except Exception:
+            return False
+
     def submit_frame(self, frame: Any):
         """Submit a bus-authorized frame; managed controllers reject direct producer calls."""
-        if self._framebus_managed:
-            if not isinstance(frame, dict) or "_producer_id" not in frame or "_generation" not in frame:
-                return False
-            try:
-                if not self._frame_authorizer(frame):
-                    return False
-            except Exception:
-                return False
+        if not self._is_frame_authorized(frame):
+            return False
         if self.frame_sender and self._is_on:
             self.frame_sender.submit_frame(frame)
             return True
@@ -372,6 +376,9 @@ class L930Controller:
     # ── Decoupled Transmit ────────────────────────────────────────────────────
 
     async def transmit_frame(self, frame: Any) -> bool:
+        # Revalidate after dequeue and again once the async device lock is acquired.
+        if not self._is_frame_authorized(frame):
+            return False
         """
         Transmits 50-zone HSV frame to the physical L930 hardware.
         Accepts:
@@ -400,6 +407,8 @@ class L930Controller:
         async with self._lock:
             try:
                 await self._ensure_connected()
+                if not self._is_frame_authorized(frame):
+                    return False
                 res = await self._device.set_light_effect(effect)
                 self.last_segments = segs
                 self._last_successful_response = time.time()
@@ -419,6 +428,8 @@ class L930Controller:
             if reconnected:
                 async with self._lock:
                     try:
+                        if not self._is_frame_authorized(frame):
+                            return False
                         res = await self._device.set_light_effect(effect)
                         self._last_successful_response = time.time()
                         return res.is_success() if hasattr(res, "is_success") else bool(res)
