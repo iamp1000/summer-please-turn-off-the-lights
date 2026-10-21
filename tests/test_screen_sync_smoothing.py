@@ -67,12 +67,12 @@ def test_l900_screen_sync_uses_smoothed_dominant_color_not_raw_scene_color():
     assert first["h"] == 350
 
     time.sleep(0.035)
-    sync._dispatch(None, (130, 90, 65), False, SCREEN_PROFILES["video"])
+    sync._dispatch(None, (130, 90, 95), False, SCREEN_PROFILES["video"])
     second = controller.frames[-1]
 
     assert _hue_delta(first["h"], second["h"]) < 20, "L900 ambient color should be smoothed across scene cuts"
     assert sync.latest_screen_data.global_hsv[0] == second["h"]
-    assert sync.latest_screen_data.global_hsv[2] < 65, "brightness should also reflect the smoothed scene state"
+    assert 65 < sync.latest_screen_data.global_hsv[2] < 95, "brightness should also reflect the smoothed scene state"
 
 
 def test_l930_scene_cut_transition_respects_aimd_protection_without_changing_rate():
