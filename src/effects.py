@@ -44,6 +44,7 @@ class AnimationEngine:
         self._thread: Optional[threading.Thread] = None
         self._stop_event: Optional[threading.Event] = None
         self._effect_generation: int = 0
+        self._output_generation: int = 0
         self._last_error: Optional[str] = None
 
         self._current_effect: Optional[Dict[str, Any]] = None
@@ -82,6 +83,8 @@ class AnimationEngine:
             return
 
         self._effect_generation += 1
+        if self._frame_bus:
+            self._output_generation = self._frame_bus.current_generation(self._dev_id, OutputProducer.EFFECT)
         self._start_time = time.monotonic()
         self._start_b = getattr(self._controller, "last_b", 50)
         self._start_h = getattr(self._controller, "last_h", 0)
@@ -189,6 +192,7 @@ class AnimationEngine:
                         hsv=(frame_data["h"], frame_data["s"], frame_data["b"]),
                         brightness=frame_data["b"],
                         transition=trans_ms,
+                        generation=self._output_generation,
                     ))
                     if not published:
                         if stop_event.wait(0.1):
