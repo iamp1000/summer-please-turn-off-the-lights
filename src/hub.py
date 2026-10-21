@@ -515,7 +515,20 @@ class LightHub:
         if any_running:
             for ctx in targets:
                 ctx.audio_sync.stop()
-                self.arbiter.release_output(ctx.dev_id, OutputProducer.AUDIO)
+                # Transition to an authorized static-black scene rather than queueing
+                # an AUDIO black frame that would be invalidated on release.
+                self.arbiter.claim_output(
+                    ctx.dev_id, OutputProducer.STATIC,
+                    on_relinquish=ctx.stop_all_active,
+                )
+                self.frame_bus.publish(FramePacket(
+                    dev_id=ctx.dev_id,
+                    producer=OutputProducer.STATIC,
+                    segments=[[0, 0, 0]] * 50 if ctx.model == "L930" else None,
+                    hsv=(0, 0, 0) if ctx.model != "L930" else None,
+                    brightness=0,
+                    transition=250,
+                ))
                 ctx.state["active_label"] = "Idle"
             if self.composite_mgr.is_active():
                 self.composite_mgr.stop()
