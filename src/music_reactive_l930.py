@@ -191,7 +191,7 @@ class MusicReactiveL930:
             self.stop()
             self.start()
 
-    def _publish_frame(self, frame: dict, output_token=None) -> bool:
+    def _publish_frame(self, frame: dict, output_token=None, allow_stopped: bool = False) -> bool:
         """Route frames through the captured AUDIO ownership generation."""
         if self._frame_bus:
             token = output_token if output_token is not None else self._output_token
@@ -202,6 +202,10 @@ class MusicReactiveL930:
                 self._dev_id, OutputProducer.AUDIO, frame,
                 generation=generation, producer_id=producer_id,
             )
+        # In standalone mode there is no arbiter at send time, so suppress a
+        # stale worker locally. stop()/error paths can explicitly send their final black frame.
+        if not self._running and not allow_stopped:
+            return False
         submit = getattr(self._ctrl, "submit_frame", None)
         if submit:
             submit(frame)
@@ -219,11 +223,13 @@ class MusicReactiveL930:
         """Publish true black if still authorized, then expose the capture failure."""
         message = str(message) or "Audio capture failed."
         token = self._output_token
+        if hasattr(self._ctrl, "clear_frames"):
+            self._ctrl.clear_frames()
         if token is not None:
             self._publish_frame(
                 {"segments": [[0, 0, 0] for _ in range(NUM_SEGMENTS)],
                  "brightness": 0, "transition": 0, "_pre_corrected": True},
-                output_token=token,
+                output_token=token, allow_stopped=True,
             )
         self._last_error = message
         if isinstance(self._app_state, dict):
@@ -238,8 +244,6 @@ class MusicReactiveL930:
             self._stop_event.set()
         if self._coordinator:
             self._coordinator.unregister_subscriber(self)
-        if hasattr(self._ctrl, "clear_frames"):
-            self._ctrl.clear_frames()
 
     def start(self):
         if self._running:
@@ -293,8 +297,6 @@ class MusicReactiveL930:
                 self._coordinator.new_frame_event.set()
 
         thread = self._thread
-        if hasattr(self._ctrl, "clear_frames"):
-            self._ctrl.clear_frames()
         if thread and thread.is_alive() and thread is not threading.current_thread():
             thread.join(timeout=2.0)
         if thread and not thread.is_alive() and self._thread is thread:
@@ -306,6 +308,8 @@ class MusicReactiveL930:
             if isinstance(self._app_state, dict):
                 self._app_state["last_error"] = message
 
+        if hasattr(self._ctrl, "clear_frames"):
+            self._ctrl.clear_frames()
         self._target_segs = [[0, 0, 0] for _ in range(NUM_SEGMENTS)]
         self._rendered_segs = [[0, 0, 0] for _ in range(NUM_SEGMENTS)]
         dark = {"segments": [[0, 0, 0] for _ in range(NUM_SEGMENTS)],
@@ -316,7 +320,7 @@ class MusicReactiveL930:
                 generation=token[0], producer_id=token[1],
             )
         else:
-            self._publish_frame(dark)
+            self._publish_frame(dark, output_token=token, allow_stopped=True)
 
     def _render_loop(
         self, generation: Optional[int] = None, stop_event: Optional[threading.Event] = None
