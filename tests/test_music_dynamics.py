@@ -205,3 +205,80 @@ def test_edm_build_grows_gradually_as_energy_and_section_progress_rise():
     means = [sum(v for _, _, v in frame) / len(frame) for frame in frames]
     assert means[0] < means[1] < means[2], means
     assert all(all(s > 0 for _, s, _ in frame) for frame in frames), "builds should rise in color, not whiten"
+
+
+
+def test_pulse_ripple_survives_protected_one_hertz_send_cadence():
+    from src.visual_styles import PulseStyle
+
+    style = PulseStyle()
+    style.set_params(output_interval_s=1.0)
+    state = _active_state(kick=0.95, onset=0.65, impact=0.65, energy=0.70)
+
+    style.render(state, dt=0.05, num_zones=50)
+    assert style.ripples, "a strong kick should launch a Pulse wave"
+    original_life = style.ripples[0]["life"]
+    assert style.ripples[0]["lifetime"] >= 2.0
+
+    decay_state = _active_state(kick=0.05, onset=0.0, impact=0.0, energy=0.45)
+    for _ in range(10):
+        frame = style.render(decay_state, dt=0.10, num_zones=50)
+
+    assert style.ripples, "Pulse wave must span multiple 1 Hz hardware sends"
+    assert style.ripples[0]["life"] < original_life
+    assert max(v for _, _, v in frame) > 0
+
+
+def test_spectrum_peak_markers_hold_for_multiple_device_send_periods():
+    from src.visual_styles import SpectrumStyle
+
+    style = SpectrumStyle()
+    style.set_params(output_interval_s=1.0)
+    hot_bands = np.full(50, 0.01, dtype=np.float32)
+    hot_bands[0:8] = 0.95
+    hot_state = _active_state(bands=hot_bands, energy=0.65)
+
+    style.render(hot_state, dt=0.10, num_zones=50)
+    initial_peak = max(style.peaks)
+    assert initial_peak > 50
+
+    quiet_bands = np.zeros(50, dtype=np.float32)
+    quiet_state = _active_state(bands=quiet_bands, energy=0.15, kick=0.0, onset=0.0)
+    for _ in range(10):
+        frame = style.render(quiet_state, dt=0.10, num_zones=50)
+
+    assert max(style.peak_hold_timers) > 0.2, "marker should remain held across a 1 Hz send period"
+    assert max(style.peaks) >= initial_peak * 0.95, "peak marker should not vanish between hardware sends"
+    assert len(frame) == 50
+
+
+def test_center_burst_ripple_survives_protected_one_hertz_send_cadence():
+    from src.visual_styles import CenterBurstStyle
+
+    style = CenterBurstStyle()
+    style.set_params(output_interval_s=1.0)
+    hit = _active_state(kick=0.85, onset=0.90, impact=0.75, energy=0.70)
+    style.render(hit, dt=0.05, num_zones=50)
+
+    assert style._ripples, "kick/onset should launch Center Burst"
+    assert style._ripples[0]["lifetime"] >= 1.9
+
+    decay_state = _active_state(kick=0.05, onset=0.02, impact=0.0, energy=0.40)
+    for _ in range(10):
+        frame = style.render(decay_state, dt=0.10, num_zones=50)
+
+    assert style._ripples, "burst should persist across more than one physical frame"
+    assert max(v for _, _, v in frame) > 0
+
+
+def test_spectrum_uses_smooth_multishade_palette_with_distinct_band_energy():
+    from src.visual_styles import SpectrumStyle
+
+    style = SpectrumStyle()
+    bands = np.linspace(0.05, 0.95, 50, dtype=np.float32)
+    state = _active_state(bands=bands, energy=0.55, bass=0.75, mid=0.50, hat=0.35)
+    frame = style.render(state, dt=0.10, num_zones=50)
+
+    hues = [h for h, _, _ in frame]
+    assert len(set(hues)) >= 8, "spectrum should retain smooth intermediate palette shades"
+    assert max(v for _, _, v in frame) > min(v for _, _, v in frame)
