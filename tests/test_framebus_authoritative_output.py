@@ -106,3 +106,24 @@ def test_ownership_change_clears_latest_snapshot_and_pending_frames():
     assert bus.get_latest_frame("strip") is None
     assert controller.frames == []
     assert controller.clear_count >= 2  # first owner claim + ownership switch
+
+def test_new_scene_generation_rejects_previous_session_of_same_producer():
+    arbiter = OutputArbiter()
+    bus = FrameBus(arbiter)
+    controller = FakeController()
+    bus.bind_device("strip", controller)
+
+    arbiter.claim_output("strip", OutputProducer.EFFECT)
+    old_generation, old_producer_id = bus.capture_token("strip", OutputProducer.EFFECT)
+
+    arbiter.claim_output("strip", OutputProducer.EFFECT, renew=True)
+
+    assert bus.publish_frame(
+        "strip",
+        OutputProducer.EFFECT,
+        {"segments": [[130, 90, 65]] * 50, "brightness": 65},
+        generation=old_generation,
+        producer_id=old_producer_id,
+    ) is False
+    assert controller.frames == []
+    assert bus.get_latest_frame("strip") is None
