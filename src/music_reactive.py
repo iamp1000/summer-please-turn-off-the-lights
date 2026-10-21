@@ -329,6 +329,11 @@ class MusicReactive:
                 return
 
         self._last_error = None
+        self._brightness_floor.reset()
+        self._last_active_hsv = None
+        self._silence_duration = 0.0
+        self._silence_count = 0
+        self._powered_down_for_silence = False
         if isinstance(self._app_state, dict):
             self._app_state["last_error"] = None
         self._run_generation += 1
