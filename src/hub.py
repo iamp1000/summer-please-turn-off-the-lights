@@ -83,10 +83,10 @@ class DeviceContext:
     def _consume_frame_packet(self, packet: FramePacket):
         """Single authorized conversion/enqueue point from FrameBus to a device sender."""
         if packet.dev_id != self.dev_id or self.arbiter is None:
-            return
+            return False
         producer_id = packet.producer_id or packet.producer
         if not self.arbiter.is_authorized(self.dev_id, producer_id, packet.generation):
-            return
+            return False
 
         frame = {
             "_producer_id": producer_id,
@@ -103,13 +103,16 @@ class DeviceContext:
             h, sat, value = packet.hsv[:3]
             frame.update({"h": int(h), "s": int(sat), "b": int(value)})
         else:
-            return
+            return False
         for key in ("t_audio_recv", "t_analysis_done", "t_frame_rendered"):
             if key in packet.metadata:
                 frame[key] = packet.metadata[key]
 
-        if self.arbiter.is_authorized(self.dev_id, producer_id, packet.generation):
-            self.controller.submit_frame(frame)
+        # Recheck at enqueue boundary. LatestFrameSender and the controller both check
+        # again immediately before physical I/O, including after waiting for the device lock.
+        if not self.arbiter.is_authorized(self.dev_id, producer_id, packet.generation):
+            return False
+        return self.controller.submit_frame(frame) is not False
 
     def _on_output_owner_changed(self, dev_id: str, old_owner: str, new_owner: str, generation: int):
         if dev_id != self.dev_id:
@@ -475,6 +478,8 @@ class LightHub:
         async def _publish():
             if not getattr(ctx.controller, "_is_on", True):
                 await ctx.controller.turn_on(priority=0)
+            if not getattr(ctx.controller, "_is_on", True):
+                return False
             producer_id = packet.producer_id or packet.producer
             if not self.arbiter.is_authorized(ctx.dev_id, producer_id, packet.generation):
                 return False
