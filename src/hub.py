@@ -510,7 +510,7 @@ class LightHub:
         targets = self._resolve_targets(dev_id)
         mode_data = self.config.get("modes", {}).get(mode_name, {})
         for ctx in targets:
-            self.arbiter.claim_output(ctx.dev_id, OutputProducer.STATIC, on_relinquish=ctx.stop_all_active)
+            self.arbiter.claim_output(ctx.dev_id, OutputProducer.STATIC, on_relinquish=ctx.stop_all_active, force_new_generation=True)
             ctx.stop_all_active()
             ctx.state["power"] = True
             ctx.state["active_label"] = mode_name
@@ -626,7 +626,7 @@ class LightHub:
             if l930_ctx and l930_ctx in targets:
                 l930_ctx.fx_engine.stop()
                 l930_ctx.screen_sync.stop()
-                self.arbiter.claim_output(l930_ctx.dev_id, OutputProducer.AUDIO, on_relinquish=l930_ctx.audio_sync.stop)
+                self.arbiter.claim_output(l930_ctx.dev_id, OutputProducer.AUDIO, on_relinquish=l930_ctx.audio_sync.stop, force_new_generation=True)
                 l930_ctx.state["power"] = True
                 l930_ctx.state["active_label"] = "Audio Spectrum (IC)"
                 l930_ctx.audio_sync.start()
@@ -641,7 +641,7 @@ class LightHub:
                     else:
                         if hasattr(l930_ctx.audio_sync, "get_analyzer"):
                             l900_ctx.audio_sync.set_shared_analyzer(l930_ctx.audio_sync.get_analyzer())
-                        self.arbiter.claim_output(l900_ctx.dev_id, OutputProducer.AUDIO, on_relinquish=l900_ctx.audio_sync.stop)
+                        self.arbiter.claim_output(l900_ctx.dev_id, OutputProducer.AUDIO, on_relinquish=l900_ctx.audio_sync.stop, force_new_generation=True)
                         l900_ctx.state["power"] = True
                         l900_ctx.state["active_label"] = "Audio Reactive"
                         l900_ctx.audio_sync.start()
@@ -649,7 +649,7 @@ class LightHub:
                 for ctx in targets:
                     ctx.fx_engine.stop()
                     ctx.screen_sync.stop()
-                    self.arbiter.claim_output(ctx.dev_id, OutputProducer.AUDIO, on_relinquish=ctx.audio_sync.stop)
+                    self.arbiter.claim_output(ctx.dev_id, OutputProducer.AUDIO, on_relinquish=ctx.audio_sync.stop, force_new_generation=True)
                     ctx.state["power"] = True
                     ctx.state["active_label"] = "Audio Reactive"
                     ctx.audio_sync.start()
@@ -697,7 +697,7 @@ class LightHub:
                 self.arbiter.release_output(ctx.dev_id, OutputProducer.SCREEN_SYNC)
                 ctx.state["active_label"] = "Idle"
             else:
-                self.arbiter.claim_output(ctx.dev_id, OutputProducer.SCREEN_SYNC, on_relinquish=ctx.screen_sync.stop)
+                self.arbiter.claim_output(ctx.dev_id, OutputProducer.SCREEN_SYNC, on_relinquish=ctx.screen_sync.stop, force_new_generation=True)
                 ctx.state["power"] = True
                 ctx.state["active_label"] = "Screen Reactive"
                 ctx.screen_sync.start()
@@ -706,7 +706,7 @@ class LightHub:
     def apply_custom_color(self, dev_id: str, h: int, s: int, v: int):
         targets = self._resolve_targets(dev_id)
         for ctx in targets:
-            self.arbiter.claim_output(ctx.dev_id, OutputProducer.STATIC, on_relinquish=ctx.stop_all_active)
+            self.arbiter.claim_output(ctx.dev_id, OutputProducer.STATIC, on_relinquish=ctx.stop_all_active, force_new_generation=True)
             ctx.stop_all_active()
             ctx.state["power"] = True
             ctx.state["active_label"] = "Custom Wheel"
