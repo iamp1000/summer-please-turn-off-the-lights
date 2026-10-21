@@ -523,6 +523,7 @@ class L930EffectsEngine:
         self._app_state = app_state
         self._frame_bus = frame_bus
         self._dev_id = dev_id
+        self._output_token: Optional[Tuple[int, str]] = None
 
         self._running = False
         self._thread: Optional[threading.Thread] = None
@@ -620,8 +621,13 @@ class L930EffectsEngine:
                 self._app_state["last_error"] = self._last_error
             return False
 
-        # Increment effect generation immediately
+        # Increment effect generation immediately and snapshot output ownership for
+        # this specific producer session. Old workers cannot acquire a new token.
         self._effect_generation += 1
+        self._output_token = (
+            self._frame_bus.capture_token(self._dev_id, OutputProducer.EFFECT)
+            if self._frame_bus else None
+        )
 
         # Invalidate any pending firmware timers from previous effects immediately
         with self._fw_lock:
@@ -1414,27 +1420,29 @@ class L930EffectsEngine:
                 if generation != self._effect_generation or stop_event.is_set():
                     break
 
+                frame_data = {
+                    "segments": corrected,
+                    "brightness": b,
+                    "transition": trans_ms,
+                    "_pre_corrected": True,
+                }
                 if self._frame_bus:
-                    published = self._frame_bus.publish(FramePacket(
-                        dev_id=self._dev_id,
-                        producer=OutputProducer.EFFECT,
-                        segments=corrected,
-                        brightness=b,
-                        transition=trans_ms,
-                    ))
-                    if not published:
-                        # Another producer has output ownership; yield gracefully
+                    if self._output_token is None:
                         if stop_event.wait(0.1):
                             break
                         continue
-
-                if hasattr(self._ctrl, "submit_frame"):
-                    self._ctrl.submit_frame({
-                        "segments": corrected,
-                        "brightness": b,
-                        "transition": trans_ms,
-                        "_pre_corrected": True,
-                    })
+                    token_generation, token_id = self._output_token
+                    published = self._frame_bus.publish_frame(
+                        self._dev_id, OutputProducer.EFFECT, frame_data,
+                        generation=token_generation, producer_id=token_id,
+                    )
+                    if not published:
+                        # Ownership/session changed; this stream must never retag itself.
+                        if stop_event.wait(0.1):
+                            break
+                        continue
+                elif hasattr(self._ctrl, "submit_frame"):
+                    self._ctrl.submit_frame(frame_data)
 
                 self._last_successful_frame = time.time()
                 if isinstance(self._app_state, dict):
