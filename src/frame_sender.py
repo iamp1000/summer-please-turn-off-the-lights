@@ -49,6 +49,11 @@ class LatestFrameSender:
         self._last_sent_segments: Optional[List[List[int]]] = None
         self._last_sent_hsb: Optional[Tuple[int, int, int]] = None
         self._last_transmit_start: float = 0.0
+        self._frame_authorizer: Optional[Callable[[Any], bool]] = None
+
+    def set_frame_authorizer(self, authorizer: Optional[Callable[[Any], bool]]):
+        """Install the last-moment ownership check for bus-managed output."""
+        self._frame_authorizer = authorizer
 
     def set_send_budget(self, max_updates_per_s: float):
         """Dynamically adjusts max updates per second (e.g. 5 for music, 2 for movie)."""
@@ -147,8 +152,9 @@ class LatestFrameSender:
                 s_new = segs[i]
                 s_old = self._last_sent_segments[i]
                 diff_v = abs(int(s_new[2]) - int(s_old[2]))
+                diff_s = abs(int(s_new[1]) - int(s_old[1]))
                 diff_h = (abs(int(s_new[0]) - int(s_old[0])) + 180) % 360 - 180
-                max_delta = max(max_delta, diff_v, abs(diff_h))
+                max_delta = max(max_delta, diff_v, diff_s, abs(diff_h))
                 if max_delta >= self.min_zone_delta:
                     return True
             return False
@@ -163,9 +169,10 @@ class LatestFrameSender:
 
         if self._last_sent_hsb is None:
             return True
-        diff_v = abs(hsb[2] - self._last_sent_hsb[2])
-        diff_h = (abs(hsb[0] - self._last_sent_hsb[0]) + 180) % 360 - 180
-        return max(diff_v, abs(diff_h)) >= self.min_zone_delta
+        diff_v = abs(int(hsb[2]) - int(self._last_sent_hsb[2]))
+        diff_s = abs(int(hsb[1]) - int(self._last_sent_hsb[1]))
+        diff_h = (abs(int(hsb[0]) - int(self._last_sent_hsb[0])) + 180) % 360 - 180
+        return max(diff_v, diff_s, abs(diff_h)) >= self.min_zone_delta
 
     async def _worker_loop(self):
         """Main sender loop running strictly inside the asyncio event loop."""
@@ -199,10 +206,22 @@ class LatestFrameSender:
                 is_zero_frame = True
             elif isinstance(frame, list) and all(x[2] == 0 for x in frame if len(x) >= 3):
                 is_zero_frame = True
+            elif isinstance(frame, dict) and "b" in frame and int(frame.get("b", 1)) == 0:
+                is_zero_frame = True
 
             if not is_zero_frame and not is_timestamped and not self._is_change_significant(frame):
                 self.diagnostics.record_frame_dropped()
                 continue
+
+            # Re-check producer ownership immediately before physical I/O.
+            if self._frame_authorizer is not None:
+                try:
+                    authorized = bool(self._frame_authorizer(frame))
+                except Exception:
+                    authorized = False
+                if not authorized:
+                    self.diagnostics.record_frame_dropped()
+                    continue
 
             # Transmit frame and measure latency
             t_http_sent = time.perf_counter()
