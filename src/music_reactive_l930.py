@@ -68,7 +68,10 @@ class MusicReactiveL930:
         self._preferred_device = preferred_device
 
         self._running = False
-        self._thread = None
+        self._thread: Optional[threading.Thread] = None
+        self._stop_event: Optional[threading.Event] = None
+        self._run_generation = 0
+        self._last_error: Optional[str] = None
         self._updater_future = None
 
         self._levels = np.zeros(NUM_SEGMENTS, dtype=np.float32)
@@ -177,17 +180,24 @@ class MusicReactiveL930:
         self._coordinator = coordinator
 
     def set_device(self, device_name: str | None):
+        was_active = self._running or (
+            isinstance(self._app_state, dict)
+            and self._app_state.get("active_label") in (
+                "Audio Reactive", "Audio Spectrum (IC)", "Audio Error"
+            )
+        )
         self._preferred_device = device_name
-        if self._running:
+        if was_active:
             self.stop()
             self.start()
 
-    def _publish_frame(self, frame: dict) -> bool:
+    def _publish_frame(self, frame: dict, output_token=None) -> bool:
         """Route frames through the captured AUDIO ownership generation."""
         if self._frame_bus:
-            if self._output_token is None:
+            token = output_token if output_token is not None else self._output_token
+            if token is None:
                 return False
-            generation, producer_id = self._output_token
+            generation, producer_id = token
             return self._frame_bus.publish_frame(
                 self._dev_id, OutputProducer.AUDIO, frame,
                 generation=generation, producer_id=producer_id,
@@ -198,9 +208,59 @@ class MusicReactiveL930:
             return True
         return False
 
+    def _is_run_current(self, generation: int, stop_event: threading.Event) -> bool:
+        return (
+            self._running
+            and generation == self._run_generation
+            and not stop_event.is_set()
+        )
+
+    def _report_audio_error(self, message: str):
+        """Publish true black if still authorized, then expose the capture failure."""
+        message = str(message) or "Audio capture failed."
+        token = self._output_token
+        if token is not None:
+            self._publish_frame(
+                {"segments": [[0, 0, 0] for _ in range(NUM_SEGMENTS)],
+                 "brightness": 0, "transition": 0, "_pre_corrected": True},
+                output_token=token,
+            )
+        self._last_error = message
+        if isinstance(self._app_state, dict):
+            self._app_state["last_error"] = message
+            if self._app_state.get("active_label") in (
+                "Audio Reactive", "Audio Spectrum (IC)", "Audio Error"
+            ):
+                self._app_state["active_label"] = "Audio Error"
+        self._running = False
+        self._run_generation += 1
+        if self._stop_event:
+            self._stop_event.set()
+        if self._coordinator:
+            self._coordinator.unregister_subscriber(self)
+        if hasattr(self._ctrl, "clear_frames"):
+            self._ctrl.clear_frames()
+
     def start(self):
         if self._running:
             return
+        old_thread = self._thread
+        if old_thread and old_thread.is_alive():
+            self.stop()
+            old_thread = self._thread
+            if old_thread and old_thread.is_alive():
+                self._report_audio_error(
+                    "Previous music worker is still running; refusing to start a duplicate."
+                )
+                return
+
+        self._last_error = None
+        if isinstance(self._app_state, dict):
+            self._app_state["last_error"] = None
+        self._run_generation += 1
+        generation = self._run_generation
+        stop_event = threading.Event()
+        self._stop_event = stop_event
         self._output_token = (
             self._frame_bus.capture_token(self._dev_id, OutputProducer.AUDIO)
             if self._frame_bus else None
@@ -209,28 +269,72 @@ class MusicReactiveL930:
         if self._coordinator:
             self._coordinator.register_subscriber(self)
             self._coordinator.start()
-            self._thread = threading.Thread(target=self._render_loop, daemon=True, name="MusicReactiveL930RenderLoop")
+            target = self._render_loop
+            name = "MusicReactiveL930RenderLoop"
         else:
-            self._thread = threading.Thread(target=self._run, daemon=True, name="MusicReactiveL930Worker")
+            target = self._run
+            name = "MusicReactiveL930Worker"
+        self._thread = threading.Thread(
+            target=target, args=(generation, stop_event), daemon=True, name=name
+        )
         self._thread.start()
 
     def stop(self):
+        token = self._output_token
         self._running = False
+        self._run_generation += 1
+        self._output_token = None
+        stop_event = self._stop_event
+        if stop_event:
+            stop_event.set()
         if self._coordinator:
             self._coordinator.unregister_subscriber(self)
-        dark = [[0, 0, 0] for _ in range(NUM_SEGMENTS)]
-        self._target_segs = dark
-        self._rendered_segs = dark
+            if hasattr(self._coordinator, "new_frame_event"):
+                self._coordinator.new_frame_event.set()
+
+        thread = self._thread
         if hasattr(self._ctrl, "clear_frames"):
             self._ctrl.clear_frames()
-        self._publish_frame({"segments": dark, "brightness": 0, "transition": 0, "_pre_corrected": True})
+        if thread and thread.is_alive() and thread is not threading.current_thread():
+            thread.join(timeout=2.0)
+        if thread and not thread.is_alive() and self._thread is thread:
+            self._thread = None
+            self._stop_event = None
+        elif thread and thread.is_alive():
+            message = "Music render worker did not stop within 2 seconds."
+            self._last_error = message
+            if isinstance(self._app_state, dict):
+                self._app_state["last_error"] = message
 
-    def _render_loop(self):
+        self._target_segs = [[0, 0, 0] for _ in range(NUM_SEGMENTS)]
+        self._rendered_segs = [[0, 0, 0] for _ in range(NUM_SEGMENTS)]
+        dark = {"segments": [[0, 0, 0] for _ in range(NUM_SEGMENTS)],
+                "brightness": 0, "transition": 0, "_pre_corrected": True}
+        if self._frame_bus and token:
+            self._frame_bus.publish_frame(
+                self._dev_id, OutputProducer.AUDIO, dark,
+                generation=token[0], producer_id=token[1],
+            )
+        else:
+            self._publish_frame(dark)
+
+    def _render_loop(
+        self, generation: Optional[int] = None, stop_event: Optional[threading.Event] = None
+    ):
+        generation = self._run_generation if generation is None else generation
+        stop_event = (self._stop_event or threading.Event()) if stop_event is None else stop_event
         last_t = time.perf_counter()
         target_fps = 60.0
         target_dt = 1.0 / target_fps
 
-        while self._running:
+        while self._is_run_current(generation, stop_event):
+            if self._coordinator and getattr(self._coordinator, "status", None) == "error":
+                self._report_audio_error(
+                    getattr(self._coordinator, "last_error", None)
+                    or "Shared audio capture failed."
+                )
+                break
+
             t0 = time.perf_counter()
             dt = max(0.001, min(0.10, t0 - last_t))
             last_t = t0
@@ -248,9 +352,8 @@ class MusicReactiveL930:
             sleep_time = max(0.001, target_dt - elapsed)
             if self._coordinator and hasattr(self._coordinator, "new_frame_event"):
                 self._coordinator.new_frame_event.wait(timeout=sleep_time)
-                self._coordinator.new_frame_event.clear()
             else:
-                time.sleep(sleep_time)
+                stop_event.wait(sleep_time)
 
     def _render_from_music_state(self, st: MusicState, dt: float, timing: Optional[Dict[str, float]] = None):
         master_ceiling = self._app_state.get("brightness", 100) / 100.0
@@ -369,26 +472,37 @@ class MusicReactiveL930:
 
         self._publish_frame(frame_dict)
 
-    def _run(self):
-        mic = get_audio_input_source(self._sr, self._bs, self._preferred_device)
+    def _run(
+        self, generation: Optional[int] = None, stop_event: Optional[threading.Event] = None
+    ):
+        generation = self._run_generation if generation is None else generation
+        stop_event = (self._stop_event or threading.Event()) if stop_event is None else stop_event
+        try:
+            mic = get_audio_input_source(self._sr, self._bs, self._preferred_device)
+        except Exception as exc:
+            self._report_audio_error(f"Audio input discovery failed: {exc}")
+            return
         if not mic:
-            print("[MusicReactiveL930] No audio input found.")
+            self._report_audio_error(
+                "No audio input source was found. Check the selected loopback device and audio permissions."
+            )
             return
 
         print(f"[MusicReactiveL930] Active audio stream: {mic.name}")
-
         silent_chunks = 0
-        while self._running:
+        while self._is_run_current(generation, stop_event):
             try:
                 with mic.recorder(samplerate=self._sr, blocksize=self._bs, channels=1) as rec:
-                    while self._running:
+                    while self._is_run_current(generation, stop_event):
                         data = rec.record(numframes=self._bs)
                         samples = data[:, 0]
                         rms = float(np.sqrt(np.mean(samples ** 2)))
                         if rms < 0.001:
                             silent_chunks += 1
                             if silent_chunks > 180:
-                                new_mic = get_audio_input_source(self._sr, self._bs, self._preferred_device)
+                                new_mic = get_audio_input_source(
+                                    self._sr, self._bs, self._preferred_device
+                                )
                                 if new_mic and new_mic.id != mic.id:
                                     mic = new_mic
                                     silent_chunks = 0
@@ -396,8 +510,10 @@ class MusicReactiveL930:
                         else:
                             silent_chunks = 0
                         self._process(samples, rms)
-            except Exception:
-                time.sleep(0.3)
+            except Exception as exc:
+                if self._is_run_current(generation, stop_event):
+                    self._report_audio_error(f"Audio capture failed: {exc}")
+                break
 
     def _process(self, samples: np.ndarray, rms: float):
         block_dur = len(samples) / float(self._samplerate)
