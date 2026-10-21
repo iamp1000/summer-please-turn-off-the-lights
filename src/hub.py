@@ -288,9 +288,15 @@ class LightHub:
 
     def set_audio_device(self, device_name: str):
         self.audio_device = device_name
+        audio_labels = ("Audio Reactive", "Audio Spectrum (IC)", "Audio Error")
+        audio_requested = any(
+            ctx.audio_sync.is_running() or ctx.state.get("active_label") in audio_labels
+            for ctx in self.devices.values()
+        )
         if hasattr(self, "audio_coordinator") and self.audio_coordinator:
             self.audio_coordinator.preferred_device = device_name
-            if self.audio_coordinator.is_running():
+            # Also restart an errored/stopped capture worker when audio mode remains selected.
+            if audio_requested:
                 self.audio_coordinator.stop()
                 self.audio_coordinator.start()
         for ctx in self.devices.values():
@@ -313,8 +319,11 @@ class LightHub:
     def get_audio_telemetry(self) -> dict:
         result = {}
         coord_st = None
-        if hasattr(self, "audio_coordinator") and self.audio_coordinator and self.audio_coordinator.is_running():
-            coord_st, _ = self.audio_coordinator.get_latest_state()
+        coordinator = getattr(self, "audio_coordinator", None)
+        if coordinator and getattr(coordinator, "status", None) == "active":
+            coord_st, _ = coordinator.get_latest_state()
+        coord_status = getattr(coordinator, "status", "not_configured") if coordinator else "not_configured"
+        coord_error = getattr(coordinator, "last_error", None) if coordinator else None
 
         for dev_id, ctx in self.devices.items():
             sync = ctx.audio_sync
@@ -335,8 +344,21 @@ class LightHub:
             if not raw_spectrum:
                 raw_spectrum = [0.0] * 50
 
+            uses_shared_capture = coordinator is not None and getattr(sync, "_coordinator", None) is coordinator
+            capture_status = (
+                coord_status if uses_shared_capture
+                else ("error" if getattr(sync, "_last_error", None)
+                      else ("active" if sync.is_running() else "stopped"))
+            )
+            capture_error = coord_error if uses_shared_capture else getattr(sync, "_last_error", None)
+            audio_active = sync.is_running() and (
+                not uses_shared_capture or capture_status == "active"
+            )
+
             result[dev_id] = {
-                "active": sync.is_running(),
+                "active": audio_active,
+                "capture_status": capture_status,
+                "capture_error": capture_error,
                 "spectrum": [float(x) for x in raw_spectrum],
                 "bpm": float(getattr(st, "bpm", getattr(sync, "estimated_bpm", 120.0))),
                 "confidence": float(getattr(st, "bpm_confidence", getattr(sync, "confidence", 0.0))),
