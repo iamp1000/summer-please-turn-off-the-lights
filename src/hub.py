@@ -47,7 +47,10 @@ class DeviceContext:
             "last_error": None,
         }
         
-        self.mode_mgr = ModeManager(modes_cfg, controller, loop_runner)
+        self.mode_mgr = ModeManager(
+            modes_cfg, controller, loop_runner, frame_bus=frame_bus, dev_id=dev_id,
+            arbiter=arbiter, on_relinquish=self.stop_all_active,
+        )
         
         if self.model == "L930":
             self.fx_engine = L930EffectsEngine(controller, loop_runner, self.state, frame_bus=frame_bus, dev_id=dev_id)
