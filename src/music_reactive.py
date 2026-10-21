@@ -11,6 +11,7 @@ import soundcard as sc
 from src.audio_dsp import SpectralFluxOnsetDetector, BPMTracker, DynamicAudioCalibrator, MusicAnalyzer, MusicState, Section
 from src.visual_styles import get_visual_style, STYLE_REGISTRY, create_style_instances, AccentCompositor, DirectorStyle
 from src.frame_bus import FramePacket, OutputProducer
+from src.music_dynamics import MusicBrightnessFloor, music_is_genuinely_active, fade_hsv, silence_fade_duration
 
 
 def list_available_audio_devices() -> List[Dict[str, Any]]:
@@ -155,6 +156,8 @@ class MusicReactive:
         self._pipeline = RenderPipeline(gamma=2.2, r_calib=1.0, g_calib=0.92, b_calib=0.85)
         self._silence_duration = 0.0
         self._powered_down_for_silence = False
+        self._brightness_floor = MusicBrightnessFloor()
+        self._last_active_hsv: Optional[tuple[int, int, int]] = None
 
         # DSP Pipeline: AGC, Onset Detection & Real-Time Beat Tracking
         self._calibrator = DynamicAudioCalibrator(sensitivity=1.0)
@@ -403,11 +406,26 @@ class MusicReactive:
     def _render_from_music_state(self, st: MusicState, dt: float, timing: Optional[Dict[str, float]] = None):
         master_ceiling = self._app_state.get("brightness", 100) / 100.0
         is_movie = (self.style_name == "movie")
+        active_audio = music_is_genuinely_active(st) and not is_movie
+        floor_value = self._brightness_floor.update(
+            st, dt, master_ceiling=master_ceiling, enabled=not is_movie,
+            force_inactive=not active_audio,
+        )
 
-        if (st.energy <= 0.005 or getattr(st, "silent", False)) and not is_movie:
-            self._target_state = (0, 0, 0)
-            self._publish_frame({"h": 0, "s": 0, "b": 0, "_pre_corrected": True})
+        if not active_audio:
+            if not is_movie:
+                self._silence_duration += dt
+                fade_duration = silence_fade_duration(self._controller, fallback_rate=5.0)
+                fade_start = 0.12
+                factor = 1.0 if self._silence_duration <= fade_start else max(
+                    0.0, 1.0 - (self._silence_duration - fade_start) / fade_duration
+                )
+                target = fade_hsv(self._last_active_hsv, factor) if self._last_active_hsv else (0, 0, 0)
+                self._target_state = (target[2], target[0], target[1])
+                self._publish_frame({"h": target[0], "s": target[1], "b": target[2], "_pre_corrected": True})
             return
+
+        self._silence_duration = 0.0
 
         style_key = self.style_name
         # Check direct match in style registry first so dedicated vibe styles are never clobbered
@@ -446,6 +464,8 @@ class MusicReactive:
             self._white_punch = max(0.0, self._white_punch - dt * 150.0)
 
         hc, sc, vc = self._pipeline.correct_hsv_tuple(h, s, b, master_ceiling=master_ceiling)
+        vc = self._brightness_floor.apply_l900((hc, sc, vc), floor_value)[2]
+        self._last_active_hsv = (hc, sc, vc) if vc > 0 else self._last_active_hsv
         self._target_state = (vc, hc, sc)
 
         frame_dict = {"h": hc, "s": sc, "b": vc, "_pre_corrected": True}
