@@ -434,13 +434,13 @@ class LightHub:
             if ctx.model == "L930":
                 from src.modes import build_mode_segments
                 segs = build_mode_segments(mode_data, num_zones=50)
-                self.frame_bus.publish(FramePacket(
+                packet = FramePacket(
                     dev_id=ctx.dev_id,
                     producer=OutputProducer.STATIC,
                     segments=segs,
                     brightness=b,
                     transition=600,
-                ))
+                )
             else:
                 packet = FramePacket(
                     dev_id=ctx.dev_id,
