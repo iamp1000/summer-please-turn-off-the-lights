@@ -251,7 +251,7 @@ class MusicReactive:
     def set_coordinator(self, coordinator: Any):
         self._coordinator = coordinator
 
-    def _publish_frame(self, frame: dict, output_token=None) -> bool:
+    def _publish_frame(self, frame: dict, output_token=None, allow_stopped: bool = False) -> bool:
         """Send frames through the token captured by this audio session."""
         if self._frame_bus:
             token = output_token if output_token is not None else self._output_token
@@ -262,6 +262,10 @@ class MusicReactive:
                 self._dev_id, OutputProducer.AUDIO, frame,
                 generation=generation, producer_id=producer_id,
             )
+        # In standalone mode there is no arbiter at send time, so suppress a
+        # stale worker locally. stop()/error paths can explicitly send their final black frame.
+        if not self._running and not allow_stopped:
+            return False
         submit = getattr(self._controller, "submit_frame", None)
         if submit:
             submit(frame)
@@ -279,10 +283,12 @@ class MusicReactive:
         """Publish a true-black frame if still authorized, then expose the failure."""
         message = str(message) or "Audio capture failed."
         token = self._output_token
+        if hasattr(self._controller, "clear_frames"):
+            self._controller.clear_frames()
         if token is not None:
             self._publish_frame(
                 {"h": 0, "s": 0, "b": 0, "_pre_corrected": True},
-                output_token=token,
+                output_token=token, allow_stopped=True,
             )
         self._last_error = message
         if isinstance(self._app_state, dict):
@@ -297,8 +303,6 @@ class MusicReactive:
             self._stop_event.set()
         if self._coordinator:
             self._coordinator.unregister_subscriber(self)
-        if hasattr(self._controller, "clear_frames"):
-            self._controller.clear_frames()
 
     def start(self):
         if self._running:
@@ -455,8 +459,6 @@ class MusicReactive:
             self._coordinator.unregister_subscriber(self)
             if hasattr(self._coordinator, "new_frame_event"):
                 self._coordinator.new_frame_event.set()
-        if hasattr(self._controller, "clear_frames"):
-            self._controller.clear_frames()
 
         thread = self._thread
         if thread and thread.is_alive() and thread is not threading.current_thread():
@@ -470,6 +472,8 @@ class MusicReactive:
             if isinstance(self._app_state, dict):
                 self._app_state["last_error"] = message
 
+        if hasattr(self._controller, "clear_frames"):
+            self._controller.clear_frames()
         self._target_state = (0, 0, 0)
         dark = {"h": 0, "s": 0, "b": 0, "_pre_corrected": True}
         if self._frame_bus and token:
@@ -478,7 +482,7 @@ class MusicReactive:
                 generation=token[0], producer_id=token[1],
             )
         else:
-            self._publish_frame(dark)
+            self._publish_frame(dark, output_token=token, allow_stopped=True)
 
     def _should_send(self, b, h, s):
         if self._last_sent_state is None:
