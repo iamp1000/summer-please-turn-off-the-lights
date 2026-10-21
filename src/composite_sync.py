@@ -45,6 +45,7 @@ class CompositeSystemManager:
         self.mode = "off"
         self._running = False
         self._thread: Optional[threading.Thread] = None
+        self._output_token: Optional[tuple[int, str]] = None
 
         # Time-based smoothers for brightness, chromaticity, and saturation
         self._v_smoother = AsymmetricSmoother(tau_attack=0.06, tau_decay=0.30)
@@ -82,6 +83,11 @@ class CompositeSystemManager:
     def start(self):
         if self._running:
             return
+        l900_id = self._get_l900_dev_id() or "strip1"
+        self._output_token = (
+            self.hub.frame_bus.capture_token(l900_id, OutputProducer.COMPOSITE_FOLLOWER)
+            if getattr(self.hub, "frame_bus", None) else None
+        )
         self._running = True
         self._last_time = time.time()
         self._thread = threading.Thread(target=self._run, daemon=True, name="CompositeSystemWorker")
@@ -258,18 +264,14 @@ class CompositeSystemManager:
                     final_s = max(0, min(100, smoothed_s))
                     final_v = max(1, min(100, smoothed_v))
 
-                # 4. Submit to FrameBus and Physical Transmitter
-                if hasattr(self.hub, "frame_bus") and self.hub.frame_bus:
-                    packet = FramePacket(
-                        dev_id=l900_id,
-                        producer=OutputProducer.COMPOSITE_FOLLOWER,
-                        hsv=(final_h, final_s, final_v),
-                        brightness=final_v,
+                # 4. Submit only to the authoritative FrameBus consumer.
+                if getattr(self.hub, "frame_bus", None) and self._output_token:
+                    generation, producer_id = self._output_token
+                    self.hub.frame_bus.publish_frame(
+                        l900_id, OutputProducer.COMPOSITE_FOLLOWER,
+                        {"h": final_h, "s": final_s, "b": final_v},
+                        generation=generation, producer_id=producer_id,
                     )
-                    self.hub.frame_bus.publish(packet)
-
-                if l900_ctx and hasattr(l900_ctx.controller, "submit_frame"):
-                    l900_ctx.controller.submit_frame({"h": final_h, "s": final_s, "b": final_v})
 
                 time.sleep(0.033)  # ~30 Hz smooth update pacing
             except Exception:
