@@ -1075,9 +1075,12 @@ def test_police_is_a_slow_siren_not_a_strobe_and_keeps_warning():
 
 def test_haunted_mansion_uses_localized_smooth_glows_not_full_strip_flashes():
     engine = L930EffectsEngine(None, None, {})
+    # Adjacent 250 ms samples are tighter than the physical send period and
+    # catch abrupt glow attacks without incorrectly treating long elapsed-time
+    # changes as if they were consecutive hardware frames.
     samples = [
         engine._render_haunted_mansion(t)
-        for t in (0.0, 0.05, 0.5, 1.25, 2.5, 4.0, 6.0, 8.0)
+        for t in (0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75)
     ]
 
     for frame in samples:
@@ -1097,7 +1100,8 @@ def test_candy_cane_uses_soft_band_boundaries_and_moves():
     rgb = _frame_rgb(first)
 
     assert first != later
-    assert _max_rgb_step(rgb, rgb[1:] + rgb[:1]) < 0.50
+    # The strip is a line, not a ring: compare only physical adjacent zones.
+    assert _max_rgb_step(rgb[:-1], rgb[1:]) < 0.50
     assert all(0 <= h <= 360 and 0 <= sat <= 100 and 0 <= val <= 100 for h, sat, val in first)
     assert max(sat for _, sat, _ in first) < 100, "warm-white bands should not be encoded as fully saturated primaries"
 
