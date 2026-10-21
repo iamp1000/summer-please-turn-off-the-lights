@@ -100,6 +100,8 @@ class DeviceContext:
         elif packet.hsv is not None:
             h, sat, value = packet.hsv[:3]
             frame.update({"h": int(h), "s": int(sat), "b": int(value)})
+        elif packet.color_temp is not None:
+            frame["color_temp"] = int(packet.color_temp)
         else:
             return
         for key in ("t_audio_recv", "t_analysis_done", "t_frame_rendered"):
@@ -492,6 +494,16 @@ class LightHub:
                     dev_id=ctx.dev_id,
                     producer=OutputProducer.STATIC,
                     segments=segs,
+                    brightness=b,
+                    transition=600,
+                ))
+            elif "color_temp" in mode_data:
+                # Keep L900 CCT as a native command routed through the same authorized sender.
+                self.frame_bus.publish(FramePacket(
+                    dev_id=ctx.dev_id,
+                    producer=OutputProducer.STATIC,
+                    color_temp=int(mode_data["color_temp"]),
+                    hsv=(h, s, b),  # useful preview approximation only
                     brightness=b,
                     transition=600,
                 ))
