@@ -34,6 +34,7 @@ except ImportError:
 from src.pipeline import ZoneAsymmetricSmoother, AsymmetricSmoother
 from src.frame_bus import FramePacket, OutputProducer
 from src.logger import log
+from src.music_dynamics import effective_send_rate
 
 user32 = ctypes.windll.user32
 
@@ -190,6 +191,10 @@ class ScreenSync:
         self._l900_smoother = AsymmetricSmoother(attack_rate=0.70, decay_rate=0.22)
         self._last_sampled_v = 50.0
         self._rendered_segs: list[list[int]] = [[0, 0, 0]] * 50
+        self._last_dispatch_monotonic: Optional[float] = None
+        self._smoothed_global_hsv: Optional[Tuple[int, int, int]] = None
+        self._smoothed_columns: Optional[List[Tuple[int, int, int]]] = None
+        self._last_scene_cut = False
         self.latest_screen_data: ScreenData = ScreenData()
 
         self._load_config()
@@ -320,9 +325,153 @@ class ScreenSync:
                 log.debug(f"[ScreenSync] Frame notice: {e}")
                 time.sleep(0.2)
 
+    @staticmethod
+    def _blend_hsv(previous: Tuple[int, int, int], target: Tuple[int, int, int], alpha: float) -> Tuple[int, int, int]:
+        """Interpolate HSV with circular hue distance; never jump across the hue seam."""
+        alpha = max(0.0, min(1.0, float(alpha)))
+        ph, ps, pv = previous
+        th, ts, tv = target
+        dh = (int(th) - int(ph) + 180) % 360 - 180
+        hue = int(round((int(ph) + alpha * dh) % 360)) % 360
+        sat = int(round(int(ps) + alpha * (int(ts) - int(ps))))
+        val = int(round(int(pv) + alpha * (int(tv) - int(pv))))
+        return hue, max(0, min(100, sat)), max(0, min(100, val))
+
     def _dispatch(self, segs, global_hsv, is_l930: bool, profile: dict):
-        cut_thresh = profile["cut_threshold"]
+        """Smooth dominant and per-zone screen colors, including abrupt scene cuts."""
+        cut_thresh = float(profile["cut_threshold"])
         master_ceiling = self._app_state.get("brightness", 100) / 100.0
+
+        now_mono = time.monotonic()
+        if self._last_dispatch_monotonic is None:
+            dt = 1.0 / 30.0
+        else:
+            dt = max(0.001, min(0.20, now_mono - self._last_dispatch_monotonic))
+        self._last_dispatch_monotonic = now_mono
+
+        target_global = tuple(int(v) for v in global_hsv)
+        target_columns = (
+            [tuple(int(v) for v in zone[:3]) for zone in segs[:50]]
+            if segs else [target_global] * 50
+        )
+        if len(target_columns) < 50:
+            target_columns.extend([target_columns[-1] if target_columns else target_global] * (50 - len(target_columns)))
+
+        previous_global = self._smoothed_global_hsv
+        previous_columns = self._smoothed_columns
+        is_cut = False
+        if previous_global is not None:
+            hue_delta = abs((target_global[0] - previous_global[0] + 180) % 360 - 180)
+            sat_delta = abs(target_global[1] - previous_global[1])
+            val_delta = abs(target_global[2] - previous_global[2]) / 100.0
+
+            mean_zone_hue_delta = 0.0
+            mean_zone_sat_delta = 0.0
+            mean_zone_val_delta = 0.0
+            if previous_columns and target_columns:
+                n = min(len(previous_columns), len(target_columns))
+                if n:
+                    h_deltas = [
+                        abs((target_columns[i][0] - previous_columns[i][0] + 180) % 360 - 180)
+                        for i in range(n)
+                    ]
+                    mean_zone_hue_delta = sum(h_deltas) / n
+                    mean_zone_sat_delta = sum(abs(target_columns[i][1] - previous_columns[i][1]) for i in range(n)) / n
+                    mean_zone_val_delta = sum(abs(target_columns[i][2] - previous_columns[i][2]) for i in range(n)) / (100.0 * n)
+
+            # A cut may be a major color change with almost no luminance change.
+            is_cut = (
+                val_delta >= cut_thresh
+                or (min(target_global[1], previous_global[1]) >= 28 and hue_delta >= 48)
+                or sat_delta >= 36
+                or mean_zone_val_delta >= cut_thresh
+                or (previous_columns is not None and mean_zone_hue_delta >= 58 and mean_zone_sat_delta >= 18)
+            )
+
+        # Normal motion follows the existing video/gaming/desktop profile;
+        # hard cuts use a significantly longer time constant instead of snapping.
+        profile_tau = {"video": 0.24, "gaming": 0.16, "desktop": 0.32}.get(self._profile_name, 0.24)
+        cut_tau = max(0.72, profile_tau * 3.5)
+        tau = cut_tau if is_cut else profile_tau
+        alpha = 1.0 - math.exp(-dt / max(0.01, tau))
+
+        if previous_global is None:
+            smoothed_global = target_global
+            smoothed_columns = target_columns
+        else:
+            smoothed_global = self._blend_hsv(previous_global, target_global, alpha)
+            if previous_columns is None or len(previous_columns) != len(target_columns):
+                smoothed_columns = target_columns
+            else:
+                smoothed_columns = [
+                    self._blend_hsv(previous_columns[i], target_columns[i], alpha)
+                    for i in range(len(target_columns))
+                ]
+
+        self._smoothed_global_hsv = smoothed_global
+        self._smoothed_columns = smoothed_columns
+        self._last_scene_cut = is_cut
+        self._last_sampled_v = float(smoothed_global[2])
+
+        # MovieStyle consumes this exact smoothed dominant/column-color snapshot.
+        self.latest_screen_data = ScreenData(
+            global_hsv=smoothed_global,
+            column_hsvs=list(smoothed_columns),
+            is_static=False,
+            timestamp=time.time(),
+        )
+
+        if is_l930 and segs:
+            if previous_columns is None:
+                # Seed the per-zone smoother at the first valid screen sample; avoid a
+                # startup fade from the smoother's default black array.
+                self._zone_smoother.current_h = np.asarray([x[0] for x in smoothed_columns], dtype=np.float32)
+                self._zone_smoother.current_s = np.asarray([x[1] for x in smoothed_columns], dtype=np.float32)
+                self._zone_smoother.current_v = np.asarray([x[2] for x in smoothed_columns], dtype=np.float32)
+                smoothed_segs = [list(x) for x in smoothed_columns]
+            else:
+                smoothed_segs = self._zone_smoother.update(smoothed_columns, dt=dt)
+
+            self._rendered_segs = smoothed_segs
+            scaled_b = max(1, int(100 * master_ceiling))
+
+            configured_rate = getattr(self._controller, "_max_updates_per_s", 8.0)
+            effective_rate = effective_send_rate(self._controller, fallback_rate=configured_rate)
+            cadence_transition = int(round(980.0 / effective_rate))
+            configured_transition = int(getattr(self._controller, "music_transition_ms", 0) or 0)
+            transition = max(configured_transition, cadence_transition, 800 if is_cut else 0)
+            transition = max(0, min(6000, transition))
+
+            frame = {
+                "segments": smoothed_segs,
+                "brightness": scaled_b,
+                "transition": transition,
+            }
+            if self._frame_bus:
+                if self._output_token:
+                    generation, producer_id = self._output_token
+                    self._frame_bus.publish_frame(
+                        self._dev_id, OutputProducer.SCREEN_SYNC, frame,
+                        generation=generation, producer_id=producer_id,
+                    )
+            elif hasattr(self._controller, "submit_frame"):
+                self._controller.submit_frame(frame)
+        else:
+            gh, gs, gv = smoothed_global
+            final_b = max(1, int(gv * master_ceiling))
+            frame = {"h": gh, "s": gs, "b": final_b}
+            if self._frame_bus:
+                if self._output_token:
+                    generation, producer_id = self._output_token
+                    self._frame_bus.publish_frame(
+                        self._dev_id, OutputProducer.SCREEN_SYNC, frame,
+                        generation=generation, producer_id=producer_id,
+                    )
+            elif hasattr(self._controller, "submit_frame"):
+                self._controller.submit_frame(frame)
+
+
+
 
         col_tuples = [tuple(s) for s in segs] if segs else [global_hsv] * 50
         self.latest_screen_data = ScreenData(
