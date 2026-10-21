@@ -535,52 +535,6 @@ class LightHub:
             self.publish_static_frame(ctx, packet)
         self.notify_change()
 
-        targets = self._resolve_targets(dev_id)
-        mode_data = self.config.get("modes", {}).get(mode_name, {})
-        for ctx in targets:
-            self.arbiter.claim_output(ctx.dev_id, OutputProducer.STATIC, on_relinquish=ctx.stop_all_active)
-            ctx.stop_all_active()
-            ctx.state["power"] = True
-            ctx.state["active_label"] = mode_name
-            # Turn-on is a device control; scene colour data itself is routed by FrameBus.
-            self.loop_runner.run(ctx.controller.turn_on(priority=0))
-            b = mode_data.get("brightness", 50)
-            h = mode_data.get("hue", 0)
-            s = mode_data.get("saturation", 0)
-            if "color_temp" in mode_data:
-                norm_k = max(0.0, min(1.0, (int(mode_data["color_temp"]) - 2500) / 4000.0))
-                h = int(30 + (210 - 30) * norm_k)
-                s = int(55 - 40 * norm_k)
-            if ctx.model == "L930":
-                from src.modes import build_mode_segments
-                segs = build_mode_segments(mode_data, num_zones=50)
-                self.frame_bus.publish(FramePacket(
-                    dev_id=ctx.dev_id,
-                    producer=OutputProducer.STATIC,
-                    segments=segs,
-                    brightness=b,
-                    transition=600,
-                ))
-            elif "color_temp" in mode_data:
-                # Keep L900 CCT as a native command routed through the same authorized sender.
-                self.frame_bus.publish(FramePacket(
-                    dev_id=ctx.dev_id,
-                    producer=OutputProducer.STATIC,
-                    color_temp=int(mode_data["color_temp"]),
-                    hsv=(h, s, b),  # useful preview approximation only
-                    brightness=b,
-                    transition=600,
-                ))
-            else:
-                self.frame_bus.publish(FramePacket(
-                    dev_id=ctx.dev_id,
-                    producer=OutputProducer.STATIC,
-                    hsv=(h, s, b),
-                    brightness=b,
-                    transition=600,
-                ))
-        self.notify_change()
-
     def apply_effect(self, dev_id: str, effect_name: str) -> bool:
         targets = self._resolve_targets(dev_id)
 
