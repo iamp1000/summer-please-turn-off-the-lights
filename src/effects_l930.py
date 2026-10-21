@@ -410,7 +410,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness'],
     },
     'hearth': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Motion',
         'category': 'alias',
         'desc': 'Merged into campfire_hearth: dynamic warm coal bed and flickering fire tongues',
@@ -421,7 +421,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness'],
     },
     'glitter_cascade': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Ambient',
         'category': 'alias',
         'desc': 'Merged into starfield: slow drifting base palette with dense micro-sparkles',
@@ -443,7 +443,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness', 'particle_density'],
     },
     'dual_wipe': {
-        'kind': 'firmware',
+        'kind': 'streamed_slow',
         'group': 'Motion',
         'category': 'alias',
         'desc': 'Merged into cyber_chase: dual-head bi-directional wipe meeting at center',
@@ -476,7 +476,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness', 'flash_strength'],
     },
     'infinite_prism': {
-        'kind': 'firmware',
+        'kind': 'streamed_slow',
         'group': 'Seasonal & Novelty',
         'category': 'alias',
         'desc': 'Merged into rainbow: multi-stage seamless spectral gradient cycle',
@@ -606,7 +606,28 @@ class L930EffectsEngine:
         if changed and self._active_kind == "firmware" and self._active_effect_name:
             self._redeploy_current_firmware_effect()
 
-    def start(self, effect_name: str, palette_name: Optional[str] = None, speed: Optional[float] = None, brightness: Optional[int] = None) -> bool:
+    def reset_parameters(self):
+        """Resets all dynamic effect parameters to clean initial baseline defaults."""
+        self._speed = 1.0
+        self._brightness = 50
+        self._palette_name = "sunset"
+        self._tail_length = 1.0
+        self._particle_density = 1.0
+        self._wave_width = 1.0
+        self._flash_strength = 1.0
+
+    def start(
+        self,
+        effect_name: str,
+        palette_name: Optional[str] = None,
+        speed: Optional[float] = None,
+        brightness: Optional[int] = None,
+        tail_length: Optional[float] = None,
+        particle_density: Optional[float] = None,
+        wave_width: Optional[float] = None,
+        flash_strength: Optional[float] = None,
+        **kwargs: Any,
+    ) -> bool:
         if isinstance(self._app_state, dict):
             self._app_state["effect_status"] = "requested"
             self._app_state["last_error"] = None
@@ -642,6 +663,13 @@ class L930EffectsEngine:
 
         self._last_error = None
 
+        # Reset effect-specific tuning parameters to clean baseline defaults so prior overrides don't leak
+        self._speed = 1.0
+        self._tail_length = 1.0
+        self._particle_density = 1.0
+        self._wave_width = 1.0
+        self._flash_strength = 1.0
+
         meta = EFFECT_CATALOG[key]
         if "alias_of" in meta:
             alias_meta = meta
@@ -654,6 +682,14 @@ class L930EffectsEngine:
                     speed = p_val
                 elif p_name == "brightness" and brightness is None:
                     brightness = p_val
+                elif p_name == "tail_length" and tail_length is None:
+                    tail_length = p_val
+                elif p_name == "particle_density" and particle_density is None:
+                    particle_density = p_val
+                elif p_name == "wave_width" and wave_width is None:
+                    wave_width = p_val
+                elif p_name == "flash_strength" and flash_strength is None:
+                    flash_strength = p_val
                 elif hasattr(self, f"_{p_name}"):
                     setattr(self, f"_{p_name}", p_val)
 
@@ -666,6 +702,14 @@ class L930EffectsEngine:
             self._speed = max(0.2, min(3.0, float(speed)))
         if brightness is not None:
             self._brightness = max(1, min(100, int(brightness)))
+        if tail_length is not None:
+            self._tail_length = max(0.2, min(3.0, float(tail_length)))
+        if particle_density is not None:
+            self._particle_density = max(0.2, min(3.0, float(particle_density)))
+        if wave_width is not None:
+            self._wave_width = max(0.2, min(3.0, float(wave_width)))
+        if flash_strength is not None:
+            self._flash_strength = max(0.2, min(3.0, float(flash_strength)))
 
         kind = meta["kind"]
         self._active_effect_name = key
@@ -1252,25 +1296,6 @@ class L930EffectsEngine:
             fx.id = make_effect_id(f"camphearth_s{int(round(self._speed * 100))}_b{b}")
             return fx
 
-        elif name == "dual_wipe":
-            c1 = pal[0] if pal else (280, 85, 90)
-            c2 = pal[1] if len(pal) > 1 else (180, 90, 90)
-            seq = [c1, [c1[0], c1[1], 15], c2, [c2[0], c2[1], 15]]
-            trans = int(min(6000, 750 * sp_factor))
-            return build_firmware_sequence_effect(
-                name="DualWipe", sequence=seq, spread=12, direction=3, transition=trans, brightness=b
-            )
-
-        elif name == "infinite_prism":
-            seq = [
-                [0, 100, 100], [45, 100, 100], [90, 100, 100], [135, 100, 100],
-                [180, 100, 100], [225, 100, 100], [270, 100, 100], [315, 100, 100],
-            ]
-            trans = int(min(6000, 1500 * sp_factor))
-            return build_firmware_sequence_effect(
-                name="InfPrism", sequence=seq, spread=8, direction=1, transition=trans, brightness=b
-            )
-
         if name in EFFECT_CATALOG and "alias_of" in EFFECT_CATALOG[name]:
             return self._build_effect_payload(EFFECT_CATALOG[name]["alias_of"])
 
@@ -1657,8 +1682,9 @@ class L930EffectsEngine:
                 sigma1 = 1.8 if d1 <= 0.0 else tail_len
                 sigma2 = 1.8 if d2 >= 0.0 else tail_len
 
-            w1 = math.exp(-0.5 * (d1 / sigma1) ** 2)
-            w2 = math.exp(-0.5 * (d2 / sigma2) ** 2)
+            flash_mult = max(0.2, getattr(self, "_flash_strength", 1.0))
+            w1 = math.exp(-0.5 * (d1 / sigma1) ** 2) * min(1.5, flash_mult)
+            w2 = math.exp(-0.5 * (d2 / sigma2) ** 2) * min(1.5, flash_mult)
             w3 = math.exp(-0.5 * (d3 / 2.2) ** 2) * 0.45
 
             # Base ambient floor
@@ -1672,7 +1698,6 @@ class L930EffectsEngine:
             b += c1_rgb[2] * w1 + c2_rgb[2] * w2 + c3_rgb[2] * w3
 
             # High-energy collision flash / specular impact bloom at center scaled by flash_strength
-            flash_mult = max(0.2, getattr(self, "_flash_strength", 1.0))
             if collision_factor > 0.0:
                 center_dist = abs(i - 24.5)
                 impact_bloom = collision_factor * math.exp(-0.5 * (center_dist / 2.2) ** 2) * flash_mult
@@ -1687,7 +1712,7 @@ class L930EffectsEngine:
             h, s, v = rgb_to_tapo_hsv(r_clamped, g_clamped, b_clamped)
 
             # Boost brightness at heads
-            peak_w = max(w1, w2, w3, collision_factor)
+            peak_w = max(w1, w2, w3, collision_factor * flash_mult)
             v = int(max(10, min(100, 15.0 + peak_w * 85.0)))
             segs.append([h, s, v])
 
@@ -2517,6 +2542,24 @@ class L930EffectsEngine:
         finally:
             self._flash_strength = old_f
 
+    def _render_dual_wipe(self, t: float) -> List[List[int]]:
+        """Dual-head converging wipe with flash multiplier."""
+        old_f = getattr(self, "_flash_strength", 1.0)
+        self._flash_strength = old_f * 1.5
+        try:
+            return self._render_collider_chase(t)
+        finally:
+            self._flash_strength = old_f
+
+    def _render_infinite_prism(self, t: float) -> List[List[int]]:
+        """Spectral cycle with speed boost multiplier."""
+        old_s = getattr(self, "_speed", 1.0)
+        self._speed = old_s * 1.5
+        try:
+            return self._render_rainbow(t)
+        finally:
+            self._speed = old_s
+
     def _compute(self, name: str, t: float = 0.0, apply_brightness: bool = False) -> List[List[int]]:
         """Realistic preview generator and backward compatibility computation for all catalog effects and aliases."""
         segs = self._compute_raw(name, t)
@@ -2586,7 +2629,7 @@ class L930EffectsEngine:
             return self._render_vaporwave_neon(t)
         elif eff == "lantern_sweep":
             return self._render_lantern_sweep(t)
-        elif eff == "aurora":
+        elif eff in ("aurora", "reactive_aurora"):
             return self._render_aurora(t)
         elif eff in ("deep_ocean", "bioluminescent_abyss"):
             return self._render_deep_ocean(t)
@@ -2639,7 +2682,20 @@ class L930EffectsEngine:
                 segs.append([h, s, v])
             return segs
 
+        from src.visual_styles import STYLE_REGISTRY, MusicState, Section
+        if eff in STYLE_REGISTRY:
+            style = STYLE_REGISTRY[eff]
+            sim_state = MusicState(
+                section=Section.VERSE,
+                energy=0.55 + 0.35 * math.sin(t * 2.0),
+                bass=0.5 + 0.4 * math.sin(t * 3.0),
+                mid=0.5 + 0.3 * math.cos(t * 2.5),
+                transient=0.8 if (math.sin(t * 4.0) > 0.8) else 0.0,
+                silent=False,
+            )
+            return [list(col) for col in style.render(sim_state, dt=0.05, num_zones=NUM_SEGMENTS)]
+
         if eff in EFFECT_CATALOG and "alias_of" in EFFECT_CATALOG[eff]:
             return self._compute_raw(EFFECT_CATALOG[eff]["alias_of"], t)
 
-        return [[30, 80, 60]] * NUM_SEGMENTS
+        return [[0, 0, 0]] * NUM_SEGMENTS

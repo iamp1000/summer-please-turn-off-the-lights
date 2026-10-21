@@ -642,11 +642,22 @@ class L930Controller:
                         await self._device.turn_off()
                     except Exception:
                         pass
-                    if hasattr(self._device, "client") and hasattr(self._device.client, "close"):
-                        try:
-                            await self._device.client.close()
-                        except Exception:
-                            pass
+                    if hasattr(self._device, "client"):
+                        client = self._device.client
+                        for session_attr in ("_session", "session", "http_session"):
+                            sess = getattr(client, session_attr, None)
+                            if sess is not None and hasattr(sess, "close") and not sess.closed:
+                                try:
+                                    await sess.close()
+                                except Exception:
+                                    pass
+                        if hasattr(client, "close"):
+                            try:
+                                res = client.close()
+                                if asyncio.iscoroutine(res):
+                                    await res
+                            except Exception:
+                                pass
             except Exception as e:
                 log.debug(f"[{self.dev_id}] clean_shutdown notice: {e}")
             finally:

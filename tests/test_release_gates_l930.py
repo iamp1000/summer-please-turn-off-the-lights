@@ -224,3 +224,188 @@ def test_gate_music_reactivity_end_to_end():
     v_values = [v for h, s, v in f_trans]
     assert max(v_values) > min(v_values) + 20, "Transient must create visible crest peak"
     assert min(v_values) < 50, "Valleys must remain dark so the whole strip does not flash"
+
+
+def test_gate_alias_variations_preserve_intended_differences():
+    """
+    Release Gate 3 - Alias Fidelity:
+    Alias variations must preserve their intended differences and not produce
+    identical outputs to their base effects under default settings.
+    """
+    mock_ctrl = MagicMock()
+    mock_ctrl.set_native_effect.return_value = True
+    mock_runner = MagicMock()
+    mock_runner.run.side_effect = lambda coro: MagicMock(result=lambda timeout: True)
+    engine = L930EffectsEngine(controller=mock_ctrl, loop_runner=mock_runner, app_state={})
+
+    alias_pairs = [
+        ("dusk", "golden_hour"),
+        ("glitter_cascade", "starfield"),
+        ("confetti", "prism_sparks"),
+        ("dual_wipe", "cyber_chase"),
+        ("sonar_sweep", "radar_sweep"),
+        ("coordinated_lightning", "lightning"),
+        ("infinite_prism", "rainbow"),
+    ]
+
+    time_steps = [0.4, 0.85, 1.6, 3.45, 4.8]
+
+    for alias, base in alias_pairs:
+        engine.start(alias)
+        alias_sig = tuple(tuple(tuple(c) for c in engine._compute(alias, t=t)) for t in time_steps)
+        engine.start(base)
+        base_sig = tuple(tuple(tuple(c) for c in engine._compute(base, t=t)) for t in time_steps)
+
+        assert alias_sig != base_sig, (
+            f"Alias fidelity failure: {alias} produces identical trajectory to base {base}!"
+        )
+
+
+def test_gate_invalid_effect_requests_fail_cleanly():
+    """
+    Release Gate 1 - Error Handling & Edge Cases:
+    Invalid effect requests must fail cleanly without unhandled exceptions,
+    setting appropriate error status and returning explicit dark frames.
+    """
+    app_state = {}
+    mock_ctrl = MagicMock()
+    mock_runner = MagicMock()
+    engine = L930EffectsEngine(controller=mock_ctrl, loop_runner=mock_runner, app_state=app_state)
+
+    invalid_names = ["completely_fake_effect_xyz", "", "   ", "nonexistent_effect_999"]
+    for bad_name in invalid_names:
+        ok = engine.start(bad_name)
+        assert not ok, f"Expected start({bad_name!r}) to return False"
+        assert app_state.get("effect_status") == "failed"
+        assert "Unknown L930 effect" in app_state.get("last_error", "")
+
+    # In _compute(): invalid effect returns explicit dark state [0, 0, 0] * 50
+    dark_frame = engine._compute("unknown_xyz")
+    assert len(dark_frame) == 50
+    assert all(c == [0, 0, 0] for c in dark_frame), "Unrecognized effect must return explicit dark zones [0, 0, 0]"
+
+
+def test_gate_regression_parameter_limits_and_brightness():
+    """
+    Release Gate 4 - Parameter Bounds & Brightness Scaling:
+    - Zero / minimum brightness scales down without zero division or errors.
+    - Parameter inputs beyond nominal ranges clamp cleanly to safe bounds.
+    - reset_parameters() restores all settings to clean baseline defaults.
+    """
+    engine = L930EffectsEngine(controller=None, loop_runner=None, app_state={})
+
+    # 1. Zero / low brightness
+    engine.set_parameters(brightness=1)
+    f_min = engine._compute("tide", t=1.0, apply_brightness=True)
+    assert len(f_min) == 50
+    assert all(1 <= v <= 100 for _, _, v in f_min)
+    assert all(v <= 5 for _, _, v in f_min), "Minimum brightness (1%) should produce very dim values"
+
+    # 2. Maximum brightness
+    engine.set_parameters(brightness=100)
+    f_max = engine._compute("tide", t=1.0, apply_brightness=True)
+    assert any(v >= 40 for _, _, v in f_max)
+
+    # 3. Parameter limits clamping
+    engine.set_parameters(speed=-10.0)
+    assert engine._speed == 0.2
+    engine.set_parameters(speed=99.0)
+    assert engine._speed == 3.0
+
+    engine.set_parameters(particle_density=-5.0)
+    assert engine._particle_density == 0.2
+    engine.set_parameters(particle_density=50.0)
+    assert engine._particle_density == 3.0
+
+    engine.set_parameters(tail_length=-1.0)
+    assert engine._tail_length == 0.2
+    engine.set_parameters(tail_length=50.0)
+    assert engine._tail_length == 3.0
+
+    engine.set_parameters(wave_width=-0.5)
+    assert engine._wave_width == 0.2
+    engine.set_parameters(wave_width=25.0)
+    assert engine._wave_width == 3.0
+
+    engine.set_parameters(flash_strength=-1.0)
+    assert engine._flash_strength == 0.2
+    engine.set_parameters(flash_strength=10.0)
+    assert engine._flash_strength == 3.0
+
+    # 4. Clean reset
+    engine.reset_parameters()
+    assert engine._speed == 1.0
+    assert engine._brightness == 50
+    assert engine._palette_name == "sunset"
+    assert engine._tail_length == 1.0
+    assert engine._particle_density == 1.0
+    assert engine._wave_width == 1.0
+    assert engine._flash_strength == 1.0
+
+
+def test_gate_rapid_effect_switching_and_stale_generations():
+    """
+    Release Gate 2 - Effect Switching & Pipeline Isolation:
+    Rapid consecutive switching must advance generation counters, stop
+    in-flight stream workers, and clear pending frame queues cleanly.
+    """
+    app_state = {}
+    mock_ctrl = MagicMock()
+    mock_ctrl.set_native_effect.return_value = True
+    mock_ctrl.clear_frames.return_value = None
+    mock_runner = MagicMock()
+    mock_runner.run.side_effect = lambda coro: MagicMock(result=lambda timeout: True)
+
+    engine = L930EffectsEngine(controller=mock_ctrl, loop_runner=mock_runner, app_state=app_state)
+
+    effects_to_switch = [
+        "tide", "cyber_chase", "golden_hour", "starfield", "comet",
+        "glitter_cascade", "candy_cane", "police", "aurora", "sinelon"
+    ]
+
+    for eff in effects_to_switch:
+        gen_before = engine._effect_generation
+        ok = engine.start(eff)
+        assert ok, f"Effect {eff} failed to start in rapid switch test"
+        assert engine._effect_generation == gen_before + 1
+        assert mock_ctrl.clear_frames.call_count > 0
+
+    assert engine._active_effect_name == "sinelon"
+    assert engine._effect_generation == len(effects_to_switch)
+
+
+def test_gate_parameter_isolation_between_effects():
+    """
+    Release Gate 4 - Parameter Isolation:
+    Alias parameter overrides (e.g. particle_density=1.8 on glitter_cascade)
+    must NOT contaminate subsequent standard effect starts.
+    """
+    mock_ctrl = MagicMock()
+    mock_ctrl.set_native_effect.return_value = True
+    mock_runner = MagicMock()
+    mock_runner.run.side_effect = lambda coro: MagicMock(result=lambda timeout: True)
+    engine = L930EffectsEngine(controller=mock_ctrl, loop_runner=mock_runner, app_state={})
+
+    # 1. Alias sets particle_density to 1.8
+    engine.start("glitter_cascade")
+    assert engine._particle_density == 1.8
+
+    # 2. Starting standard starfield resets particle_density to 1.0
+    engine.start("starfield")
+    assert engine._particle_density == 1.0
+
+    # 3. Alias sets flash_strength to 1.5
+    engine.start("dual_wipe")
+    assert engine._flash_strength == 1.5
+
+    # 4. Starting cyber_chase resets flash_strength to 1.0
+    engine.start("cyber_chase")
+    assert engine._flash_strength == 1.0
+
+    # 5. Alias sets tail_length to 2.0
+    engine.start("sonar_sweep")
+    assert engine._tail_length == 2.0
+
+    # 6. Starting radar_sweep resets tail_length to 1.0
+    engine.start("radar_sweep")
+    assert engine._tail_length == 1.0
