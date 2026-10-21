@@ -242,7 +242,8 @@ class OutputArbiter:
 
     def can_submit(self, dev_id: str, producer: str, generation: Optional[int] = None) -> bool:
         with self._lock:
-            if dev_id in self._transitions:
+            # IDLE describes the absence of a frame producer; it is never a valid writer.
+            if producer == OutputProducer.IDLE or dev_id in self._transitions:
                 return False
             if self._owners.get(dev_id, OutputProducer.IDLE) != producer:
                 return False
