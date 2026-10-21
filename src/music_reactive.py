@@ -310,7 +310,6 @@ class MusicReactive:
                     pre_corrected=bool(frame.get("_pre_corrected", False)),
                     metadata=meta,
                     generation=self._output_generation,
-                    generation=self._output_generation,
                 )
             else:
                 hsv = (int(frame.get("h", 0)), int(frame.get("s", 0)), int(frame.get("b", 0)))
