@@ -423,7 +423,7 @@ def run_click_flasher_calibration(lookahead_ms: float = 40.0, bpm: float = 128.0
     if hub and getattr(hub, "frame_bus", None):
         from src.frame_bus import OutputProducer
         for dev_id, dev in hub.devices.items():
-            hub.arbiter.claim_output(dev_id, OutputProducer.STATIC, on_relinquish=dev.stop_all_active)
+            hub.arbiter.claim_output(dev_id, OutputProducer.STATIC, on_relinquish=dev.stop_all_active, renew=True)
             token = hub.frame_bus.capture_token(dev_id, OutputProducer.STATIC)
             if token:
                 output_tokens[dev_id] = token
