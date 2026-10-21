@@ -108,10 +108,18 @@ class FrameBus:
         # The one consumer is the only bus-controlled route to the physical sender.
         if consumer is not None:
             try:
-                consumer(packet)
+                accepted = consumer(packet)
+                if accepted is False:
+                    with self._lock:
+                        if self._latest_frames.get(packet.dev_id) is packet:
+                            self._latest_frames.pop(packet.dev_id, None)
+                    return False
             except Exception:
-                # A consumer failure must not break telemetry subscribers or render threads.
-                pass
+                # A consumer failure must not break render threads or pretend the frame was queued.
+                with self._lock:
+                    if self._latest_frames.get(packet.dev_id) is packet:
+                        self._latest_frames.pop(packet.dev_id, None)
+                return False
 
         for cb in callbacks + global_callbacks:
             try:
