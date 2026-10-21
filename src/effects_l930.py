@@ -722,6 +722,24 @@ class L930EffectsEngine:
 
     # ── Firmware Effect Deployment ────────────────────────────────────────────
 
+    def _submit_firmware_effect(self, name: str, fx: LightEffect, generation: int) -> bool:
+        """Route native firmware scene commands through the same per-device consumer."""
+        if self._frame_bus:
+            packet = FramePacket(
+                dev_id=self._dev_id,
+                producer=OutputProducer.EFFECT,
+                native_effect=fx,
+                brightness=self._brightness,
+                generation=generation,
+                metadata={"effect_name": name, "native_firmware": True},
+            )
+            return self._frame_bus.publish(packet)
+
+        future = self._loop_runner.run(self._ctrl.set_native_effect(fx, priority=0))
+        result_method = getattr(future, "result", None)
+        result = result_method(timeout=10.0) if callable(result_method) else future
+        return result is not False
+
     def _deploy_firmware_effect(self, name: str, force: bool = False) -> bool:
         fx = self._build_effect_payload(name)
         if fx is None:
@@ -759,13 +777,9 @@ class L930EffectsEngine:
                 self._pending_fw_timer = None
 
         try:
-            future = self._loop_runner.run(self._ctrl.set_native_effect(fx, priority=0))
-            # BackgroundLoop.run returns a Future: wait for the hardware ACK so
-            # we can distinguish "accepted" from merely "queued in asyncio".
-            result_method = getattr(future, "result", None)
-            result = result_method(timeout=10.0) if callable(result_method) else future
-            if result is False:
-                raise RuntimeError(f"Controller rejected firmware effect {name!r}")
+            accepted = self._submit_firmware_effect(name, fx, self._output_generation)
+            if not accepted:
+                raise RuntimeError(f"FrameBus/controller rejected firmware effect {name!r}")
             self._last_error = None
             return True
         except Exception as exc:
@@ -791,7 +805,15 @@ class L930EffectsEngine:
                 logger.debug(f"[L930EffectsEngine] Dropping stale firmware upload for '{name}' (gen {gen} != {self._effect_generation})")
                 return
             self._last_firmware_upload = time.monotonic()
-        self._loop_runner.run(self._ctrl.set_native_effect(fx, priority=0))
+        try:
+            if not self._submit_firmware_effect(name, fx, self._output_generation):
+                logger.warning("[L930EffectsEngine] FrameBus rejected stale firmware upload for '%s'", name)
+        except Exception as exc:
+            self._last_error = f"Failed to deploy L930 firmware effect {name!r}: {exc}"
+            logger.error("[L930EffectsEngine] %s", self._last_error)
+            if isinstance(self._app_state, dict):
+                self._app_state["effect_status"] = "failed"
+                self._app_state["last_error"] = self._last_error
 
     def _redeploy_current_firmware_effect(self):
         if self._active_effect_name and self._active_kind == "firmware":
