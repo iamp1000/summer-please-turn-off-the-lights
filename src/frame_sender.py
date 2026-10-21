@@ -134,6 +134,9 @@ class LatestFrameSender:
 
     def _is_change_significant(self, frame: Any) -> bool:
         """Checks if frame differs significantly (> min_zone_delta) from last sent frame."""
+        if isinstance(frame, dict) and "color_temp" in frame:
+            # CCT scenes are sparse/static updates, not HSV animations; always forward latest.
+            return True
         if self._last_sent_segments is None and self._last_sent_hsb is None:
             return True
 
