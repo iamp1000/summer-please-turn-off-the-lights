@@ -12,6 +12,7 @@ from src.music_reactive import get_audio_input_source
 from src.audio_dsp import SpectralFluxOnsetDetector, BPMTracker, DynamicAudioCalibrator, MusicAnalyzer, MusicState, Section
 from src.visual_styles import get_visual_style, STYLE_REGISTRY, create_style_instances, AccentCompositor, DirectorStyle
 from src.frame_bus import FramePacket, OutputProducer
+from src.music_dynamics import MusicBrightnessFloor, music_is_genuinely_active, fade_segments, silence_fade_duration
 
 NUM_SEGMENTS = 50
 
@@ -92,6 +93,8 @@ class MusicReactiveL930:
         self._pipeline = RenderPipeline(gamma=2.2, r_calib=1.0, g_calib=0.96, b_calib=0.90)
         self._silence_duration = 0.0
         self._powered_down_for_silence = False
+        self._brightness_floor = MusicBrightnessFloor()
+        self._last_active_segs: Optional[list[list[int]]] = None
         self._latency_lookahead_ms = 0.0  # Kept at 0 by default; true lockstep achieved via measured output delay
 
         # DSP Pipeline: AGC, Onset Detection & Real-Time Beat Tracking
@@ -369,24 +372,52 @@ class MusicReactiveL930:
         master_ceiling = self._app_state.get("brightness", 100) / 100.0
 
         is_movie = (self.style_name == "movie")
+        active_audio = music_is_genuinely_active(st) and not is_movie
+        floor_value = self._brightness_floor.update(
+            st, dt, master_ceiling=master_ceiling, enabled=not is_movie,
+            force_inactive=not active_audio,
+        )
 
-        if (st.energy <= 0.005 or getattr(st, "silent", False)) and not is_movie:
-            self._silence_duration += dt
-            self._silence_count += 1
-            if self._silence_count > 5:
-                dark = [[0, 0, 0] for _ in range(NUM_SEGMENTS)]
-                self._target_segs = dark
-                self._rendered_segs = dark
+        if not active_audio:
+            if not is_movie:
+                self._silence_duration += dt
+                self._silence_count += 1
                 self._white_punch = 0.0
                 self._beat_punch = 0.0
                 self.latest_spectrum = [0.0] * NUM_SEGMENTS
-                self._publish_frame({"segments": dark, "brightness": 0, "transition": 0, "_pre_corrected": True})
+                fade_duration = silence_fade_duration(self._ctrl, fallback_rate=8.0)
+                fade_start = 0.12
+                factor = 1.0 if self._silence_duration <= fade_start else max(
+                    0.0, 1.0 - (self._silence_duration - fade_start) / fade_duration
+                )
+                base = self._last_active_segs or [[0, 0, 0] for _ in range(NUM_SEGMENTS)]
+                faded = fade_segments(base, factor)
+                self._target_segs = faded
+                self._rendered_segs = faded
+                sender = getattr(self._ctrl, "frame_sender", None)
+                configured_ups = max(0.5, float(getattr(self._ctrl, "_max_updates_per_s", 8.0)))
+                active_ups = configured_ups
+                if sender:
+                    active_ups = max(0.5, min(
+                        configured_ups,
+                        float(getattr(sender, "_aimd_rate_cap", configured_ups)),
+                    ))
+                transition = min(6000, max(
+                    int(getattr(self._ctrl, "music_transition_ms", 120)),
+                    int(round(980.0 / active_ups)),
+                ))
+                self._publish_frame({
+                    "segments": faded,
+                    "brightness": max((zone[2] for zone in faded), default=0),
+                    "transition": transition,
+                    "_pre_corrected": True,
+                })
 
-            if self._silence_duration >= 3.0 and not self._powered_down_for_silence:
-                self._powered_down_for_silence = True
-                if hasattr(self._ctrl, "turn_off"):
-                    if self._loop_runner and getattr(self._loop_runner, "loop", None):
-                        asyncio.run_coroutine_threadsafe(self._ctrl.turn_off(), self._loop_runner.loop)
+                if self._silence_duration >= 3.0 and not self._powered_down_for_silence:
+                    self._powered_down_for_silence = True
+                    if hasattr(self._ctrl, "turn_off"):
+                        if self._loop_runner and getattr(self._loop_runner, "loop", None):
+                            asyncio.run_coroutine_threadsafe(self._ctrl.turn_off(), self._loop_runner.loop)
             return
 
         self._silence_count = 0
@@ -438,6 +469,8 @@ class MusicReactiveL930:
             self._beat_punch = max(0.0, self._beat_punch - dt * 120.0)
 
         corrected_segs = self._pipeline.correct_hsv_sequence(segs, master_ceiling=master_ceiling)
+        corrected_segs = self._brightness_floor.apply_l930(corrected_segs, floor_value)
+        self._last_active_segs = [list(zone) for zone in corrected_segs]
         self._target_segs = corrected_segs
         self._rendered_segs = corrected_segs
         brightness_val = int(max(x[2] for x in corrected_segs)) if corrected_segs else 0
