@@ -202,8 +202,32 @@ class MusicReactiveL930:
         self._rendered_segs = dark
         if hasattr(self._ctrl, "clear_frames"):
             self._ctrl.clear_frames()
-        if hasattr(self._ctrl, "submit_frame"):
+        if not self._frame_bus and hasattr(self._ctrl, "submit_frame"):
             self._ctrl.submit_frame({"segments": dark, "brightness": 0, "transition": 0})
+
+    def _submit_output_frame(self, frame: dict, metadata: Optional[Dict[str, Any]] = None):
+        """Publish a rendered L930 audio frame through the authoritative bus."""
+        meta = dict(metadata or {})
+        for key in ("t_audio_recv", "t_analysis_done", "t_frame_rendered"):
+            if key in frame:
+                meta[key] = frame[key]
+        if self._frame_bus:
+            packet = FramePacket(
+                dev_id=self._dev_id,
+                producer=OutputProducer.AUDIO,
+                segments=frame.get("segments"),
+                hsv=None if "segments" in frame else (
+                    int(frame.get("h", 0)), int(frame.get("s", 0)), int(frame.get("b", 0))
+                ),
+                brightness=int(frame.get("brightness", frame.get("b", 100))),
+                transition=int(frame.get("transition", 0)),
+                pre_corrected=bool(frame.get("_pre_corrected", False)),
+                metadata=meta,
+            )
+            return self._frame_bus.publish(packet)
+        if hasattr(self._ctrl, "submit_frame"):
+            return self._ctrl.submit_frame(frame)
+        return False
 
     def _render_loop(self):
         last_t = time.perf_counter()
@@ -254,7 +278,7 @@ class MusicReactiveL930:
                         segments=dark,
                         brightness=0,
                     ))
-                if hasattr(self._ctrl, "submit_frame"):
+                if not self._frame_bus and hasattr(self._ctrl, "submit_frame"):
                     self._ctrl.submit_frame({"segments": dark, "brightness": 0, "transition": 0, "_pre_corrected": True})
 
             if self._silence_duration >= 3.0 and not self._powered_down_for_silence:
@@ -362,7 +386,8 @@ class MusicReactiveL930:
                 segments=corrected_segs,
                 brightness=brightness_val,
                 transition=trans_ms,
-                metadata={"music_state": st},
+                pre_corrected=True,
+                metadata={"music_state": st, **({k: frame_dict[k] for k in ("t_audio_recv", "t_analysis_done", "t_frame_rendered") if k in frame_dict})},
             ))
 
         if hasattr(self._ctrl, "submit_frame"):
@@ -436,8 +461,7 @@ class MusicReactiveL930:
                     self._levels.fill(0.0)
                     self._rendered_segs = dark
                     self.latest_spectrum = [0.0] * NUM_SEGMENTS
-                    if hasattr(self._ctrl, "submit_frame"):
-                        self._ctrl.submit_frame({"segments": dark, "brightness": 0, "transition": 0, "_pre_corrected": True})
+                    self._submit_output_frame({"segments": dark, "brightness": 0, "transition": 0, "_pre_corrected": True})
                 else:
                     self._smooth_to_rendered(dark, alpha=0.45)
                     self.latest_spectrum = [0.0] * NUM_SEGMENTS
@@ -596,10 +620,12 @@ class MusicReactiveL930:
                         segments=corrected,
                         brightness=100,
                         transition=trans,
+                        pre_corrected=True,
                         metadata={"music_state": self.latest_music_state},
                     ))
 
-                self._ctrl.submit_frame({"segments": corrected, "brightness": 100, "transition": trans, "_pre_corrected": True})
+                if not self._frame_bus:
+                    self._submit_output_frame({"segments": corrected, "brightness": 100, "transition": trans, "_pre_corrected": True}, metadata={"music_state": self.latest_music_state} if self.latest_music_state else None)
             return
 
         segs = []
