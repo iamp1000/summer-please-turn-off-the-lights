@@ -178,6 +178,7 @@ class ScreenSync:
         self._app_state = app_state
         self._frame_bus = frame_bus
         self._dev_id = dev_id
+        self._output_token: Optional[tuple[int, str]] = None
         self._running = False
         self._thread: Optional[threading.Thread] = None
 
@@ -221,6 +222,10 @@ class ScreenSync:
     def start(self):
         if self._running:
             return
+        self._output_token = (
+            self._frame_bus.capture_token(self._dev_id, OutputProducer.SCREEN_SYNC)
+            if self._frame_bus else None
+        )
         self._running = True
         self._thread = threading.Thread(target=self._run, daemon=True, name="ScreenSyncDXGIWorker")
         self._thread.start()
@@ -341,29 +346,28 @@ class ScreenSync:
             self._rendered_segs = smoothed_segs
             scaled_b = max(1, int(100 * master_ceiling))
 
+            frame = {"segments": smoothed_segs, "brightness": scaled_b, "transition": 0}
             if self._frame_bus:
-                self._frame_bus.publish(FramePacket(
-                    dev_id=self._dev_id,
-                    producer=OutputProducer.SCREEN_SYNC,
-                    segments=smoothed_segs,
-                    brightness=scaled_b,
-                    transition=0,
-                ))
-
-            if hasattr(self._controller, "submit_frame"):
-                self._controller.submit_frame({"segments": smoothed_segs, "brightness": scaled_b, "transition": 0})
+                if self._output_token:
+                    generation, producer_id = self._output_token
+                    self._frame_bus.publish_frame(
+                        self._dev_id, OutputProducer.SCREEN_SYNC, frame,
+                        generation=generation, producer_id=producer_id,
+                    )
+            elif hasattr(self._controller, "submit_frame"):
+                self._controller.submit_frame(frame)
         else:
             gh, gs, gv = global_hsv
             smoothed_v = self._l900_smoother.update(float(gv))
             final_b = max(1, int(smoothed_v * master_ceiling))
 
+            frame = {"h": gh, "s": gs, "b": final_b}
             if self._frame_bus:
-                self._frame_bus.publish(FramePacket(
-                    dev_id=self._dev_id,
-                    producer=OutputProducer.SCREEN_SYNC,
-                    hsv=(gh, gs, final_b),
-                    brightness=final_b,
-                ))
-
-            if hasattr(self._controller, "submit_frame"):
-                self._controller.submit_frame({"h": gh, "s": gs, "b": final_b})
+                if self._output_token:
+                    generation, producer_id = self._output_token
+                    self._frame_bus.publish_frame(
+                        self._dev_id, OutputProducer.SCREEN_SYNC, frame,
+                        generation=generation, producer_id=producer_id,
+                    )
+            elif hasattr(self._controller, "submit_frame"):
+                self._controller.submit_frame(frame)
