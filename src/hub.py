@@ -102,6 +102,9 @@ class DeviceContext:
             frame.update({"h": int(h), "s": int(sat), "b": int(value)})
         else:
             return
+        for key in ("t_audio_recv", "t_analysis_done", "t_frame_rendered"):
+            if key in packet.metadata:
+                frame[key] = packet.metadata[key]
 
         if self.arbiter.is_authorized(self.dev_id, producer_id, packet.generation):
             self.controller.submit_frame(frame)
@@ -658,6 +661,8 @@ class LightHub:
             ctx.state["power"] = True
             ctx.state["active_label"] = "Custom Wheel"
             ctx.state["brightness"] = v
+            # turn_on clears queued state; do it before publishing the scene frame.
+            self.loop_runner.run(ctx.controller.turn_on(priority=0))
             if ctx.model == "L930":
                 self.frame_bus.publish(FramePacket(
                     dev_id=ctx.dev_id,
@@ -672,7 +677,6 @@ class LightHub:
                     hsv=(h, s, v),
                     brightness=v,
                 ))
-            self.loop_runner.run(ctx.controller.turn_on(priority=0))
         self.notify_change()
 
     def shutdown(self):
