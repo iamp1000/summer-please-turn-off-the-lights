@@ -123,3 +123,48 @@ def test_frame_sender_counts_saturation_only_changes_for_hsv_and_segments():
     assert sender._is_change_significant({"segments": new_frame}) is True
     small_change = [[210, 11, 60] for _ in range(50)]
     assert sender._is_change_significant({"segments": small_change}) is False
+
+
+
+def test_owner_switch_blocks_new_publications_until_pending_frame_clear_finishes():
+    arbiter = OutputArbiter()
+    bus = FrameBus(arbiter)
+    delivered = []
+    bus.set_consumer("strip1", delivered.append)
+    attempted_during_relinquish = []
+
+    def old_owner_relinquishes():
+        # New owner exists internally by now, but must not publish before queue clearing.
+        attempted_during_relinquish.append(bus.publish(FramePacket(
+            dev_id="strip1",
+            producer=OutputProducer.AUDIO,
+            hsv=(200, 90, 65),
+            brightness=65,
+        )))
+
+    arbiter.claim_output("strip1", OutputProducer.STATIC, on_relinquish=old_owner_relinquishes)
+    assert bus.publish(FramePacket(
+        dev_id="strip1",
+        producer=OutputProducer.STATIC,
+        hsv=(30, 80, 45),
+        brightness=45,
+    )) is True
+
+    cleared = []
+    arbiter.add_owner_change_callback(
+        lambda dev_id, old, new, generation: (bus.clear_device(dev_id), cleared.append(generation))
+    )
+    arbiter.claim_output("strip1", OutputProducer.AUDIO)
+    assert attempted_during_relinquish == [False]
+    assert bus.get_latest_frame("strip1") is None
+    assert cleared
+
+    # The new owner becomes eligible only after callbacks have purged stale state.
+    assert bus.publish(FramePacket(
+        dev_id="strip1",
+        producer=OutputProducer.AUDIO,
+        hsv=(200, 90, 65),
+        brightness=65,
+    )) is True
+    assert len(delivered) == 2
+    assert delivered[-1].producer == OutputProducer.AUDIO
