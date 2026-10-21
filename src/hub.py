@@ -113,7 +113,10 @@ class LightHub:
                 ctrl = L930Controller(ip=ip, email=email, password=password, dev_id=dev_id, loop=loop_runner.loop, calibration=calib)
             else:
                 ctrl = LightController(ip=ip, email=email, password=password, dev_id=dev_id, loop=loop_runner.loop, calibration=calib)
-                
+
+            # One authoritative hardware-frame consumer per physical device.
+            self.frame_bus.bind_device(dev_id, ctrl)
+
             ctx = DeviceContext(
                 dev_id, d_cfg, ctrl, loop_runner, modes_cfg, effects_cfg,
                 audio_device=self.audio_device, frame_bus=self.frame_bus,
@@ -424,7 +427,8 @@ class LightHub:
             ctx.stop_all_active()
             ctx.state["power"] = True
             ctx.state["active_label"] = mode_name
-            self.loop_runner.run(ctx.mode_mgr._apply_async(mode_data))
+            # Keep power control separate; scene colors are sent only through FrameBus.
+            self.loop_runner.run(ctx.controller.turn_on(priority=0))
             b = mode_data.get("brightness", 50)
             h = mode_data.get("hue", 0)
             s = mode_data.get("saturation", 0)
@@ -436,6 +440,7 @@ class LightHub:
                     producer=OutputProducer.STATIC,
                     segments=segs,
                     brightness=b,
+                    transition=600,
                 ))
             else:
                 self.frame_bus.publish(FramePacket(
@@ -443,6 +448,7 @@ class LightHub:
                     producer=OutputProducer.STATIC,
                     hsv=(h, s, b),
                     brightness=b,
+                    transition=600,
                 ))
         self.notify_change()
 
@@ -602,12 +608,14 @@ class LightHub:
             ctx.state["power"] = True
             ctx.state["active_label"] = "Custom Wheel"
             ctx.state["brightness"] = v
+            self.loop_runner.run(ctx.controller.turn_on(priority=0))
             if ctx.model == "L930":
                 self.frame_bus.publish(FramePacket(
                     dev_id=ctx.dev_id,
                     producer=OutputProducer.STATIC,
                     segments=[[h, s, v]] * 50,
                     brightness=v,
+                    transition=600,
                 ))
             else:
                 self.frame_bus.publish(FramePacket(
@@ -615,14 +623,8 @@ class LightHub:
                     producer=OutputProducer.STATIC,
                     hsv=(h, s, v),
                     brightness=v,
+                    transition=600,
                 ))
-            async def _do(c=ctx, h=h, s=s, v=v):
-                if hasattr(c.controller, "set_state"):
-                    await c.controller.set_state(h, s, v, priority=0)
-                else:
-                    await c.controller.set_brightness(v, priority=0)
-                    await c.controller.set_hue_saturation(h, s, priority=0)
-            self.loop_runner.run(_do())
         self.notify_change()
 
     def shutdown(self):
