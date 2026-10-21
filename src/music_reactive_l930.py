@@ -277,6 +277,7 @@ class MusicReactiveL930:
                         producer=OutputProducer.AUDIO,
                         segments=dark,
                         brightness=0,
+                        pre_corrected=True,
                     ))
                 if not self._frame_bus and hasattr(self._ctrl, "submit_frame"):
                     self._ctrl.submit_frame({"segments": dark, "brightness": 0, "transition": 0, "_pre_corrected": True})
@@ -390,7 +391,7 @@ class MusicReactiveL930:
                 metadata={"music_state": st, **({k: frame_dict[k] for k in ("t_audio_recv", "t_analysis_done", "t_frame_rendered") if k in frame_dict})},
             ))
 
-        if hasattr(self._ctrl, "submit_frame"):
+        if not self._frame_bus and hasattr(self._ctrl, "submit_frame"):
             self._ctrl.submit_frame(frame_dict)
 
     def _run(self):
@@ -812,8 +813,7 @@ class MusicReactiveL930:
 
         self._rendered_segs = smoothed
         master_ceiling = self._app_state.get("brightness", 85) / 100.0
-        if hasattr(self._ctrl, "submit_frame"):
-            corrected = self._pipeline.correct_hsv_sequence(smoothed, master_ceiling=master_ceiling)
-            music_trans = getattr(self._ctrl, "music_transition_ms", None)
-            trans = music_trans if music_trans is not None and music_trans > 0 else 120
-            self._ctrl.submit_frame({"segments": corrected, "brightness": 100, "transition": trans, "_pre_corrected": True})
+        corrected = self._pipeline.correct_hsv_sequence(smoothed, master_ceiling=master_ceiling)
+        music_trans = getattr(self._ctrl, "music_transition_ms", None)
+        trans = music_trans if music_trans is not None and music_trans > 0 else 120
+        self._submit_output_frame({"segments": corrected, "brightness": 100, "transition": trans, "_pre_corrected": True})
