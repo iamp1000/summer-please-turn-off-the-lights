@@ -22,6 +22,7 @@ class FramePacket:
     timestamp: float = field(default_factory=time.time)
     segments: Optional[List[List[int]]] = None
     hsv: Optional[Sequence[int]] = None
+    color_temp: Optional[int] = None
     brightness: int = 100
     transition: int = 0
     pre_corrected: bool = False
@@ -97,6 +98,8 @@ class FrameBus:
             elif packet.generation <= 0:
                 packet.generation = 1
 
+            if packet.segments is None and packet.hsv is None and packet.color_temp is None:
+                return False
             self._latest_frames[packet.dev_id] = packet
             consumer = self._consumers.get(packet.dev_id)
             callbacks = list(self._subscribers.get(packet.dev_id, []))
