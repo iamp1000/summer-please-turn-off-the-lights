@@ -48,6 +48,9 @@ def test_movie_screen_color_cut_is_damped_and_smoothed_for_movie_style():
         "a scene with similar brightness but a different dominant hue must not jump instantly"
     )
     assert _hue_delta(sync.latest_screen_data.column_hsvs[0][0], 232) > 100
+    assert _hue_delta(controller.frames[-1]["segments"][0][0], 232) > 100, (
+        "the physical L930 frame must use the smoothed columns, not raw cut colors"
+    )
 
     # As frames continue arriving, the same target is approached progressively.
     distances = [_hue_delta(first_cut_hue, 232)]
