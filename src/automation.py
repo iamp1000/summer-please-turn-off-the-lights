@@ -107,17 +107,22 @@ class PresetManager:
                         ctx.stop_all_active()
                         ctx.state["power"] = True
                         ctx.state["active_label"] = name
-                        hub.frame_bus.publish(FramePacket(
+                        packet = FramePacket(
                             dev_id=dev_id,
                             producer=OutputProducer.STATIC,
                             segments=segs,
                             brightness=b,
-                        ))
-                        if not getattr(hub, "frame_bus", None):
-                            if hasattr(ctx.controller, "set_segments"):
-                                hub.loop_runner.run(ctx.controller.set_segments(segs, brightness=b, transition=600, priority=0))
-                            elif hasattr(ctx.controller, "submit_frame"):
-                                ctx.controller.submit_frame({"segments": segs, "brightness": b, "transition": 600})
+                            transition=600,
+                            generation=hub.arbiter.get_generation(dev_id),
+                        )
+                        if getattr(hub, "frame_bus", None) and hasattr(hub, "publish_static_frame"):
+                            hub.publish_static_frame(ctx, packet)
+                        elif getattr(hub, "frame_bus", None):
+                            hub.frame_bus.publish(packet)
+                        elif hasattr(ctx.controller, "set_segments"):
+                            hub.loop_runner.run(ctx.controller.set_segments(segs, brightness=b, transition=600, priority=0))
+                        elif hasattr(ctx.controller, "submit_frame"):
+                            ctx.controller.submit_frame({"segments": segs, "brightness": b, "transition": 600})
                     elif "h" in st and "s" in st:
                         hub.apply_custom_color(dev_id, st["h"], st["s"], st.get("brightness", 50))
                     elif "effect" in st:
