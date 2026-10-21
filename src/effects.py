@@ -39,6 +39,7 @@ class AnimationEngine:
         self._app_state = app_state
         self._frame_bus = frame_bus
         self._dev_id = dev_id
+        self._output_token: Optional[tuple[int, str]] = None
 
         self._running = False
         self._thread: Optional[threading.Thread] = None
@@ -82,6 +83,10 @@ class AnimationEngine:
             return
 
         self._effect_generation += 1
+        self._output_token = (
+            self._frame_bus.capture_token(self._dev_id, OutputProducer.EFFECT)
+            if self._frame_bus else None
+        )
         self._start_time = time.monotonic()
         self._start_b = getattr(self._controller, "last_b", 50)
         self._start_h = getattr(self._controller, "last_h", 0)
@@ -183,19 +188,20 @@ class AnimationEngine:
                 }
 
                 if self._frame_bus:
-                    published = self._frame_bus.publish(FramePacket(
-                        dev_id=self._dev_id,
-                        producer=OutputProducer.EFFECT,
-                        hsv=(frame_data["h"], frame_data["s"], frame_data["b"]),
-                        brightness=frame_data["b"],
-                        transition=trans_ms,
-                    ))
+                    if self._output_token is None:
+                        if stop_event.wait(0.1):
+                            break
+                        continue
+                    generation, producer_id = self._output_token
+                    published = self._frame_bus.publish_frame(
+                        self._dev_id, OutputProducer.EFFECT, frame_data,
+                        generation=generation, producer_id=producer_id,
+                    )
                     if not published:
                         if stop_event.wait(0.1):
                             break
                         continue
-
-                if hasattr(self._controller, "submit_frame"):
+                elif hasattr(self._controller, "submit_frame"):
                     self._controller.submit_frame(frame_data)
                 elif hasattr(self._controller, "set_state"):
                     self._loop_runner.run(self._controller.set_state(
