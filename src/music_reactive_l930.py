@@ -61,6 +61,7 @@ class MusicReactiveL930:
         self._app_state = app_state
         self._frame_bus = frame_bus
         self._dev_id = dev_id
+        self._output_generation = 0
         self._sr = samplerate
         self._samplerate = samplerate
         self._bs = blocksize
@@ -185,6 +186,8 @@ class MusicReactiveL930:
         if self._running:
             return
         self._running = True
+        if self._frame_bus:
+            self._output_generation = self._frame_bus.current_generation(self._dev_id, OutputProducer.AUDIO)
         if self._coordinator:
             self._coordinator.register_subscriber(self)
             self._coordinator.start()
@@ -223,6 +226,7 @@ class MusicReactiveL930:
                 transition=int(frame.get("transition", 0)),
                 pre_corrected=bool(frame.get("_pre_corrected", False)),
                 metadata=meta,
+                generation=self._output_generation,
             )
             return self._frame_bus.publish(packet)
         if hasattr(self._ctrl, "submit_frame"):
@@ -278,6 +282,7 @@ class MusicReactiveL930:
                         segments=dark,
                         brightness=0,
                         pre_corrected=True,
+                        generation=self._output_generation,
                     ))
                 if not self._frame_bus and hasattr(self._ctrl, "submit_frame"):
                     self._ctrl.submit_frame({"segments": dark, "brightness": 0, "transition": 0, "_pre_corrected": True})
@@ -389,6 +394,7 @@ class MusicReactiveL930:
                 transition=trans_ms,
                 pre_corrected=True,
                 metadata={"music_state": st, **({k: frame_dict[k] for k in ("t_audio_recv", "t_analysis_done", "t_frame_rendered") if k in frame_dict})},
+                generation=self._output_generation,
             ))
 
         if not self._frame_bus and hasattr(self._ctrl, "submit_frame"):
@@ -623,6 +629,7 @@ class MusicReactiveL930:
                         transition=trans,
                         pre_corrected=True,
                         metadata={"music_state": self.latest_music_state},
+                        generation=self._output_generation,
                     ))
 
                 if not self._frame_bus:
