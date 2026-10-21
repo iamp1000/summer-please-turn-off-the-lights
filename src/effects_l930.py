@@ -779,7 +779,7 @@ class L930EffectsEngine:
         try:
             accepted = self._submit_firmware_effect(name, fx, self._output_generation)
             if not accepted:
-                raise RuntimeError(f"FrameBus/controller rejected firmware effect {name!r}")
+                raise RuntimeError(f"Controller rejected firmware effect {name!r} or FrameBus rejected it")
             self._last_error = None
             return True
         except Exception as exc:
