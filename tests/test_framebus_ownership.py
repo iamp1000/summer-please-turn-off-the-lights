@@ -168,3 +168,117 @@ def test_owner_switch_blocks_new_publications_until_pending_frame_clear_finishes
     )) is True
     assert len(delivered) == 2
     assert delivered[-1].producer == OutputProducer.AUDIO
+
+
+
+def test_same_owner_reselection_renews_generation_and_rejects_old_frame():
+    arbiter = OutputArbiter()
+    bus = FrameBus(arbiter)
+    bus.set_consumer("strip1", lambda packet: True)
+    arbiter.claim_output("strip1", OutputProducer.STATIC)
+    old_generation = arbiter.get_generation("strip1")
+    old_packet = FramePacket(
+        dev_id="strip1",
+        producer=OutputProducer.STATIC,
+        generation=old_generation,
+        hsv=(30, 80, 50),
+        brightness=50,
+    )
+    assert bus.publish(old_packet) is True
+
+    # Selecting a different static scene while STATIC still owns output creates a
+    # fresh generation, so an in-flight frame from the previous scene is no longer valid.
+    arbiter.claim_output("strip1", OutputProducer.STATIC, force_new_generation=True)
+    assert arbiter.get_generation("strip1") > old_generation
+    assert bus.publish(old_packet) is False
+
+    current = FramePacket(
+        dev_id="strip1",
+        producer=OutputProducer.STATIC,
+        generation=arbiter.get_generation("strip1"),
+        hsv=(210, 80, 50),
+        brightness=50,
+    )
+    assert bus.publish(current) is True
+
+
+def test_native_firmware_scene_uses_consumer_without_replacing_visual_snapshot():
+    arbiter = OutputArbiter()
+    bus = FrameBus(arbiter)
+    seen = []
+    bus.set_consumer("strip1", seen.append)
+
+    arbiter.claim_output("strip1", OutputProducer.STATIC)
+    visual = FramePacket(
+        dev_id="strip1",
+        producer=OutputProducer.STATIC,
+        hsv=(275, 90, 50),
+        brightness=50,
+    )
+    assert bus.publish(visual) is True
+    assert bus.get_latest_frame("strip1") is visual
+
+    arbiter.claim_output("strip1", OutputProducer.EFFECT)
+    native_effect = object()
+    command = FramePacket(
+        dev_id="strip1",
+        producer=OutputProducer.EFFECT,
+        native_effect=native_effect,
+        generation=arbiter.get_generation("strip1"),
+    )
+    assert bus.publish(command) is True
+    assert seen[-1] is command
+    # Native commands are routed to the consumer but are not frame previews.
+    assert bus.get_latest_frame("strip1") is None
+
+
+async def _run_native_effect_authorization_test():
+    from src.device_l930 import L930Controller
+
+    arbiter = OutputArbiter()
+    arbiter.claim_output("strip1", OutputProducer.EFFECT)
+    generation = arbiter.get_generation("strip1")
+    sent = []
+
+    class FakeResponse:
+        def is_success(self):
+            return True
+
+    class FakeDevice:
+        async def set_light_effect(self, effect):
+            sent.append(effect)
+            return FakeResponse()
+
+    ctrl = L930Controller.__new__(L930Controller)
+    ctrl.dev_id = "strip1"
+    ctrl._framebus_managed = True
+    ctrl._frame_authorizer = lambda token: (
+        isinstance(token, dict)
+        and arbiter.is_authorized(
+            "strip1", token.get("_producer_id", ""), token.get("_generation", -1)
+        )
+    )
+    ctrl._lock = asyncio.Lock()
+    ctrl._device = FakeDevice()
+    ctrl._is_on = True
+    ctrl._last_successful_response = 0.0
+    ctrl.clear_frames = lambda: None
+    async def ensure_connected():
+        return None
+    ctrl._ensure_connected = ensure_connected
+
+    # Hold the device lock so a command is queued behind it.
+    await ctrl._lock.acquire()
+    token = {"_producer_id": OutputProducer.EFFECT, "_generation": generation}
+    task = asyncio.create_task(ctrl.set_native_effect(object(), priority=0, frame_token=token))
+    await asyncio.sleep(0)
+    arbiter.claim_output("strip1", OutputProducer.STATIC)
+    ctrl._lock.release()
+
+    accepted = await task
+    assert accepted is False
+    assert sent == []
+
+
+def test_native_effect_waiting_for_device_lock_is_dropped_after_owner_switch():
+    asyncio.run(_run_native_effect_authorization_test())
