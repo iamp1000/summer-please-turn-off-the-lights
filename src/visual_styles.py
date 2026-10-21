@@ -1311,20 +1311,28 @@ class ChillStyle(VisualStyle):
 
 class EdmModeStyle(VisualStyle):
     """
-    High-impact EDM mode:
-    - Ordinary kicks launch colored expanding shockwaves without blinding the strip.
-    - Brightest white flashes are reserved strictly for confirmed drops or massive impacts.
-    - Uses onset edges and strict re-trigger intervals to eliminate repeated flash stuttering.
+    High-impact EDM mode with colored, progressive dynamics.
+
+    White is only used for a confidently bass-led drop. Ordinary kicks, mids,
+    highs, flux and builds shape a continuous palette-driven response. Transient
+    envelopes stay alive long enough to survive a protected 1 Hz output cadence.
     """
     name = "EDM"
 
     def __init__(self):
         super().__init__()
-        self.ripples: List[Dict[str, float]] = []
+        self.ripples: List[Dict[str, Any]] = []
         self._flash_decay: float = 0.0
         self._last_flash_time: float = 0.0
         self._last_shockwave_time: float = 0.0
         self._prev_kick: float = 0.0
+        self._output_interval_s: float = 0.5
+
+    def set_params(self, output_interval_s: Optional[float] = None, **kwargs: Any):
+        super().set_params(**kwargs)
+        if output_interval_s is not None:
+            # Renderer timing follows the existing sender cap; it never changes that cap.
+            self._output_interval_s = max(0.125, min(2.0, float(output_interval_s)))
 
     def render(self, state: MusicState, dt: float, num_zones: int, **kwargs: Any) -> List[Tuple[int, int, int]]:
         if self.is_silent_state(state):
@@ -1334,84 +1342,135 @@ class EdmModeStyle(VisualStyle):
             return [(0, 0, 0)] * num_zones
 
         pal = self.get_palette(state)
+        if not pal:
+            pal = DEFAULT_PALETTE
         half = (num_zones - 1) / 2.0 if num_zones > 1 else 0.5
         now = time.time()
+        bands = np.asarray(getattr(state, "bands", []), dtype=np.float32).reshape(-1)
+        if bands.size:
+            bass_band = float(np.mean(bands[:max(1, min(10, bands.size))]))
+            mid_band = float(np.mean(bands[10:min(35, bands.size)])) if bands.size > 10 else 0.0
+            high_band = float(np.mean(bands[35:])) if bands.size > 35 else 0.0
+        else:
+            bass_band = mid_band = high_band = 0.0
 
-        drop_val = float(getattr(state, "drop_strength", 0.0))
         kick_val = float(getattr(state, "kick", 0.0))
+        onset_val = float(getattr(state, "onset", 0.0))
         impact_val = float(getattr(state, "impact", 0.0))
-        sec_is_drop = (state.section == Section.DROP)
+        energy = float(np.clip(getattr(state, "energy", 0.0), 0.0, 1.0))
+        bass_signal = max(float(getattr(state, "bass", 0.0)), bass_band)
+        bass_relative = bass_band >= max(0.22, mid_band * 1.12)
+        bass_qualified = bass_signal >= 0.50 or bass_relative
 
-        # 1. White flash is strictly reserved for confirmed drops or extreme impacts
-        # Requires fresh onset edge and a re-trigger cooldown >= 1.2s
-        is_drop_hit = (sec_is_drop and drop_val > 0.85) or (impact_val > 0.85 and drop_val > 0.70)
-        if is_drop_hit and (now - self._last_flash_time) > 1.2 and self._flash_decay <= 0.05:
-            self._flash_decay = 1.0  # Full white flash trigger
+        # A pure-white strike requires a clear bass-led transient in a verified drop.
+        # Melodic builds and high-frequency sweeps stay colorful even when loud.
+        sec_is_drop = getattr(state, "section", Section.SILENT) == Section.DROP
+        high_confidence_drop = (
+            sec_is_drop and float(getattr(state, "drop_strength", 0.0)) >= 0.90
+            and kick_val >= 0.62 and bass_qualified
+        )
+        extreme_bass_impact = (
+            impact_val >= 0.96 and float(getattr(state, "drop_strength", 0.0)) >= 0.82
+            and kick_val >= 0.68 and bass_qualified
+        )
+        if (high_confidence_drop or extreme_bass_impact) and (now - self._last_flash_time) > 1.4 and self._flash_decay <= 0.05:
+            self._flash_decay = 1.0
             self._last_flash_time = now
+        flash_tau = max(0.70, self._output_interval_s * 1.10)
+        self._flash_decay *= math.exp(-max(0.0, dt) / flash_tau)
+        if self._flash_decay < 0.015:
+            self._flash_decay = 0.0
 
-        self._flash_decay = max(0.0, self._flash_decay - dt * 2.5)  # Fast crisp flash decay (~400ms)
-
-        # 2. Ordinary kicks launch colored shockwaves (cooldown >= 0.12s, requires rising edge)
         kick_rising_edge = (kick_val > 0.22) and (kick_val > self._prev_kick + 0.08)
         self._prev_kick = kick_val
-
-        if kick_rising_edge and (now - self._last_shockwave_time) > 0.12:
+        if kick_rising_edge and (now - self._last_shockwave_time) > max(0.12, self._output_interval_s * 0.45):
             self._last_shockwave_time = now
+            palette_pos = (
+                float(getattr(state, "beat_phase", 0.0)) * 0.24
+                + float(getattr(state, "centroid_norm", 0.25)) * 0.28
+                + high_band * 0.18
+                + bass_signal * 0.30
+            ) % 1.0
+            ripple_color = sample_palette_oklab(pal, palette_pos, cyclic=True)
+            ripple_lifetime = max(1.2, self._output_interval_s * 2.0)
             self.ripples.append({
                 "pos": half,
-                "speed": (70.0 + kick_val * 35.0) * self.speed,
-                "radius": 1.0,
+                "speed": (half / max(0.9, self._output_interval_s * 1.6)) * self.speed,
+                "radius": 0.0,
                 "life": 1.0,
-                "energy": kick_val,
-                "color_idx": random.randint(0, len(pal) - 1),
+                "lifetime": ripple_lifetime,
+                "energy": max(kick_val, onset_val * 0.65),
+                "color": ripple_color,
             })
 
-        # Update shockwaves
         alive_ripples = []
-        for r in self.ripples:
-            r["radius"] += r["speed"] * dt
-            r["life"] -= dt * (1.6 * self.speed)
-            if r["life"] > 0.0 and r["radius"] < num_zones * 1.3:
-                alive_ripples.append(r)
+        for ripple in self.ripples:
+            ripple["radius"] += ripple["speed"] * dt
+            ripple["life"] -= max(0.0, dt) / max(1.2, float(ripple.get("lifetime", 1.2)))
+            if ripple["life"] > 0.0 and ripple["radius"] < num_zones * 1.3:
+                alive_ripples.append(ripple)
         self.ripples = alive_ripples
 
-        segs = []
-        t_anim = now * 2.0 * self.speed
+        # Section builds grow from tension, spectral energy trend and section progress;
+        # they affect colored brightness rather than pushing the whole strip to white.
+        is_build = getattr(state, "section", Section.SILENT) == Section.BUILD
+        build_envelope = max(
+            float(getattr(state, "tension", 0.0)) if is_build else 0.0,
+            float(getattr(state, "section_progress", 0.0)) * 0.70 if is_build else 0.0,
+            max(0.0, float(getattr(state, "energy_trend", 0.0))) * 1.6,
+        )
+        build_envelope = float(np.clip(build_envelope, 0.0, 1.0))
+        palette_phase = (
+            float(getattr(state, "beat_phase", 0.0)) * 0.18
+            + float(getattr(state, "centroid_norm", 0.25)) * 0.32
+            + bass_signal * 0.18
+            + high_band * 0.16
+            + energy * 0.16
+        ) % 1.0
+        base_v = (
+            energy * 30.0 + kick_val * 18.0 + mid_band * 7.0
+            + high_band * 7.0 + bass_signal * 8.0 + build_envelope * 26.0
+        ) * self.intensity
+        t_anim = now * 0.35 * self.speed
 
+        segs = []
         for i in range(num_zones):
             dist_centre = abs(i - half)
-
-            # Check if hit by any active shockwave ring
             ring_intensity = 0.0
-            chosen_ring_pal_idx = 0
-            for r in self.ripples:
-                ring_dist = abs(dist_centre - r["radius"])
-                if ring_dist < 4.0:
-                    intensity_sample = (1.0 - ring_dist / 4.0) * r["life"] * r.get("energy", 1.0)
+            ring_color = None
+            for ripple in self.ripples:
+                ring_dist = abs(dist_centre - ripple["radius"])
+                if ring_dist < 4.8:
+                    intensity_sample = (
+                        (1.0 - ring_dist / 4.8) * ripple["life"] * ripple.get("energy", 1.0)
+                    )
                     if intensity_sample > ring_intensity:
                         ring_intensity = intensity_sample
-                        chosen_ring_pal_idx = int(r.get("color_idx", 0))
+                        ring_color = ripple.get("color")
 
-            # Base reactive audio level per zone
-            base_v = int((state.energy * 45.0 + kick_val * 30.0) * self.intensity)
-
-            if self._flash_decay > 0.35 and dist_centre < 14:
-                # Reserved blinding white flash core during confirmed drops
-                key_h = int(getattr(state, "key_hue", 0))
-                h, s, v = (key_h, 0, 100)
-            elif ring_intensity > 0.10:
-                # Vibrant colored electric ring on shockwave boundary
-                h, s = pal[chosen_ring_pal_idx % len(pal)][:2]
-                v = int(max(base_v, ring_intensity * 100.0 * self.intensity))
+            # Many intermediate palette shades are sampled in OKLab, never RGB primaries.
+            palette_pos = (
+                i / float(max(1, num_zones)) * 0.30
+                + palette_phase + t_anim * 0.025
+            ) % 1.0
+            h, sat, _ = sample_palette_oklab(pal, palette_pos, cyclic=True)
+            wave = 0.5 + 0.5 * math.sin(i * 0.28 - t_anim + onset_val * 0.8)
+            colored_base = max(5.0, base_v + wave * (5.0 + high_band * 8.0))
+            if ring_intensity > 0.06 and ring_color:
+                h, sat = int(ring_color[0]), int(ring_color[1])
+                value = max(colored_base, ring_intensity * 86.0 * self.intensity)
             else:
-                # Background bass groove
-                h, s = sample_palette_oklab(pal, (i / float(max(1, num_zones)) + t_anim * 0.15) % 1.0)[:2]
-                v = int(max(15, base_v + int(math.sin(i * 0.4 + t_anim) * 12)))
+                value = colored_base
 
-            segs.append((h, s, max(5, min(100, v))))
+            # White remains a qualified bass-drop accent, not the default high-frequency response.
+            if self._flash_decay > 0.48 and dist_centre < min(14.0, num_zones * 0.30):
+                white_weight = self._flash_decay * math.exp(-0.5 * (dist_centre / max(2.0, half * 0.22)) ** 2)
+                sat = int(round(sat * (1.0 - white_weight)))
+                value = value + (100.0 - value) * white_weight
+
+            segs.append((int(h) % 360, max(0, min(100, int(sat))), max(5, min(100, int(round(value))))))
 
         return segs
-
 
 # ── LumiSync Spatial Reaction Styles ─────────────────────────────────────────
 
