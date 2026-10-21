@@ -225,12 +225,15 @@ class MusicReactiveL930:
         token = self._output_token
         if hasattr(self._ctrl, "clear_frames"):
             self._ctrl.clear_frames()
-        if token is not None:
-            self._publish_frame(
-                {"segments": [[0, 0, 0] for _ in range(NUM_SEGMENTS)],
-                 "brightness": 0, "transition": 0, "_pre_corrected": True},
-                output_token=token, allow_stopped=True,
-            )
+        dark_frame = {
+            "segments": [[0, 0, 0] for _ in range(NUM_SEGMENTS)],
+            "brightness": 0, "transition": 0, "_pre_corrected": True,
+        }
+        if self._frame_bus:
+            if token is not None:
+                self._publish_frame(dark_frame, output_token=token, allow_stopped=True)
+        else:
+            self._publish_frame(dark_frame, allow_stopped=True)
         self._last_error = message
         if isinstance(self._app_state, dict):
             self._app_state["last_error"] = message
