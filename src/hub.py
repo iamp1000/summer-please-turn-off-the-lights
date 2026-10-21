@@ -97,11 +97,11 @@ class DeviceContext:
         }
         if packet.segments is not None:
             frame["segments"] = [list(zone) for zone in packet.segments]
+        elif packet.color_temp is not None:
+            frame["color_temp"] = int(packet.color_temp)
         elif packet.hsv is not None:
             h, sat, value = packet.hsv[:3]
             frame.update({"h": int(h), "s": int(sat), "b": int(value)})
-        elif packet.color_temp is not None:
-            frame["color_temp"] = int(packet.color_temp)
         else:
             return
         for key in ("t_audio_recv", "t_analysis_done", "t_frame_rendered"):
