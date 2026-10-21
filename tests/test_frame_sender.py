@@ -302,3 +302,77 @@ async def test_saturation_only_changes_are_significant_for_both_frame_shapes():
     sender._last_sent_segments = None
     sender._last_sent_hsb = (120, 10, 50)
     assert sender._is_change_significant({"h": 120, "s": 16, "b": 50})
+
+
+@pytest.mark.asyncio
+async def test_frame_popped_before_handoff_is_dropped_by_live_arbiter_check():
+    """An ownership switch during the final send authorization must suppress the old frame."""
+    import threading
+    from src.frame_bus import FrameBus, OutputArbiter, OutputProducer
+
+    diag = DeviceDiagnostics(dev_id="handoff_strip")
+    sent = []
+    auth_entered = threading.Event()
+    allow_auth_to_finish = threading.Event()
+
+    async def mock_transmit(frame):
+        sent.append(frame)
+        return True
+
+    loop = asyncio.get_running_loop()
+    sender = LatestFrameSender(
+        dev_id="handoff_strip",
+        transmit_fn=mock_transmit,
+        diagnostics=diag,
+        loop=loop,
+        max_updates_per_s=8.0,
+    )
+
+    class Controller:
+        frame_sender = sender
+
+        def submit_frame(self, frame):
+            sender.submit_frame(frame)
+
+        def clear_frames(self):
+            sender.clear()
+
+    arbiter = OutputArbiter()
+    bus = FrameBus(arbiter)
+    bus.bind_device("handoff_strip", Controller())
+    arbiter.claim_output("handoff_strip", OutputProducer.EFFECT)
+    token = bus.capture_token("handoff_strip", OutputProducer.EFFECT)
+    assert token is not None
+
+    def gated_authorizer(frame):
+        auth_entered.set()
+        # The test thread changes the owner after this frame is popped, but before
+        # the authorization decision is made.
+        allow_auth_to_finish.wait(timeout=1.0)
+        return bus.is_frame_current("handoff_strip", frame)
+
+    sender.set_frame_authorizer(gated_authorizer)
+
+    def handoff():
+        assert auth_entered.wait(timeout=1.0)
+        arbiter.claim_output("handoff_strip", OutputProducer.AUDIO, renew=True)
+        allow_auth_to_finish.set()
+
+    handoff_thread = threading.Thread(target=handoff, daemon=True)
+    handoff_thread.start()
+    sender.start()
+    assert bus.publish_frame(
+        "handoff_strip",
+        OutputProducer.EFFECT,
+        {"segments": [[220, 90, 65]] * 50, "brightness": 65, "transition": 500},
+        generation=token[0],
+        producer_id=token[1],
+    )
+
+    await asyncio.sleep(0.08)
+    handoff_thread.join(timeout=1.0)
+    sender.stop()
+
+    assert not handoff_thread.is_alive()
+    assert sent == []
+    assert diag.frames_dropped >= 1
