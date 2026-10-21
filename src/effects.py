@@ -195,12 +195,13 @@ class AnimationEngine:
                             break
                         continue
 
-                if hasattr(self._controller, "submit_frame"):
-                    self._controller.submit_frame(frame_data)
-                elif hasattr(self._controller, "set_state"):
-                    self._loop_runner.run(self._controller.set_state(
-                        frame_data["h"], frame_data["s"], frame_data["b"], priority=1
-                    ))
+                if not self._frame_bus:
+                    if hasattr(self._controller, "submit_frame"):
+                        self._controller.submit_frame(frame_data)
+                    elif hasattr(self._controller, "set_state"):
+                        self._loop_runner.run(self._controller.set_state(
+                            frame_data["h"], frame_data["s"], frame_data["b"], priority=1
+                        ))
 
                 if stop_event.wait(interval):
                     break
