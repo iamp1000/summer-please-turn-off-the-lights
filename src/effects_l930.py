@@ -1421,6 +1421,7 @@ class L930EffectsEngine:
                         segments=corrected,
                         brightness=b,
                         transition=trans_ms,
+                        pre_corrected=True,
                     ))
                     if not published:
                         # Another producer has output ownership; yield gracefully
