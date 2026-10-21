@@ -1,10 +1,10 @@
 """
 L900 Ambient Light Effects Engine.
 
-Drives slow, relaxing ambient light animations for single-zone light strips.
-Rule:
-- Slow effects only: Ambient Drift, Fireplace, Golden Hour, Ocean Waves, Color Breath, Candle Flicker.
-- Send a target color every 1-3 seconds with transition_ms ~= interval in a single combined request.
+Drives restrained target changes for single-zone L900 strips. The L900 HSB
+transport transmits hue, saturation and brightness but does not consume the
+per-frame "transition" metadata used by the L930 path. Ambient smoothness therefore
+comes from slow envelopes, modest per-update changes and safe sender pacing.
 """
 from __future__ import annotations
 
@@ -121,6 +121,26 @@ class AnimationEngine:
         if hasattr(self._controller, "clear_frames"):
             self._controller.clear_frames()
 
+    def _timing_for_effect(self, eff_name: str, speed_multiplier: float) -> Tuple[float, int]:
+        """Return safe target cadence and advisory transition metadata for L900."""
+        sp_mult = max(0.2, float(speed_multiplier))
+        if eff_name == "candle_flicker":
+            interval = max(0.42, random.uniform(0.48, 0.62) / sp_mult)
+        elif eff_name == "fireplace":
+            interval = max(0.50, 0.66 / sp_mult)
+        elif eff_name == "color_breath":
+            interval = max(0.55, 0.75 / sp_mult)
+        elif eff_name == "ocean_waves":
+            interval = max(0.65, 0.95 / sp_mult)
+        elif eff_name == "golden_hour":
+            interval = max(1.0, 3.2 / sp_mult)
+        elif eff_name == "ambient_drift":
+            interval = max(1.0, 3.0 / sp_mult)
+        else:
+            interval = max(0.5, 2.0 / sp_mult)
+        # Metadata only: this transport does not send a native L900 transition duration.
+        return interval, int(round(interval * 1000.0))
+
     def _run(self, stop_event: threading.Event, generation: int):
         while not stop_event.is_set() and generation == self._effect_generation:
             try:
@@ -133,35 +153,9 @@ class AnimationEngine:
                 cfg = self._current_effect
                 t = time.monotonic() - self._start_time
 
-                # 1. Determine send interval & transition duration based on physical nature
-                sp_mult = max(0.2, self._speed_multiplier)
-                if eff_name == "candle_flicker":
-                    # Rapid, irregular updates with short attack to prevent smoothing away flickers
-                    interval = random.uniform(0.12, 0.28) / sp_mult
-                    trans_ms = max(40, int(interval * 500))
-                elif eff_name == "fireplace":
-                    # Active thermal turbulence with surging attacks
-                    interval = max(0.25, 0.45 / sp_mult)
-                    trans_ms = int(interval * 700)
-                elif eff_name == "color_breath":
-                    # Smooth respiratory pacing
-                    interval = max(0.35, 0.60 / sp_mult)
-                    trans_ms = int(interval * 950)
-                elif eff_name == "ocean_waves":
-                    # Swell and surf rhythm
-                    interval = max(0.40, 0.85 / sp_mult)
-                    trans_ms = int(interval * 900)
-                elif eff_name == "golden_hour":
-                    # Stable, sunlit slow drift
-                    interval = max(1.0, 3.2 / sp_mult)
-                    trans_ms = int(interval * 1000)
-                elif eff_name == "ambient_drift":
-                    # Silky, long palette migration
-                    interval = max(1.0, 3.0 / sp_mult)
-                    trans_ms = int(interval * 1000)
-                else:
-                    interval = max(0.5, 2.0 / sp_mult)
-                    trans_ms = int(interval * 1000)
+                # L900's HSB transport ignores transition metadata, so pace small target changes.
+                interval, trans_ms = self._timing_for_effect(eff_name, self._speed_multiplier)
+
 
                 # Compute target HSV with effective elapsed time
                 effective_t = t * self._speed_multiplier
@@ -242,22 +236,22 @@ class AnimationEngine:
             b_val = int(50 + norm_drift * 12)
             return int(h_val), int(s_val), max(1, min(100, b_val))
 
-        # 2. Fireplace: Irregular warmth changes with occasional brighter flame surges
+        # 2. Fireplace: soft, low-frequency ember and flame movement for the L900.
         elif eff_name == "fireplace":
-            # Multi-octave irregular thermal turbulence
-            simmer = math.sin(t * 1.8) * 0.45 + math.sin(t * 3.7 + 0.8) * 0.35 + math.sin(t * 6.3 + 1.9) * 0.20
-            # Episodic flame tongue surges
-            surge_osc = math.sin(t * 0.75 + 2.1)
-            surge = max(0.0, (surge_osc - 0.35) / 0.65) ** 1.8
-            # Low ember simmer drops into 0.15-0.35, flame flares boost up to 0.85-1.0
-            intensity = max(0.0, 0.45 * (simmer + 1.0) * 0.5 + 0.55 * surge)
-
-            # Color temperature changes with flame surge:
-            # Simmering embers: deep crimson orange (14°); Hot flame surges: golden yellow (38°)
-            h_val = int(14 + intensity * 24)
-            s_val = int(98 - surge * 18)
-            b_val = int(max(20, min(95, 20 + intensity * 74)))
+            simmer = (
+                math.sin(t * 0.85) * 0.34
+                + math.sin(t * 1.30 + 0.8) * 0.24
+                + math.sin(t * 2.0 + 1.9) * 0.12
+            )
+            surge_osc = math.sin(t * 0.34 + 2.1)
+            surge = max(0.0, (surge_osc - 0.45) / 0.55) ** 2.0
+            intensity = max(0.0, 0.60 * (simmer + 1.0) * 0.5 + 0.40 * surge)
+            h_val = int(18 + intensity * 16)
+            s_val = int(97 - surge * 9)
+            b_val = int(max(24, min(72, 24 + intensity * 48)))
             return int(h_val), int(s_val), b_val
+
+
 
         # 3. Golden Hour: Stable rich amber and honey palette with slow rose shifts (sunlit & radiant)
         elif eff_name == "golden_hour":
@@ -279,60 +273,58 @@ class AnimationEngine:
             b_val = int(76 + sunlit_wave * 14)
             return int(h_val), int(s_val), max(1, min(100, b_val))
 
-        # 4. Ocean Waves: Slow blue-to-teal changes with distinct asymmetric swell and recession
+        # 4. Ocean Waves: slow, restrained swell and recession; fewer sharp target steps.
         elif eff_name == "ocean_waves":
-            period = 7.5
+            period = 12.0
             phase = (t % period) / period
-            if phase < 0.45:
-                # Swell build-up: water accelerates toward crest
-                p = phase / 0.45
-                env = p ** 2.2
-                h_val = int(215 - env * 45)  # 215 deep navy -> 170 coastal teal
-                s_val = int(85 - env * 25)
-                b_val = int(24 + env * 66)
+            if phase < 0.48:
+                p = phase / 0.48
+                env = 0.5 - 0.5 * math.cos(p * math.pi)
+                h_val = int(214 - env * 30)
+                s_val = int(78 - env * 16)
+                b_val = int(32 + env * 40)
             else:
-                # Recession / undertow: exponential damping back to deep indigo
-                p = (phase - 0.45) / 0.55
-                decay = math.exp(-p * 3.5)
-                h_val = int(170 + (1.0 - decay) * 45)
-                s_val = int(60 + (1.0 - decay) * 25)
-                b_val = int(24 + decay * 66)
+                p = (phase - 0.48) / 0.52
+                decay = math.exp(-p * 2.6)
+                h_val = int(184 + (1.0 - decay) * 30)
+                s_val = int(62 + (1.0 - decay) * 16)
+                b_val = int(32 + decay * 40)
             return int(h_val), int(s_val), max(1, min(100, b_val))
 
-        # 5. Color Breath: Holds chosen warm hue, focuses on 10s physiological respiratory curve
+
+
+        # 5. Color Breath: slow, low-glare respiratory cycle with a long crest hold.
         elif eff_name == "color_breath":
             pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "warm_mono")
             h_val, s_val = pal[0][0], pal[0][1]
-
-            # 10s Respiratory cycle: 4s inhale, 1s hold, 5s exhale
-            cycle = 10.0
+            cycle = 14.0
             phase = (t % cycle) / cycle
-            if phase < 0.40:
-                p = phase / 0.40
-                curve = 0.5 - 0.5 * math.cos(p * math.pi)  # Smooth cubic ease-in
-            elif phase < 0.50:
-                curve = 1.0  # Post-inspiratory hold
+            if phase < 0.43:
+                p = phase / 0.43
+                curve = 0.5 - 0.5 * math.cos(p * math.pi)
+            elif phase < 0.54:
+                curve = 1.0
             else:
-                p = (phase - 0.50) / 0.50
-                curve = 0.5 + 0.5 * math.cos(p * math.pi)  # Relaxing exhale decay
-
-            b_val = int(max(10, min(88, 12 + curve * 76)))
+                p = (phase - 0.54) / 0.46
+                curve = 0.5 + 0.5 * math.cos(p * math.pi)
+            b_val = int(max(22, min(68, 22 + curve * 46)))
             return int(h_val), int(s_val), b_val
 
-        # 6. Candle Flicker: Fast irregular brightness changes with color-temperature shifts
+
+
+        # 6. Candle Flicker: slow, restrained flame flutter with a narrow brightness range.
         elif eff_name == "candle_flicker":
-            # Fast drafting flutter and micro-drops
-            f1 = math.sin(t * 14.3) * 0.35
-            f2 = math.cos(t * 23.7) * 0.25
-            draft = -0.35 if (math.sin(t * 3.1) > 0.82) else 0.0
-            flutter = f1 + f2 + draft + random.uniform(-0.15, 0.15)
-            norm_flame = max(0.0, min(1.0, 0.65 + flutter * 0.45))
-
-            # Color temperature: draft drops cool to deeper red-orange (27°), hot surges flare to golden yellow (38°)
-            h_val = int(27 + norm_flame * 11)
-            s_val = int(95 - norm_flame * 10)
-            b_val = int(max(18, min(95, 20 + norm_flame * 72)))
+            f1 = math.sin(t * 0.95) * 0.22
+            f2 = math.cos(t * 1.65) * 0.10
+            draft = -0.14 if math.sin(t * 0.42) > 0.88 else 0.0
+            flutter = f1 + f2 + draft + random.uniform(-0.035, 0.035)
+            norm_flame = max(0.0, min(1.0, 0.60 + flutter))
+            h_val = int(26 + norm_flame * 8)
+            s_val = int(96 - norm_flame * 8)
+            b_val = int(max(25, min(62, 25 + norm_flame * 42)))
             return int(h_val), int(s_val), b_val
+
+
 
         # Fallback / Custom Palette
         else:
