@@ -959,3 +959,43 @@ def test_all_catalog_effects_and_aliases_have_distinct_non_flat_previews():
     assert hearth_frame != flat_fallback
     assert dual_frame != flat_fallback
     assert prism_frame != flat_fallback
+
+
+@pytest.mark.asyncio
+async def test_l930_native_effect_rechecks_output_token_after_connection_wait():
+    """A firmware command that loses ownership while connecting must never reach the device."""
+    import asyncio
+    from src.device_l930 import L930Controller
+    from src.frame_bus import OutputArbiter, OutputProducer
+
+    arbiter = OutputArbiter()
+    arbiter.claim_output("strip", OutputProducer.EFFECT)
+    _, generation, producer_id = arbiter.get_token("strip")
+    sent = []
+
+    class FakeDevice:
+        async def set_light_effect(self, effect):
+            sent.append(effect)
+            return True
+
+    ctrl = L930Controller.__new__(L930Controller)
+    ctrl._lock = asyncio.Lock()
+    ctrl.frame_sender = None
+    ctrl._device = FakeDevice()
+    ctrl._is_on = True
+    ctrl._last_successful_response = 0.0
+    ctrl._output_token_authorizer = lambda producer, gen, pid: arbiter.is_token_current(
+        "strip", producer, gen, pid
+    )
+
+    async def handoff_during_connect():
+        arbiter.claim_output("strip", OutputProducer.AUDIO, renew=True)
+
+    ctrl._ensure_connected = handoff_during_connect
+    result = await ctrl.set_native_effect(
+        object(), priority=0,
+        output_token=(OutputProducer.EFFECT, generation, producer_id),
+    )
+
+    assert result is False
+    assert sent == []
