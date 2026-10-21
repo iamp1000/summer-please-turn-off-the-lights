@@ -127,3 +127,61 @@ def test_new_scene_generation_rejects_previous_session_of_same_producer():
     ) is False
     assert controller.frames == []
     assert bus.get_latest_frame("strip") is None
+
+
+def test_hub_static_brightness_update_republishes_through_frame_bus():
+    """Static brightness changes must not issue a second controller-level write."""
+    from types import SimpleNamespace
+    from src.hub import LightHub
+
+    class Controller(FakeController):
+        last_h = 205
+        last_s = 72
+        last_b = 44
+
+        async def set_brightness(self, _value, priority=1):
+            raise AssertionError("brightness bypassed the authoritative FrameBus path")
+
+    class RejectDirectWrites:
+        def run(self, awaitable):
+            close = getattr(awaitable, "close", None)
+            if close:
+                close()
+            raise AssertionError("a direct device write was attempted")
+
+    arbiter = OutputArbiter()
+    bus = FrameBus(arbiter)
+    controller = Controller()
+    bus.bind_device("strip", controller)
+    arbiter.claim_output("strip", OutputProducer.STATIC)
+    assert bus.publish(FramePacket(
+        dev_id="strip",
+        producer=OutputProducer.STATIC,
+        hsv=(205, 72, 44),
+        brightness=44,
+    ))
+
+    ctx = SimpleNamespace(
+        dev_id="strip",
+        model="L900",
+        state={"brightness": 44, "active_label": "Custom Wheel"},
+        controller=controller,
+        fx_engine=None,
+    )
+    hub = LightHub.__new__(LightHub)
+    hub.devices = {"strip": ctx}
+    hub.arbiter = arbiter
+    hub.frame_bus = bus
+    hub.loop_runner = RejectDirectWrites()
+    hub.notify_change = lambda: None
+
+    hub.set_brightness("strip", 75)
+
+    latest = bus.get_latest_frame("strip")
+    assert latest is not None
+    assert latest.producer == OutputProducer.STATIC
+    assert tuple(latest.hsv) == (205, 72, 75)
+    assert latest.generation is not None
+    assert latest.producer_id is not None
+    assert controller.frames[-1]["b"] == 75
+    assert controller.frames[-1]["_producer"] == OutputProducer.STATIC
