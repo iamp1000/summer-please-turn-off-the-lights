@@ -400,13 +400,19 @@ class LightHub:
         for ctx in targets:
             new_power = not ctx.state["power"] if state is None else state
             ctx.state["power"] = new_power
-            ctx.stop_all_active()
+            # Revoke the previous session and clear its queue before issuing power commands.
             if not new_power:
-                self.arbiter.claim_output(ctx.dev_id, OutputProducer.IDLE, on_relinquish=ctx.stop_all_active)
+                self.arbiter.claim_output(
+                    ctx.dev_id, OutputProducer.IDLE,
+                    on_relinquish=ctx.stop_all_active, renew=True,
+                )
                 ctx.state["active_label"] = "Off"
                 self.loop_runner.run(ctx.controller.turn_off(priority=0))
             else:
-                self.arbiter.claim_output(ctx.dev_id, OutputProducer.STATIC, on_relinquish=ctx.stop_all_active)
+                self.arbiter.claim_output(
+                    ctx.dev_id, OutputProducer.STATIC,
+                    on_relinquish=ctx.stop_all_active, renew=True,
+                )
                 ctx.state["active_label"] = "Idle"
                 self.loop_runner.run(ctx.controller.turn_on(priority=0))
         self.notify_change()
@@ -426,43 +432,19 @@ class LightHub:
         targets = self._resolve_targets(dev_id)
         mode_data = self.config.get("modes", {}).get(mode_name, {})
         for ctx in targets:
-            self.arbiter.claim_output(ctx.dev_id, OutputProducer.STATIC, on_relinquish=ctx.stop_all_active, renew=True)
+            self.arbiter.claim_output(
+                ctx.dev_id, OutputProducer.STATIC,
+                on_relinquish=ctx.stop_all_active, renew=True,
+            )
             output_token = self.frame_bus.capture_token(ctx.dev_id, OutputProducer.STATIC)
             ctx.stop_all_active()
             ctx.state["power"] = True
             ctx.state["active_label"] = mode_name
-            # Power up before publishing so turn_on() cannot clear the newly queued frame.
-            b = mode_data.get("brightness", 50)
-            h = mode_data.get("hue", 0)
-            s = mode_data.get("saturation", 0)
-            if ctx.model == "L930":
-                from src.modes import build_mode_segments
-                segs = build_mode_segments(mode_data, num_zones=50)
-                packet = FramePacket(
-                    dev_id=ctx.dev_id,
-                    producer=OutputProducer.STATIC,
-                    segments=segs,
-                    brightness=b,
-                    transition=600,
-                    generation=output_token[0] if output_token else None,
-                    producer_id=output_token[1] if output_token else None,
-                )
-            else:
-                packet = FramePacket(
-                    dev_id=ctx.dev_id,
-                    producer=OutputProducer.STATIC,
-                    hsv=(h, s, b),
-                    brightness=b,
-                    transition=600,
-                    generation=output_token[0] if output_token else None,
-                    producer_id=output_token[1] if output_token else None,
-                )
-
-            async def _apply_static_output(c=ctx, p=packet):
-                await c.controller.turn_on(priority=0)
-                self.frame_bus.publish(p)
-
-            self.loop_runner.run(_apply_static_output())
+            # ModeManager emits either the L930 spatial frame or the L900 crossfade
+            # frames, all tagged with this ownership generation and delivered once.
+            self.loop_runner.run(
+                ctx.mode_mgr._apply_async(mode_data, output_token=output_token)
+            )
         self.notify_change()
 
     def apply_effect(self, dev_id: str, effect_name: str) -> bool:
