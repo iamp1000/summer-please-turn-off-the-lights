@@ -249,3 +249,56 @@ async def test_frame_sender_no_early_wakeup_under_pending_flood():
     measured_gap = transmit_starts[1] - transmit_starts[0]
     assert measured_gap >= 0.480, f"Flood caused early wakeup: gap was {measured_gap*1000:.1f}ms (expected >= 480ms)"
 
+
+
+@pytest.mark.asyncio
+async def test_sender_rejects_frame_that_is_unauthorized_at_send_boundary():
+    """A frame already popped from the latest-wins slot must still be reauthorized."""
+    diag = DeviceDiagnostics(dev_id="owned_strip")
+    sent = []
+
+    async def mock_transmit(frame):
+        sent.append(frame)
+        return True
+
+    sender = LatestFrameSender(
+        dev_id="owned_strip",
+        transmit_fn=mock_transmit,
+        diagnostics=diag,
+        loop=asyncio.get_running_loop(),
+        max_updates_per_s=8.0,
+    )
+    sender.set_frame_authorizer(lambda _frame: False)
+    sender.start()
+    sender.submit_frame({"segments": [[200, 90, 60]] * 50, "brightness": 60})
+    await asyncio.sleep(0.08)
+    sender.stop()
+
+    assert sent == []
+    assert diag.frames_dropped >= 1
+
+
+@pytest.mark.asyncio
+async def test_saturation_only_changes_are_significant_for_both_frame_shapes():
+    """Saturation changes alone can alter color and must bypass the unchanged-frame filter."""
+    diag = DeviceDiagnostics(dev_id="saturation_strip")
+
+    async def mock_transmit(_frame):
+        return True
+
+    sender = LatestFrameSender(
+        dev_id="saturation_strip",
+        transmit_fn=mock_transmit,
+        diagnostics=diag,
+        loop=asyncio.get_running_loop(),
+        max_updates_per_s=8.0,
+        min_zone_delta=2.0,
+    )
+
+    sender._last_sent_segments = [[120, 10, 50] for _ in range(50)]
+    sender._last_sent_hsb = None
+    assert sender._is_change_significant([[120, 16, 50] for _ in range(50)])
+
+    sender._last_sent_segments = None
+    sender._last_sent_hsb = (120, 10, 50)
+    assert sender._is_change_significant({"h": 120, "s": 16, "b": 50})
