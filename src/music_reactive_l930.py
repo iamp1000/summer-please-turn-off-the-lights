@@ -13,7 +13,6 @@ from src.audio_dsp import SpectralFluxOnsetDetector, BPMTracker, DynamicAudioCal
 from src.visual_styles import get_visual_style, STYLE_REGISTRY, create_style_instances, AccentCompositor, DirectorStyle, sample_palette_oklab
 from src.frame_bus import FramePacket, OutputProducer
 from src.music_dynamics import MusicBrightnessFloor, music_is_genuinely_active, fade_segments, silence_fade_duration, effective_send_rate
-from src.music_dynamics import MusicBrightnessFloor, music_is_genuinely_active, fade_segments, silence_fade_duration
 
 NUM_SEGMENTS = 50
 
