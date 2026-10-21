@@ -168,3 +168,23 @@ def test_standalone_music_worker_reports_missing_audio_device(monkeypatch, engin
     assert "audio input" in state["last_error"].lower()
     assert controller.frames, "failure should publish a final black frame"
     assert controller.frames[-1].get("b", controller.frames[-1].get("brightness")) == 0
+
+
+def test_audio_coordinator_can_retry_after_discovery_failure(monkeypatch):
+    # A failed run must leave no phantom "running" state or live thread that blocks retry.
+    monkeypatch.setattr("src.music_reactive.get_audio_input_source", lambda *args, **kwargs: None)
+    coordinator = AudioCaptureCoordinator(samplerate=8000, blocksize=128)
+
+    coordinator.start()
+    first = coordinator._thread
+    _join_worker(coordinator)
+    assert coordinator.status == "error"
+    assert coordinator.is_running() is False
+
+    coordinator.start()
+    second = coordinator._thread
+    _join_worker(coordinator)
+
+    assert second is not None and second is not first
+    assert coordinator.status == "error"
+    assert coordinator.is_running() is False
