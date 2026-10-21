@@ -999,3 +999,134 @@ async def test_l930_native_effect_rechecks_output_token_after_connection_wait():
 
     assert result is False
     assert sent == []
+
+
+
+def _hue_delta(a, b):
+    return abs((int(a) - int(b) + 180) % 360 - 180)
+
+
+def _frame_rgb(frame):
+    from src.pipeline import tapo_hsv_to_rgb
+    return [tapo_hsv_to_rgb(*zone) for zone in frame]
+
+
+def _max_rgb_step(left, right):
+    return max(
+        max(abs(a[c] - b[c]) for c in range(3))
+        for a, b in zip(left, right)
+    )
+
+
+def test_aurora_blends_curtain_colors_without_winner_takes_all():
+    engine = L930EffectsEngine(None, None, {})
+    first = engine._render_aurora(1.23)
+    next_frame = engine._render_aurora(1.25)
+
+    assert len(first) == 50
+    assert len({h for h, _, _ in first}) >= 10, "Aurora should blend intermediate hues, not only three fixed hues"
+    assert _max_rgb_step(_frame_rgb(first), _frame_rgb(next_frame)) < 0.12
+    assert all(10 <= v <= 90 for _, _, v in first)
+
+
+def test_raindrops_have_long_soft_wakes_and_respond_to_cadence():
+    from types import SimpleNamespace
+
+    engine = L930EffectsEngine(None, None, {})
+    engine._ctrl = SimpleNamespace(
+        current_interval=0.0,
+        frame_sender=SimpleNamespace(max_updates_per_s=5.0, _aimd_rate_cap=1.0),
+    )
+    slow_frame = engine._render_raindrop(1.0)
+    later_frame = engine._render_raindrop(1.4)
+
+    assert slow_frame != later_frame
+    assert max(v for _, _, v in slow_frame) <= 82
+    active_zones = [i for i, (_, _, v) in enumerate(slow_frame) if v >= 20]
+    assert 2 <= len(active_zones) <= 25
+    assert engine._effective_render_interval() >= 1.0
+
+
+def test_police_is_a_slow_siren_not_a_strobe_and_keeps_warning():
+    from types import SimpleNamespace
+    from src.effects_l930 import EFFECT_CATALOG
+
+    engine = L930EffectsEngine(None, None, {})
+    engine._ctrl = SimpleNamespace(
+        current_interval=0.0,
+        frame_sender=SimpleNamespace(max_updates_per_s=5.0, _aimd_rate_cap=1.0),
+    )
+
+    red_peak = engine._render_police(1.0)
+    transition = engine._render_police(2.0)
+    blue_peak = engine._render_police(3.0)
+
+    assert all(h == 0 for h, _, _ in red_peak[:25])
+    assert all(h == 240 for h, _, _ in red_peak[25:])
+    assert all(h == 0 for h, _, _ in blue_peak[:25])
+    assert all(h == 240 for h, _, _ in blue_peak[25:])
+    assert min(v for _, _, v in red_peak[:25]) > 70
+    assert min(v for _, _, v in blue_peak[25:]) > 70
+    assert max(v for _, _, v in transition) <= 10
+    assert max(v for _, _, v in red_peak + blue_peak) < 100
+    assert "warning" in EFFECT_CATALOG["police"]
+    assert "strobe warning" in EFFECT_CATALOG["police"]["warning"].lower()
+
+
+def test_haunted_mansion_uses_localized_smooth_glows_not_full_strip_flashes():
+    engine = L930EffectsEngine(None, None, {})
+    samples = [
+        engine._render_haunted_mansion(t)
+        for t in (0.0, 0.05, 0.5, 1.25, 2.5, 4.0, 6.0, 8.0)
+    ]
+
+    for frame in samples:
+        assert len(frame) == 50
+        assert max(v for _, _, v in frame) <= 64, "Haunted Mansion must not produce the old V95 full-strip flash"
+        assert sum(v >= 50 for _, _, v in frame) < 20, "glow should remain spatially localized"
+        assert sum(v <= 8 for _, _, v in frame) >= 10, "most zones should retain a near-black base"
+
+    for left, right in zip(samples, samples[1:]):
+        assert _max_rgb_step(_frame_rgb(left), _frame_rgb(right)) < 0.12
+
+
+def test_candy_cane_uses_soft_band_boundaries_and_moves():
+    engine = L930EffectsEngine(None, None, {})
+    first = engine._render_candy_cane(0.37)
+    later = engine._render_candy_cane(0.92)
+    rgb = _frame_rgb(first)
+
+    assert first != later
+    assert _max_rgb_step(rgb, rgb[1:] + rgb[:1]) < 0.50
+    assert all(0 <= h <= 360 and 0 <= sat <= 100 and 0 <= val <= 100 for h, sat, val in first)
+    assert max(sat for _, sat, _ in first) < 100, "warm-white bands should not be encoded as fully saturated primaries"
+
+
+def test_cyber_chase_reversal_is_smoothed_at_measured_cadence():
+    from types import SimpleNamespace
+
+    engine = L930EffectsEngine(None, None, {})
+    engine._ctrl = SimpleNamespace(
+        current_interval=0.0,
+        frame_sender=SimpleNamespace(max_updates_per_s=5.0, _aimd_rate_cap=2.0),
+    )
+    at_reversal = engine._render_collider_chase(0.001)
+    just_after = engine._render_collider_chase(0.02)
+
+    assert len(at_reversal) == 50
+    assert at_reversal != just_after
+    assert _max_rgb_step(_frame_rgb(at_reversal), _frame_rgb(just_after)) < 0.12
+    assert engine._effective_render_interval() >= 0.5
+
+
+def test_rainbow_spatial_and_temporal_hue_cycles_remain_continuous():
+    engine = L930EffectsEngine(None, None, {})
+    first = engine._render_rainbow(0.0)
+    later = engine._render_rainbow(0.5)
+
+    for frame in (first, later):
+        for i in range(50):
+            assert _hue_delta(frame[i][0], frame[(i + 1) % 50][0]) <= 9
+    temporal_deltas = [_hue_delta(a[0], b[0]) for a, b in zip(first, later)]
+    assert max(temporal_deltas) - min(temporal_deltas) <= 1
+    assert later != first
