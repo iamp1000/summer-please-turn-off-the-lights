@@ -23,3 +23,11 @@ def responsive_window_geometry(
     x = max(0, (sw - width) // 2)
     y = max(0, (sh - height) // 2)
     return width, height, x, y, min_w, min_h
+
+
+def responsive_grid_columns(width: int, max_columns: int = 3) -> int:
+    """Choose a readable grid column count from available pixels and a per-grid cap."""
+    available = max(1, int(width))
+    cap = max(1, min(3, int(max_columns)))
+    fitted = 1 if available < 470 else (2 if available < 820 else 3)
+    return min(cap, fitted)

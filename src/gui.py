@@ -243,7 +243,7 @@ def get_local_ip() -> str:
         return "127.0.0.1"
 
 
-from src.window_layout import responsive_window_geometry
+from src.window_layout import responsive_window_geometry, responsive_grid_columns
 
 
 class TapoGUI:
@@ -306,42 +306,9 @@ class TapoGUI:
         # Closing the window hides it to the tray; Quit remains explicit in the tray menu.
         self.app.protocol("WM_DELETE_WINDOW", self.hide_window)
 
-        # Global mousewheel listening ensures smooth scrolling regardless of widget hovered
-        self.app.bind_all("<MouseWheel>", self._on_global_mousewheel)
-        self.app.bind_all("<Button-4>", lambda e: self._on_mousewheel_linux(-1))
-        self.app.bind_all("<Button-5>", lambda e: self._on_mousewheel_linux(1))
-
         self._build_ui()
         self.app.bind("<Configure>", self._on_window_configure, add="+")
         self.hub.subscribe(self._on_hub_update)
-
-    def _on_global_mousewheel(self, event):
-        """Dispatches smooth mousewheel scrolling across all children inside the window."""
-        try:
-            if self.app.state() == "withdrawn" or self.active_picker is not None:
-                return
-            x, y = self.app.winfo_pointerxy()
-            wx, wy = self.app.winfo_rootx(), self.app.winfo_rooty()
-            ww, wh = self.app.winfo_width(), self.app.winfo_height()
-            if not (wx <= x <= wx + ww and wy <= y <= wy + wh):
-                return
-            delta = getattr(event, "delta", 0)
-            if delta:
-                units = int(-1 * (delta / 40))
-                if units == 0:
-                    units = -1 if delta > 0 else 1
-                self.scroll_body._parent_canvas.yview_scroll(units, "units")
-        except Exception:
-            pass
-
-    def _on_mousewheel_linux(self, direction: int):
-        """Scroll handler for X11 systems using Button-4/5."""
-        try:
-            if self.app.state() == "withdrawn" or self.active_picker is not None:
-                return
-            self.scroll_body._parent_canvas.yview_scroll(direction * 3, "units")
-        except Exception:
-            pass
 
     def _enable_drag(self, widget):
         def start(event):
@@ -354,34 +321,12 @@ class TapoGUI:
         widget.bind("<Button-1>", start)
         widget.bind("<B1-Motion>", drag)
 
-    def _bind_mousewheel_recursive(self, widget):
-        """Recursive binding fallback to guarantee scroll responsiveness on dynamic subframes."""
-        def _on_wheel(e):
-            try:
-                if self.active_picker is not None:
-                    return
-                delta = getattr(e, "delta", 0)
-                if delta:
-                    units = int(-1 * (delta / 40))
-                    if units == 0:
-                        units = -1 if delta > 0 else 1
-                    self.scroll_body._parent_canvas.yview_scroll(units, "units")
-            except Exception:
-                pass
+    def _register_responsive_grid(self, grid, max_columns: int = 3):
+        """Register a grid with a maximum column count for narrow windows."""
         try:
-            widget.bind("<MouseWheel>", _on_wheel)
-            widget.bind("<Button-4>", lambda e: self._on_mousewheel_linux(-1))
-            widget.bind("<Button-5>", lambda e: self._on_mousewheel_linux(1))
-        except Exception:
-            pass
-        try:
-            for child in widget.winfo_children():
-                self._bind_mousewheel_recursive(child)
-        except Exception:
-            pass
-
-    def _register_responsive_grid(self, grid):
-        """Register a card/button grid for responsive column reflow."""
+            grid._responsive_max_columns = max(1, min(3, int(max_columns)))
+        except (TypeError, ValueError):
+            grid._responsive_max_columns = 3
         if grid not in self._responsive_grids:
             self._responsive_grids.append(grid)
 
@@ -407,7 +352,9 @@ class TapoGUI:
                     self._responsive_grids.remove(grid)
                     continue
                 width = max(1, grid.winfo_width())
-                columns = 1 if width < 470 else (2 if width < 820 else 3)
+                columns = responsive_grid_columns(
+                    width, max_columns=getattr(grid, "_responsive_max_columns", 3)
+                )
                 for col in range(3):
                     grid.columnconfigure(
                         col, weight=1 if col < columns else 0, minsize=0,
@@ -419,9 +366,10 @@ class TapoGUI:
             except Exception:
                 continue
 
-        # Collapse the rail to icon-only navigation on narrower windows.
+        # Collapse the rail and shorten target labels before controls get cramped.
         try:
-            compact = self.app.winfo_width() < 980
+            window_width = self.app.winfo_width()
+            compact = window_width < 980
             if compact != getattr(self, "_nav_compact", False):
                 self._nav_compact = compact
                 self.nav_rail.configure(width=68 if compact else 194)
@@ -433,6 +381,16 @@ class TapoGUI:
                 for page, button in self.nav_buttons.items():
                     glyph, label = self._nav_items[page]
                     button.configure(text=glyph if compact else f"{glyph}   {label}", anchor="center" if compact else "w")
+
+            compact_targets = window_width < 760
+            if compact_targets != getattr(self, "_targets_compact", False):
+                self._targets_compact = compact_targets
+                self.target_label.configure(text="TARGET" if compact_targets else "CONTROL TARGET")
+                for dev_id, button in self.tab_buttons.items():
+                    button.configure(
+                        text=self._device_tab_short_labels[dev_id] if compact_targets else self._device_tab_labels[dev_id],
+                        font=ctk.CTkFont(size=11 if compact_targets else 12, weight="bold"),
+                    )
         except Exception:
             pass
 
@@ -571,22 +529,38 @@ class TapoGUI:
         self.tabs_bar.pack(fill="x", pady=(0, 10))
         tabs_inner = ctk.CTkFrame(self.tabs_bar, fg_color="transparent")
         tabs_inner.pack(fill="x", padx=10, pady=8)
-        ctk.CTkLabel(
+        self.target_label = ctk.CTkLabel(
             tabs_inner, text="CONTROL TARGET", font=ctk.CTkFont(size=10, weight="bold"),
             text_color=t["text_muted"]
-        ).pack(side="left", padx=(4, 12))
-        target_buttons = ctk.CTkFrame(tabs_inner, fg_color="transparent")
-        target_buttons.pack(side="left", fill="x", expand=True)
+        )
+        self.target_label.pack(side="left", padx=(4, 12))
+        self.target_buttons = ctk.CTkFrame(tabs_inner, fg_color="transparent")
+        self.target_buttons.pack(side="left", fill="x", expand=True)
         target_items = []
         for dev_id, ctx in self.hub.devices.items():
             model = getattr(ctx, "model", "")
             label = f"{ctx.name}  ·  {model}" if model else ctx.name
             target_items.append((dev_id, label))
         target_items.append(("all", "Both strips"))
-        for dev_id, title_text in target_items:
+        self._device_tab_labels = {dev_id: title_text for dev_id, title_text in target_items}
+        self._device_tab_short_labels = {}
+        used_short_labels = set()
+        for index, (dev_id, title_text) in enumerate(target_items):
+            if dev_id == "all":
+                short_label = "Both"
+            else:
+                device_ctx = self.hub.devices.get(dev_id)
+                short_label = str(getattr(device_ctx, "model", "") or "").strip().upper()
+                if not short_label:
+                    short_label = f"Strip {index + 1}"
+            if short_label in used_short_labels:
+                short_label = f"{short_label} {index + 1}"
+            used_short_labels.add(short_label)
+            self._device_tab_short_labels[dev_id] = short_label
+
             selected = dev_id == self.current_dev_id
             btn = ctk.CTkButton(
-                target_buttons, text=title_text, height=34,
+                self.target_buttons, text=title_text, height=34,
                 fg_color=t["accent_soft"] if selected else "transparent",
                 hover_color=t["surface_high"],
                 text_color=t["text_primary"] if selected else t["text_secondary"],
@@ -804,6 +778,7 @@ class TapoGUI:
         card_heading(self.sync_card, "Live inputs", "Choose one reactive source at a time, or switch between them as needed.")
         sync_body = ctk.CTkFrame(self.sync_card, fg_color="transparent")
         sync_body.pack(fill="x", padx=16, pady=(0, 16))
+        self._register_responsive_grid(sync_body, max_columns=2)
         sync_body.grid_columnconfigure((0, 1), weight=1, uniform="sync")
         self.btn_music = ctk.CTkButton(
             sync_body, text="♫  AUDIO REACTIVE\nFollow bass, mids, highs and rhythm",
@@ -998,6 +973,7 @@ class TapoGUI:
         card_heading(tuning_card, "Response tuning", "Adjust how strongly the signal moves the lights and how bright effects can get.")
         tuning_inner = ctk.CTkFrame(tuning_card, fg_color="transparent")
         tuning_inner.pack(fill="x", padx=18, pady=(0, 16))
+        self._register_responsive_grid(tuning_inner, max_columns=2)
         tuning_inner.grid_columnconfigure((0, 1), weight=1, uniform="tuning")
         sensitivity_box = ctk.CTkFrame(tuning_inner, fg_color="transparent")
         sensitivity_box.grid(row=0, column=0, sticky="ew", padx=(0, 12), pady=(0, 12))
@@ -1171,6 +1147,7 @@ class TapoGUI:
 
         metrics_row = ctk.CTkFrame(self.diag_card, fg_color="transparent")
         metrics_row.pack(fill="x", padx=14, pady=(0, 16))
+        self._register_responsive_grid(metrics_row, max_columns=3)
         metrics_row.grid_columnconfigure((0, 1, 2), weight=1, uniform="metrics")
         metric_specs = [
             ("send", "SEND RATE", "--", "#34d399"),
@@ -1251,7 +1228,6 @@ class TapoGUI:
 
         self._switch_page("overview")
         self._sync_view_to_device()
-        self._bind_mousewheel_recursive(self.scroll_body)
         self.app.after(900, self._periodic_telemetry_tick)
         self.app.after(120, self._periodic_strip_preview_tick)
 
@@ -1278,7 +1254,6 @@ class TapoGUI:
                 )
             except Exception:
                 pass
-        self._bind_mousewheel_recursive(self.scroll_body)
         try:
             self.app.after(100, self._reflow_responsive_grids)
         except Exception:
@@ -1381,6 +1356,7 @@ class TapoGUI:
         # Row 2: Dynamic Effect-Specific Tuning Sliders Container
         self.fx_specific_frame = ctk.CTkFrame(fc_inner, fg_color="transparent")
         self.fx_specific_frame.pack(fill="x", pady=(4, 0))
+        self._register_responsive_grid(self.fx_specific_frame, max_columns=2)
         self.fx_specific_frame.columnconfigure((0, 1), weight=1)
 
         # 1. Tail Length Slider Box
@@ -1549,7 +1525,6 @@ class TapoGUI:
                 self.buttons[f"eff_{name}"] = btn
 
         # Re-bind mousewheel on newly generated effect controls & cards
-        self._bind_mousewheel_recursive(self.fx_grid_frame)
 
     def _filter_effect_buttons(self, event=None):
         """Filter effect buttons using labels, groups and catalog descriptions."""
@@ -1782,7 +1757,12 @@ class TapoGUI:
             devs = list(self.hub.devices.values())
             any_on = any(d.state["power"] for d in devs)
             avg_b = sum(d.state["brightness"] for d in devs) // max(1, len(devs))
-            label = "Both Sync"
+            active_labels = [str(device.state.get("active_label", "")) for device in devs]
+            label = next((value for value in active_labels if "Audio" in value), "")
+            if not label:
+                label = next((value for value in active_labels if "Composite" in value), "")
+            if not label:
+                label = next((value for value in active_labels if "Screen" in value), "Both Sync")
             model_tag = "ALL"
             dev_title = "Both Strips (Sync All)"
         else:
@@ -1823,7 +1803,7 @@ class TapoGUI:
                 text_color=self.theme["accent_glow"] if is_match else self.theme["text_secondary"]
             )
 
-        is_music = "Audio" in label
+        is_music = "Audio" in label or "Composite" in label
         is_screen = "Screen" in label
 
         self.btn_music.configure(
