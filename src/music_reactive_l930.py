@@ -68,6 +68,7 @@ class MusicReactiveL930:
 
         self._running = False
         self._thread = None
+        self._run_generation = 0
         self._updater_future = None
 
         self._levels = np.zeros(NUM_SEGMENTS, dtype=np.float32)
@@ -192,19 +193,26 @@ class MusicReactiveL930:
     def start(self):
         if self._running:
             return
+        self._run_generation += 1
+        generation = self._run_generation
         self._running = True
         if self._coordinator:
             self._coordinator.register_subscriber(self)
             self._coordinator.start()
-            self._thread = threading.Thread(target=self._render_loop, daemon=True, name="MusicReactiveL930RenderLoop")
+            self._thread = threading.Thread(target=self._render_loop, args=(generation,), daemon=True, name="MusicReactiveL930RenderLoop")
         else:
-            self._thread = threading.Thread(target=self._run, daemon=True, name="MusicReactiveL930Worker")
+            self._thread = threading.Thread(target=self._run, args=(generation,), daemon=True, name="MusicReactiveL930Worker")
         self._thread.start()
 
     def stop(self):
         self._running = False
+        self._run_generation += 1
+        thread = self._thread
         if self._coordinator:
             self._coordinator.unregister_subscriber(self)
+        if thread and thread.is_alive() and thread != threading.current_thread():
+            thread.join(timeout=1.0)
+        self._thread = None
         dark = [[0, 0, 0] for _ in range(NUM_SEGMENTS)]
         self._target_segs = dark
         self._rendered_segs = dark
@@ -213,12 +221,13 @@ class MusicReactiveL930:
         if hasattr(self._ctrl, "submit_frame"):
             self._submit_frame({"segments": dark, "brightness": 0, "transition": 0})
 
-    def _render_loop(self):
+    def _render_loop(self, generation=None):
+        generation = self._run_generation if generation is None else generation
         last_t = time.perf_counter()
         target_fps = 60.0
         target_dt = 1.0 / target_fps
 
-        while self._running:
+        while self._running and generation == self._run_generation:
             t0 = time.perf_counter()
             dt = max(0.001, min(0.10, t0 - last_t))
             last_t = t0
@@ -376,7 +385,8 @@ class MusicReactiveL930:
         if hasattr(self._ctrl, "submit_frame"):
             self._submit_frame(frame_dict)
 
-    def _run(self):
+    def _run(self, generation=None):
+        generation = self._run_generation if generation is None else generation
         mic = get_audio_input_source(self._sr, self._bs, self._preferred_device)
         if not mic:
             print("[MusicReactiveL930] No audio input found.")
