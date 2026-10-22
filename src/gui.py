@@ -842,6 +842,14 @@ class TapoGUI:
             self.audio_opt.set(current_audio)
         self.audio_opt.grid(row=0, column=1, sticky="ew")
 
+        self.btn_audio_retry = ctk.CTkButton(
+            sync_body, text="↻  Restart audio capture", height=34, width=190,
+            corner_radius=7, fg_color=t["surface_raised"], hover_color=t["surface_high"],
+            border_width=1, border_color=t["border"], text_color=t["text_secondary"],
+            font=ctk.CTkFont(size=12, weight="bold"), command=self._handle_audio_retry
+        )
+        self.btn_audio_retry.grid(row=2, column=1, sticky="e", pady=(8, 0))
+
         self.vstyles_frame = ctk.CTkFrame(
             music, fg_color=t["surface"], corner_radius=9,
             border_width=1, border_color=t["border"]
@@ -1888,16 +1896,39 @@ class TapoGUI:
                         text="Measured light delay: -- ms (Set Voicemeeter A1 delay: ~-- ms)"
                     )
 
-            # Audio telemetry
+            # "Both strips" has no literal telemetry key; choose the active renderer,
+            # preferring the L930 spectrum monitor when the shared target is selected.
             audio_telem = self.hub.get_audio_telemetry()
             dev_telem = audio_telem.get(self.current_dev_id)
+            if self.current_dev_id == "all":
+                dev_telem = next(
+                    (audio_telem[key] for key, ctx in self.hub.devices.items()
+                     if ctx.model == "L930" and key in audio_telem and audio_telem[key].get("renderer_running")),
+                    None,
+                ) or next(
+                    (audio_telem[key] for key in self.hub.devices if key in audio_telem and audio_telem[key].get("renderer_running")),
+                    None,
+                ) or next(
+                    (audio_telem[key] for key, ctx in self.hub.devices.items()
+                     if ctx.model == "L930" and key in audio_telem),
+                    None,
+                ) or next(iter(audio_telem.values()), None)
+
             if dev_telem and dev_telem.get("active"):
                 bpm = round(dev_telem.get("bpm", 120.0))
                 sec = str(dev_telem.get("section", "VERSE")).upper()
                 deg = round(dev_telem.get("key_hue", 215.0))
                 mode = (dev_telem.get("mode", "maj") or "maj").upper()
+                source_name = dev_telem.get("audio_source") or "loopback"
+                capture_status = dev_telem.get("capture_status", "active")
+                if dev_telem.get("signal_active"):
+                    listening_label, listening_color = f"♫  {bpm} BPM", "#34d399"
+                else:
+                    listening_label, listening_color = "Listening · waiting for audio", "#fbbf24"
+                if capture_status == "error":
+                    listening_label, listening_color = "Audio capture error", "#fb7185"
 
-                self.gui_bpm_lbl.configure(text=f"⚡ {bpm} BPM", text_color="#10b981")
+                self.gui_bpm_lbl.configure(text=listening_label, text_color=listening_color)
                 self.gui_section_badge.configure(text=sec)
                 self.gui_key_pill.configure(text=f"🎼 {deg}° {mode}")
 
@@ -1923,8 +1954,9 @@ class TapoGUI:
                 self.bar_meter_hat.set(max(0.0, min(1.0, hat_val)))
                 self.lbl_meter_hat.configure(text=f"{hat_val:.2f}")
 
+                signal_label = "signal detected" if dev_telem.get("signal_active") else "no audio signal"
                 self.lbl_mon_meta.configure(
-                    text=f"BPM: {bpm} ({conf_pct}%) · Floor: {noise_db}dB · Tx: {send_fps:.1f} FPS"
+                    text=f"{source_name} · {signal_label} · BPM {bpm} ({conf_pct}%) · {send_fps:.1f} FPS"
                 )
 
                 # Render mini 16-band spectrum canvas
@@ -1938,8 +1970,24 @@ class TapoGUI:
                 trans_desc = "Flow" if trans > 0 else "Punchy"
                 self.lbl_transition_val.configure(text=f"Transition: {trans}ms ({trans_desc})")
             else:
-                self.gui_bpm_lbl.configure(text="💤 Inactive", text_color=self.theme["text_muted"])
-                self.lbl_mon_meta.configure(text="BPM: -- (0%) · Floor: -- · Tx: 0 FPS")
+                status = (dev_telem or {}).get("capture_status", "stopped")
+                capture_error = (dev_telem or {}).get("capture_error")
+                source_name = (dev_telem or {}).get("audio_source") or "no loopback selected"
+                renderer_running = bool((dev_telem or {}).get("renderer_running"))
+                if status == "error" or capture_error:
+                    message = (capture_error or "Audio capture failed").replace("\n", " ")
+                    self.gui_bpm_lbl.configure(text="Capture error", text_color="#fb7185")
+                    self.lbl_mon_meta.configure(text=f"{source_name} · {message[:110]}")
+                elif status == "starting":
+                    self.gui_bpm_lbl.configure(text="Starting audio…", text_color="#fbbf24")
+                    self.lbl_mon_meta.configure(text=f"Opening loopback · {source_name}")
+                elif not renderer_running:
+                    self.gui_bpm_lbl.configure(text="Audio reactive is off", text_color=self.theme["text_muted"])
+                    self.lbl_mon_meta.configure(text=f"Press Audio Reactive or choose a style · {source_name}")
+                else:
+                    self.gui_bpm_lbl.configure(text="Listening · waiting for audio", text_color="#fbbf24")
+                    self.lbl_mon_meta.configure(text=f"No signal received from {source_name}; try Restart audio capture.")
+
                 self.bar_meter_onset.set(0.0)
                 self.bar_meter_kick.set(0.0)
                 self.bar_meter_snare.set(0.0)
@@ -2252,10 +2300,31 @@ class TapoGUI:
     def _handle_music_toggle(self):
         self.hub.toggle_music(self.current_dev_id)
 
+    def _handle_audio_retry(self):
+        """Restart audio capture for the selected strip(s), showing errors instead of hiding them."""
+        try:
+            self.hub.retry_audio_capture(self.current_dev_id)
+            self.lbl_mon_meta.configure(text="Restarting audio capture…")
+            self.gui_bpm_lbl.configure(text="Starting audio…", text_color=self.theme["text_secondary"])
+        except Exception as exc:
+            message = str(exc) or exc.__class__.__name__
+            self.lbl_mon_meta.configure(text=f"Audio retry failed: {message[:100]}")
+            self.gui_bpm_lbl.configure(text="Capture error", text_color="#fb7185")
+
     def _handle_screen_toggle(self):
         self.hub.toggle_screen(self.current_dev_id)
 
     def _set_visual_style(self, style_name: str):
+        # Choosing a visual style is an intent to hear/react now, not just save a preset.
+        # Start audio output when it is off so a previous firmware effect doesn't linger.
+        if self.current_dev_id == "all":
+            target_contexts = list(self.hub.devices.values())
+        elif self.current_dev_id in self.hub.devices:
+            target_contexts = [self.hub.devices[self.current_dev_id]]
+        else:
+            target_contexts = []
+        if target_contexts and not any(ctx.audio_sync.is_running() for ctx in target_contexts):
+            self.hub.toggle_music(self.current_dev_id)
         self.hub.set_music_mode(self.current_dev_id, style_name)
         target_theme = get_theme_for_label(style_name)
         self._apply_theme(target_theme)
