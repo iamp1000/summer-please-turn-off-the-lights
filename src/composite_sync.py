@@ -269,7 +269,7 @@ class CompositeSystemManager:
                     self.hub.frame_bus.publish(packet)
 
                 if l900_ctx and hasattr(l900_ctx.controller, "submit_frame"):
-                    l900_ctx.controller.submit_frame({"h": final_h, "s": final_s, "b": final_v})
+                    self.hub.frame_bus.publish_frame_dict("strip1", OutputProducer.COMPOSITE_FOLLOWER, {"h": final_h, "s": final_s, "b": final_v})
 
                 time.sleep(0.033)  # ~30 Hz smooth update pacing
             except Exception:
