@@ -569,8 +569,9 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
     },
 }
 
-# Deliberately curated shelf: remove stock Tapo modes, aliases, strobe toys and
-# one-dimensional chase effects from the user-facing catalog.
+# Deliberately curated shelf: stock Tapo modes, aliases, strobe toys and
+# one-dimensional chase effects remain internal for compatibility but are not exposed.
+CORE_EFFECTS: List[str] = []
 CREATIVE_EFFECTS: List[str] = [
     "oil_slick", "silk_ribbons", "nebula_bloom",
     "holographic_moire", "ember_drift",
@@ -579,6 +580,10 @@ SPATIAL_EXPERIMENTS: List[str] = [
     "spiral_vortex", "gravity_slosh", "lissajous_orbit",
     "planar_wind", "vaporwave_neon",
 ]
+ADVANCED_EFFECTS: List[str] = list(SPATIAL_EXPERIMENTS)
+SEASONAL_EFFECTS: List[str] = []
+NOVELTY_EFFECTS: List[str] = []
+OCCASIONAL_EFFECTS: List[str] = []
 ACTIVE_EFFECTS: List[str] = CREATIVE_EFFECTS + SPATIAL_EXPERIMENTS
 CUSTOM_EFFECTS = list(ACTIVE_EFFECTS)
 
