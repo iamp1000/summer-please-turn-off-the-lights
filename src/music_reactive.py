@@ -122,6 +122,7 @@ class MusicReactive:
         self._frame_bus = frame_bus
         self._dev_id = dev_id
         self._output_token: Optional[tuple[int, str]] = None
+        self._output_context = threading.local()
         self._samplerate = samplerate
         self._blocksize = blocksize
         self._preferred_device = preferred_device
@@ -245,9 +246,10 @@ class MusicReactive:
     def _publish_frame(self, frame: dict) -> bool:
         """Send a rendered frame only through this engine's captured output session."""
         if self._frame_bus:
-            if self._output_token is None:
+            output_token = getattr(self._output_context, "token", self._output_token)
+            if output_token is None:
                 return False
-            generation, producer_id = self._output_token
+            generation, producer_id = output_token
             return self._frame_bus.publish_frame(
                 self._dev_id, OutputProducer.AUDIO, frame,
                 generation=generation, producer_id=producer_id,
@@ -269,14 +271,15 @@ class MusicReactive:
         if self._coordinator:
             self._coordinator.register_subscriber(self)
             self._coordinator.start()
-            self._thread = threading.Thread(target=self._render_loop, daemon=True, name="MusicReactiveL900RenderLoop")
+            self._thread = threading.Thread(target=self._render_loop, args=(self._output_token,), daemon=True, name="MusicReactiveL900RenderLoop")
         elif self._shared_analyzer is not None:
-            self._thread = threading.Thread(target=self._render_loop, daemon=True, name="MusicReactiveL900RenderLoop")
+            self._thread = threading.Thread(target=self._render_loop, args=(self._output_token,), daemon=True, name="MusicReactiveL900RenderLoop")
         else:
-            self._thread = threading.Thread(target=self._run, daemon=True, name="MusicReactiveL900Worker")
+            self._thread = threading.Thread(target=self._run, args=(self._output_token,), daemon=True, name="MusicReactiveL900Worker")
         self._thread.start()
 
-    def _render_loop(self):
+    def _render_loop(self, output_token=None):
+        self._output_context.token = output_token
         last_t = time.perf_counter()
         target_fps = 60.0
         target_dt = 1.0 / target_fps
@@ -384,7 +387,8 @@ class MusicReactive:
             return True  # Always immediately push complete blackness
         return (abs(b - lb) >= 2 or abs(h - lh) >= 5 or abs(s - ls) >= 8)
 
-    def _run(self):
+    def _run(self, output_token=None):
+        self._output_context.token = output_token
         mic = get_audio_input_source(self._samplerate, self._blocksize, self._preferred_device)
         if not mic:
             print("[MusicReactive L900] No audio device detected.")
