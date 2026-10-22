@@ -228,21 +228,7 @@ def get_local_ip() -> str:
         return "127.0.0.1"
 
 
-def responsive_window_geometry(screen_width: int, screen_height: int) -> tuple[int, int, int, int, int, int]:
-    """Return screen-aware width, height, position and minimum dimensions."""
-    sw = max(320, int(screen_width))
-    sh = max(320, int(screen_height))
-    margin_x = max(12, min(28, int(sw * 0.018)))
-    margin_y = max(18, min(36, int(sh * 0.035)))
-    available_w = max(280, sw - 2 * margin_x)
-    available_h = max(300, sh - 2 * margin_y)
-    min_w = min(560, available_w)
-    min_h = min(600, available_h)
-    width = min(available_w, max(min_w, int(sw * 0.74)))
-    height = min(available_h, max(min_h, int(sh * 0.84)))
-    x = max(0, (sw - width) // 2)
-    y = max(0, (sh - height) // 2)
-    return width, height, x, y, min_w, min_h
+from src.window_layout import responsive_window_geometry
 
 
 class TapoGUI:
@@ -408,7 +394,7 @@ class TapoGUI:
                 width = max(1, grid.winfo_width())
                 columns = 1 if width < 470 else (2 if width < 820 else 3)
                 for col in range(3):
-                    grid.columnconfigure(col, weight=1 if col < columns else 0, minsize=0)
+                    grid.columnconfigure(col, weight=1 if col < columns else 0, minsize=0, uniform=f"responsive_{id(grid)}" if col < columns else "")
                 children = [child for child in grid.winfo_children()
                             if str(child.winfo_manager()) == "grid"]
                 for index, child in enumerate(children):

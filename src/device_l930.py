@@ -164,13 +164,13 @@ class L930Controller:
         curve_exp = calib.get("curve_exponent", 1.8) if isinstance(calib, dict) else getattr(calib, "curve_exponent", 1.8)
         wb = calib.get("white_balance", [1.0, 0.96, 0.90]) if isinstance(calib, dict) else getattr(calib, "white_balance", [1.0, 0.96, 0.90])
         min_b = calib.get("min_brightness", 0) if isinstance(calib, dict) else getattr(calib, "min_brightness", 0)
-        trans_ms = calib.get("transition_ms", 0) if isinstance(calib, dict) else getattr(calib, "transition_ms", 0)
-        # Zero is intentional: replacing it with the music fade makes each incoming
-        # frame interrupt the previous firmware ramp and can look like a flash.
-        self.default_transition_ms = max(0, int(trans_ms))
+        trans_ms = calib.get("transition_ms", None) if isinstance(calib, dict) else getattr(calib, "transition_ms", None)
+        # None means "use the frame/music default"; an explicit zero is intentional.
+        # Replacing configured zero with the music fade interrupts every prior ramp.
+        self.default_transition_ms = None if trans_ms is None else max(0, int(trans_ms))
         self.music_transition_ms = max(
-            0, int(calib.get("music_transition_ms", self.default_transition_ms)
-                   if isinstance(calib, dict) else self.default_transition_ms)
+            0, int(calib.get("music_transition_ms", 120)
+                   if isinstance(calib, dict) else 120)
         )
         self.movie_transition_ms = calib.get("movie_transition_ms", 800) if isinstance(calib, dict) else 800
         self._max_updates_per_s = float(calib.get("max_updates_per_s", 8.0) if isinstance(calib, dict) else 8.0)
@@ -398,7 +398,8 @@ class L930Controller:
 
         # Respect the configured value exactly, including zero. Interrupted firmware
         # fades are a likely source of the repeated flash on each streamed update.
-        trans = max(0, int(self.default_transition_ms)) if hasattr(self, "default_transition_ms") else max(0, int(trans))
+        configured_transition = getattr(self, "default_transition_ms", None)
+        trans = max(0, int(configured_transition)) if configured_transition is not None else max(0, int(trans))
         previous_state = [list(zone) for zone in self.last_segments[:NUM_SEGMENTS]]
         while len(previous_state) < NUM_SEGMENTS:
             previous_state.append([0, 0, 0])
