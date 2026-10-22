@@ -1427,13 +1427,11 @@ class TapoGUI:
                 name = key[4:]
                 meta = catalog.get(name, {})
                 haystack = f"{name} {meta.get('desc', '')} {meta.get('group', '')}".lower()
-                cat = meta.get("category", "")
                 grp_target = (
-                    "Creative Original Designs" if cat == "creative"
-                    else "Core Effects" if cat == "core"
-                    else "Advanced Effects" if cat == "advanced"
-                    else "Seasonal" if cat == "seasonal"
-                    else "Novelty (⚠️ Rapid Flashing)" if cat == "novelty"
+                    "Creative Original Designs"
+                    if name in {"oil_slick", "silk_ribbons", "nebula_bloom", "holographic_moire", "ember_drift"}
+                    else "Spatial Experiments"
+                    if name in {"spiral_vortex", "gravity_slosh", "lissajous_orbit", "planar_wind", "vaporwave_neon"}
                     else ""
                 )
                 if query in haystack:
