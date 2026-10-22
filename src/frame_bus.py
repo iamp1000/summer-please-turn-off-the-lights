@@ -143,7 +143,11 @@ class FrameBus:
             self._controllers[dev_id] = controller
             self._tokens[dev_id] = token
         if hasattr(controller, "bind_frame_bus"):
-            controller.bind_frame_bus(token, lambda frame, d=dev_id: self.is_frame_current(d, frame))
+            controller.bind_frame_bus(
+                token,
+                lambda frame, d=dev_id: self.is_frame_current(d, frame),
+                lambda frame, d=dev_id: self.publish_frame_dict(d, OutputProducer.STATIC, frame),
+            )
         if self._arbiter:
             self._arbiter.register_invalidator(dev_id, lambda d=dev_id: self.clear_device(d))
 
