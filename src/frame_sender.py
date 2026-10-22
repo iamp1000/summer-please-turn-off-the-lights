@@ -49,6 +49,11 @@ class LatestFrameSender:
         self._last_sent_segments: Optional[List[List[int]]] = None
         self._last_sent_hsb: Optional[Tuple[int, int, int]] = None
         self._last_transmit_start: float = 0.0
+        self._frame_validator: Optional[Callable[[Any], bool]] = None
+
+    def set_frame_validator(self, validator: Optional[Callable[[Any], bool]]):
+        """Install an ownership/generation check performed immediately before transmission."""
+        self._frame_validator = validator
 
     def set_send_budget(self, max_updates_per_s: float):
         """Dynamically adjusts max updates per second (e.g. 5 for music, 2 for movie)."""
@@ -205,6 +210,17 @@ class LatestFrameSender:
             if not is_zero_frame and not is_timestamped and not self._is_change_significant(frame):
                 self.diagnostics.record_frame_dropped()
                 continue
+
+            # Ownership can change after enqueue; reject stale generations at the send boundary.
+            if self._frame_validator is not None:
+                try:
+                    if not self._frame_validator(frame):
+                        self.diagnostics.record_frame_dropped()
+                        continue
+                except Exception as exc:
+                    log.warning(f"[{self.dev_id}] Frame authorization failed closed: {exc}")
+                    self.diagnostics.record_frame_dropped()
+                    continue
 
             # Transmit frame and measure latency
             t_http_sent = time.perf_counter()
