@@ -434,13 +434,28 @@ def test_make_50_zone_effect_payload_invariance_and_anti_reinit():
     assert len(fx1.sequence) == 50
 
     frame2 = [(240, 90, 85)] * 50
-    fx2 = make_50_zone_effect(frame2, master_brightness=80, transition=120, pre_corrected=True)
+    fx2 = make_50_zone_effect(
+        frame2, master_brightness=80, transition=0, pre_corrected=True, init_states=fx1.sequence
+    )
 
     assert fx2.id == fx1.id, 'Effect ID must remain strictly identical across frames to prevent firmware re-init'
     assert fx2.custom == 1
     assert fx2.type == 'static'
-    assert fx2.transition == 120
+    assert fx2.transition == 0
     assert fx2.segments == fx1.segments
+    assert fx2.init_states == fx1.sequence
+    assert fx2.init_states is not fx1.sequence
+
+def test_l930_explicit_zero_transition_is_not_replaced_by_music_fade():
+    from src.device_l930 import L930Controller
+
+    controller = L930Controller(
+        "127.0.0.1", "test@example.invalid", "not-a-real-password",
+        calibration={"transition_ms": 0, "music_transition_ms": 120},
+    )
+    assert controller.default_transition_ms == 0
+    assert controller.music_transition_ms == 120
+
 
 def test_effect_switch_clears_old_frames_and_bypasses_slider_throttle():
     """Explicit selections replace stale output immediately, even inside the throttle window."""
