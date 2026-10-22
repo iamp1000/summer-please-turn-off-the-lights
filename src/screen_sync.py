@@ -215,6 +215,14 @@ class ScreenSync:
             self._l900_smoother.decay_rate = p["decay_rate"]
             log.info(f"[ScreenSync] Switched profile to: {profile}")
 
+    def _submit_frame(self, frame):
+        """Route render frames through FrameBus when the hub is active."""
+        if self._frame_bus is not None:
+            return self._frame_bus.publish_frame_dict(self._dev_id, OutputProducer.SCREEN_SYNC, frame)
+        if hasattr(self._controller, "submit_frame"):
+            return self._controller.submit_frame(frame)
+        return False
+
     def is_running(self) -> bool:
         return self._running
 
@@ -351,7 +359,7 @@ class ScreenSync:
                 ))
 
             if hasattr(self._controller, "submit_frame"):
-                self._controller.submit_frame({"segments": smoothed_segs, "brightness": scaled_b, "transition": 0})
+                self._submit_frame({"segments": smoothed_segs, "brightness": scaled_b, "transition": 0})
         else:
             gh, gs, gv = global_hsv
             smoothed_v = self._l900_smoother.update(float(gv))
@@ -366,4 +374,4 @@ class ScreenSync:
                 ))
 
             if hasattr(self._controller, "submit_frame"):
-                self._controller.submit_frame({"h": gh, "s": gs, "b": final_b})
+                self._submit_frame({"h": gh, "s": gs, "b": final_b})
