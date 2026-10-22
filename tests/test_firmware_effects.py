@@ -457,6 +457,16 @@ def test_l930_explicit_zero_transition_is_not_replaced_by_music_fade():
     assert controller.music_transition_ms == 120
 
 
+def test_original_effects_use_firmware_playback_not_repeated_network_frames():
+    from src.effects_l930 import EFFECT_CATALOG, CREATIVE_EFFECTS, CUSTOM_EFFECTS
+
+    expected = {"oil_slick", "silk_ribbons", "nebula_bloom", "holographic_moire", "ember_drift"}
+    assert set(CREATIVE_EFFECTS) == expected
+    assert expected.issubset(set(CUSTOM_EFFECTS))
+    for name in expected:
+        assert EFFECT_CATALOG[name]["kind"] == "firmware"
+
+
 def test_effect_switch_clears_old_frames_and_bypasses_slider_throttle():
     """Explicit selections replace stale output immediately, even inside the throttle window."""
     import asyncio
