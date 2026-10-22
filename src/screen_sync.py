@@ -179,6 +179,7 @@ class ScreenSync:
         self._frame_bus = frame_bus
         self._dev_id = dev_id
         self._output_token: Optional[tuple[int, str]] = None
+        self._output_context = threading.local()
         self._running = False
         self._thread: Optional[threading.Thread] = None
 
@@ -227,7 +228,7 @@ class ScreenSync:
             if self._frame_bus else None
         )
         self._running = True
-        self._thread = threading.Thread(target=self._run, daemon=True, name="ScreenSyncDXGIWorker")
+        self._thread = threading.Thread(target=self._run, args=(self._output_token,), daemon=True, name="ScreenSyncDXGIWorker")
         self._thread.start()
 
     def stop(self):
@@ -285,7 +286,8 @@ class ScreenSync:
 
         return segs, global_hsv
 
-    def _run(self):
+    def _run(self, output_token=None):
+        self._output_context.token = output_token
         ensure_desktop_access()
         is_l930 = hasattr(self._controller, "set_segments")
         dxgi_ready = self._init_camera()
@@ -332,6 +334,7 @@ class ScreenSync:
             timestamp=time.time(),
         )
 
+        output_token = getattr(self._output_context, "token", self._output_token)
         if is_l930 and segs:
             # Check for hard scene cut
             avg_v_target = sum(s[2] for s in segs) / 50.0
@@ -348,8 +351,8 @@ class ScreenSync:
 
             frame = {"segments": smoothed_segs, "brightness": scaled_b, "transition": 0}
             if self._frame_bus:
-                if self._output_token:
-                    generation, producer_id = self._output_token
+                if output_token:
+                    generation, producer_id = output_token
                     self._frame_bus.publish_frame(
                         self._dev_id, OutputProducer.SCREEN_SYNC, frame,
                         generation=generation, producer_id=producer_id,
@@ -363,8 +366,8 @@ class ScreenSync:
 
             frame = {"h": gh, "s": gs, "b": final_b}
             if self._frame_bus:
-                if self._output_token:
-                    generation, producer_id = self._output_token
+                if output_token:
+                    generation, producer_id = output_token
                     self._frame_bus.publish_frame(
                         self._dev_id, OutputProducer.SCREEN_SYNC, frame,
                         generation=generation, producer_id=producer_id,
