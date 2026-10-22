@@ -90,7 +90,7 @@ class CompositeSystemManager:
         )
         self._running = True
         self._last_time = time.time()
-        self._thread = threading.Thread(target=self._run, daemon=True, name="CompositeSystemWorker")
+        self._thread = threading.Thread(target=self._run, args=(self._output_token,), daemon=True, name="CompositeSystemWorker")
         self._thread.start()
 
     def stop(self):
@@ -150,7 +150,7 @@ class CompositeSystemManager:
                 return ctx
         return None
 
-    def _run(self):
+    def _run(self, output_token=None):
         self._last_time = time.time()
         while self._running:
             try:
@@ -273,8 +273,8 @@ class CompositeSystemManager:
                         final_h, final_s = 0, 0
 
                 # 4. Submit only to the authoritative FrameBus consumer.
-                if getattr(self.hub, "frame_bus", None) and self._output_token:
-                    generation, producer_id = self._output_token
+                if getattr(self.hub, "frame_bus", None) and output_token:
+                    generation, producer_id = output_token
                     self.hub.frame_bus.publish_frame(
                         l900_id, OutputProducer.COMPOSITE_FOLLOWER,
                         {"h": final_h, "s": final_s, "b": final_v},
