@@ -563,6 +563,14 @@ class L930EffectsEngine:
             {"pos": 42.0, "vel": 0.5, "radius": 6.0},
         ]
 
+    def _submit_frame(self, frame):
+        """Route render frames through FrameBus when the hub is active."""
+        if self._frame_bus is not None:
+            return self._frame_bus.publish_frame_dict(self._dev_id, OutputProducer.EFFECT, frame)
+        if hasattr(self._ctrl, "submit_frame"):
+            return self._ctrl.submit_frame(frame)
+        return False
+
     def is_running(self) -> bool:
         return self._running or (self._active_kind == "firmware")
 
@@ -1429,7 +1437,7 @@ class L930EffectsEngine:
                         continue
 
                 if hasattr(self._ctrl, "submit_frame"):
-                    self._ctrl.submit_frame({
+                    self._submit_frame({
                         "segments": corrected,
                         "brightness": b,
                         "transition": trans_ms,
