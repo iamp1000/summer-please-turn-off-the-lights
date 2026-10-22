@@ -350,14 +350,6 @@ class ScreenSync:
             self._rendered_segs = smoothed_segs
             scaled_b = max(1, int(100 * master_ceiling))
 
-            if self._frame_bus:
-                self._frame_bus.publish(FramePacket(
-                    dev_id=self._dev_id,
-                    producer=OutputProducer.SCREEN_SYNC,
-                    segments=smoothed_segs,
-                    brightness=scaled_b,
-                    transition=0,
-                ))
 
             if hasattr(self._controller, "submit_frame"):
                 self._submit_frame({"segments": smoothed_segs, "brightness": scaled_b, "transition": 0})
@@ -374,13 +366,6 @@ class ScreenSync:
             final_b = max(1, int(smoothed_v * master_ceiling))
             gh, gs = int(round(smooth_h)) % 360, int(round(smooth_s))
 
-            if self._frame_bus:
-                self._frame_bus.publish(FramePacket(
-                    dev_id=self._dev_id,
-                    producer=OutputProducer.SCREEN_SYNC,
-                    hsv=(gh, gs, final_b),
-                    brightness=final_b,
-                ))
 
             if hasattr(self._controller, "submit_frame"):
                 self._submit_frame({"h": gh, "s": gs, "b": final_b})
