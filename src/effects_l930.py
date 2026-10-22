@@ -293,7 +293,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness', 'palette'],
     },
     'spiral_vortex': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Motion',
         'category': 'advanced',
         'desc': '2D polar angle vortex spinning smoothly with layered chromatic bands',
@@ -301,7 +301,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness', 'palette'],
     },
     'gravity_slosh': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Motion',
         'category': 'advanced',
         'desc': '2D U-tube gravity slosh falling from arch apex and rebounding at bottom corners',
@@ -309,7 +309,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness', 'palette', 'wave_width'],
     },
     'lissajous_orbit': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Motion',
         'category': 'advanced',
         'desc': 'Invisible 2D Lissajous orbit with soft Euclidean proximity glow',
@@ -317,7 +317,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness', 'palette'],
     },
     'planar_wind': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Motion',
         'category': 'advanced',
         'desc': '45-degree planar wavefront slicing diagonally across 2D physical room space',
@@ -333,7 +333,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness', 'palette', 'tail_length'],
     },
     'vaporwave_neon': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Motion',
         'category': 'advanced',
         'desc': 'Thick magenta, cyan, and violet bands with deep gaps and slow scanline',
