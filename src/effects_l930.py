@@ -293,7 +293,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness', 'palette'],
     },
     'spiral_vortex': {
-        'kind': 'firmware',
+        'kind': 'streamed_slow',
         'group': 'Motion',
         'category': 'advanced',
         'desc': '2D polar angle vortex spinning smoothly with layered chromatic bands',
@@ -301,7 +301,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness', 'palette'],
     },
     'gravity_slosh': {
-        'kind': 'firmware',
+        'kind': 'streamed_slow',
         'group': 'Motion',
         'category': 'advanced',
         'desc': '2D U-tube gravity slosh falling from arch apex and rebounding at bottom corners',
@@ -309,7 +309,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness', 'palette', 'wave_width'],
     },
     'lissajous_orbit': {
-        'kind': 'firmware',
+        'kind': 'streamed_slow',
         'group': 'Motion',
         'category': 'advanced',
         'desc': 'Invisible 2D Lissajous orbit with soft Euclidean proximity glow',
@@ -317,7 +317,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness', 'palette'],
     },
     'planar_wind': {
-        'kind': 'firmware',
+        'kind': 'streamed_slow',
         'group': 'Motion',
         'category': 'advanced',
         'desc': '45-degree planar wavefront slicing diagonally across 2D physical room space',
@@ -333,7 +333,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness', 'palette', 'tail_length'],
     },
     'vaporwave_neon': {
-        'kind': 'firmware',
+        'kind': 'streamed_slow',
         'group': 'Motion',
         'category': 'advanced',
         'desc': 'Thick magenta, cyan, and violet bands with deep gaps and slow scanline',
@@ -389,7 +389,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
 
     # ── 3b. Creative Original Designs (7) ────────────────────────────────────
     'oil_slick': {
-        'kind': 'firmware',
+        'kind': 'streamed_slow',
         'group': 'Ambient',
         'category': 'creative',
         'desc': 'Thin-film interference fields drifting across petrol cyan, indigo, violet, rose, and amber hues',
@@ -397,7 +397,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness'],
     },
     'silk_ribbons': {
-        'kind': 'firmware',
+        'kind': 'streamed_slow',
         'group': 'Motion',
         'category': 'creative',
         'desc': 'Broad, soft-edged luminous ribbons flowing in opposite directions and blending smoothly in OKLab space',
@@ -405,7 +405,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness'],
     },
     'nebula_bloom': {
-        'kind': 'firmware',
+        'kind': 'streamed_slow',
         'group': 'Ambient',
         'category': 'creative',
         'desc': 'Atmospheric cosmic violet, indigo, and fuchsia clouds expanding and breathing over deep space negative space',
@@ -413,7 +413,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness'],
     },
     'holographic_moire': {
-        'kind': 'firmware',
+        'kind': 'streamed_slow',
         'group': 'Motion',
         'category': 'creative',
         'desc': 'Two detuned spatial carrier waves producing moving macroscopic interference fringes and holographic sheen',
@@ -429,7 +429,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness'],
     },
     'ember_drift': {
-        'kind': 'firmware',
+        'kind': 'streamed_slow',
         'group': 'Ambient',
         'category': 'creative',
         'desc': 'Simulated 1D thermal convection with drifting copper coals and breathing heat pockets',
@@ -1250,7 +1250,7 @@ class L930EffectsEngine:
                 name="Police", sequence=seq, spread=25, direction=1, transition=trans, brightness=b
             )
 
-        # ── Creative Original Designs (Firmware-Accelerated Payloads) ───────
+        # ── Creative Original Designs (Procedural 50-Zone Renderers) ───────
         elif name in ("oil_slick", "liquid_iridescence"):
             seq = [
                 [160, 90, 40],   # Petrol green
