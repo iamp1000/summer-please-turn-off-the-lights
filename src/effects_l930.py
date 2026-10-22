@@ -1462,27 +1462,18 @@ class L930EffectsEngine:
                 if generation != self._effect_generation or stop_event.is_set():
                     break
 
-                if self._frame_bus:
-                    published = self._frame_bus.publish(FramePacket(
-                        dev_id=self._dev_id,
-                        producer=OutputProducer.EFFECT,
-                        segments=corrected,
-                        brightness=b,
-                        transition=trans_ms,
-                    ))
-                    if not published:
-                        # Another producer has output ownership; yield gracefully
-                        if stop_event.wait(0.1):
-                            break
-                        continue
-
                 if hasattr(self._ctrl, "submit_frame"):
-                    self._submit_frame({
+                    accepted = self._submit_frame({
                         "segments": corrected,
                         "brightness": b,
                         "transition": trans_ms,
                         "_pre_corrected": True,
                     })
+                    if accepted is False:
+                        # Another producer owns the output; yield without a second enqueue.
+                        if stop_event.wait(0.1):
+                            break
+                        continue
 
                 self._last_successful_frame = time.time()
                 if isinstance(self._app_state, dict):
