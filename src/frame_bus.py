@@ -160,7 +160,15 @@ class FrameBus:
                 if packet.generation is None and packet.producer_id is None:
                     if owner != packet.producer:
                         return False
+                    # Bound/live devices require immutable session tokens from every
+                    # streaming producer. Only one-shot STATIC/IDLE packets may be
+                    # stamped here; otherwise an old worker could silently adopt a
+                    # newer generation after a rapid owner switch.
+                    if packet.dev_id in self._consumers and packet.producer not in (OutputProducer.STATIC, OutputProducer.IDLE):
+                        return False
                     packet.generation, packet.producer_id = generation, producer_id
+                elif packet.generation is None or packet.producer_id is None:
+                    return False
                 if not arbiter.is_token_current(packet.dev_id, packet.producer, packet.generation, packet.producer_id):
                     return False
             else:
