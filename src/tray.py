@@ -11,7 +11,7 @@ def _make_icon_image(color=(255, 140, 0)):
     return img
 
 class TrayApp:
-    def __init__(self, mode_names, effect_names, on_mode_apply, on_effect_apply, on_toggle_power, on_music_toggle, on_screen_toggle, on_show_dashboard, on_quit, creative_effects=None):
+    def __init__(self, mode_names, effect_names, on_mode_apply, on_effect_apply, on_toggle_power, on_music_toggle, on_screen_toggle, on_show_dashboard, on_quit, creative_effects=None, on_hide_dashboard=None):
         self._mode_names = mode_names
         self._effect_names = effect_names
         self._creative_effects = creative_effects or []
@@ -21,6 +21,7 @@ class TrayApp:
         self._on_music_toggle = on_music_toggle
         self._on_screen_toggle = on_screen_toggle
         self._on_show_dashboard = on_show_dashboard
+        self._on_hide_dashboard = on_hide_dashboard
         self._on_quit = on_quit
         self._icon = None
 
@@ -47,10 +48,16 @@ class TrayApp:
         ]
 
         menu_items = [
-            pystray.MenuItem("Show Dashboard", lambda icon, item: self._on_show_dashboard(), default=True),
+            pystray.MenuItem("Pop Out / Show Window", lambda icon, item: self._on_show_dashboard(), default=True),
+        ]
+        if callable(self._on_hide_dashboard):
+            menu_items.append(
+                pystray.MenuItem("Hide Window to Tray", lambda icon, item: self._on_hide_dashboard())
+            )
+        menu_items.extend([
             pystray.MenuItem("Toggle Power", lambda icon, item: self._on_toggle_power()),
             pystray.Menu.SEPARATOR,
-        ]
+        ])
         if creative_items:
             menu_items.append(pystray.MenuItem("Creative Experiences (L930)", pystray.Menu(*creative_items)))
         menu_items.extend([
