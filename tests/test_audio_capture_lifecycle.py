@@ -67,6 +67,54 @@ def test_audio_coordinator_reports_recorder_exception(monkeypatch):
     assert "loopback disconnected" in (coordinator.last_error or "")
 
 
+class _FakeRecorder:
+    def __init__(self, rms):
+        self.rms = rms
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def record(self, numframes):
+        import numpy as np
+        return np.full((numframes, 1), self.rms, dtype=np.float32)
+
+
+class _FakeLoopback:
+    isloopback = True
+
+    def __init__(self, name, rms):
+        self.name = name
+        self.id = name
+        self.rms = rms
+
+    def recorder(self, **kwargs):
+        return _FakeRecorder(self.rms)
+
+
+def test_audio_source_falls_back_when_selected_loopback_is_silent(monkeypatch):
+    """A silent selected virtual input must not mask audio on another loopback."""
+    import src.music_reactive as music_module
+
+    silent_input = _FakeLoopback("Voicemeeter Input", 0.0)
+    active_output = _FakeLoopback("Headphones loopback", 0.12)
+    monkeypatch.setattr(music_module.sc, "all_microphones", lambda include_loopback=True: [
+        silent_input, active_output
+    ])
+    monkeypatch.setattr(
+        music_module.sc, "default_speaker",
+        lambda: (_ for _ in ()).throw(RuntimeError("no default speaker")),
+    )
+    monkeypatch.setattr(music_module.sc, "get_microphone", lambda *args, **kwargs: None)
+
+    selected = music_module.get_audio_input_source(
+        samplerate=8000, blocksize=128, preferred_name="Voicemeeter Input"
+    )
+    assert selected is active_output
+
+
 class FakeCoordinator:
     def __init__(self, status="active", last_error=None):
         self.status = status
