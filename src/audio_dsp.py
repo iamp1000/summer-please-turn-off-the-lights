@@ -21,6 +21,12 @@ def exp_smooth(current: float, target: float, dt: float, tau: float) -> float:
 
 # ── 1. Musical Section Enum & Central MusicState Dataclass ─────────────────────
 
+def apply_sensitivity_gain(values, sensitivity: float):
+    """Apply the user sensitivity to normalized features without changing their range."""
+    gain = max(0.1, min(4.0, float(sensitivity)))
+    return np.clip(np.asarray(values, dtype=np.float32) * gain, 0.0, 1.0)
+
+
 class Section(str, Enum):
     SILENT = "SILENT"
     INTRO = "INTRO"
@@ -941,6 +947,10 @@ class MusicAnalyzer:
         else:
             complexity = 0.0
         complexity = float(max(0.0, min(1.0, complexity)))
+        # The spectrum renderer consumes bands directly. They were normalized to a
+        # per-frame peak but never received the sensitivity gain, so the GUI slider
+        # barely affected Spectrum and styles driven by frequency bands.
+        norm_bands = apply_sensitivity_gain(norm_bands, sens)
 
         # Transient metrics with rolling scale-invariant normalization and dedicated attack/release envelopes
         snare_mask = (self.freqs_4096 >= 200) & (self.freqs_4096 < 2000)
@@ -948,6 +958,7 @@ class MusicAnalyzer:
         raw_snare = float(np.mean(fft_4096[snare_mask])) if np.any(snare_mask) else 0.0
         raw_hat = float(np.mean(fft_4096[hat_mask])) if np.any(hat_mask) else 0.0
 
+        sens = max(0.1, min(4.0, float(self.sensitivity)))
         if is_silent:
             self._snare_env = 0.0
             self._hat_env = 0.0
@@ -958,7 +969,6 @@ class MusicAnalyzer:
             norm_bass = 0.0
             norm_mid = 0.0
         else:
-            sens = max(0.1, min(4.0, float(self.sensitivity)))
             self._hat_peak = max(raw_hat, self._hat_peak * math.exp(-dt / 3.0))
             instant_hat = float(max(0.0, min(1.0, raw_hat / max(0.10, self._hat_peak))))
             # Hi-hats: snappy attack (10ms) and short, sparse sparkle decay (60ms)
@@ -1001,7 +1011,7 @@ class MusicAnalyzer:
         onset_tau = 0.010 if onset_target > self._onset_strength_env else 0.240
         onset_alpha = 1.0 - math.exp(-dt / onset_tau)
         self._onset_strength_env += onset_alpha * (onset_target - self._onset_strength_env)
-        norm_onset = float(max(0.0, min(1.0, self._onset_strength_env)))
+        norm_onset = float(apply_sensitivity_gain(self._onset_strength_env, sens))
         composite_transient = float(max(0.0, min(1.0, norm_snare * 0.5 + norm_onset * 0.3 + norm_hat * 0.2))) if not is_silent else 0.0
 
         intensity = float(max(0.0, min(1.0, energy * 0.50 + norm_kick * 0.30 + (1.0 - flatness) * 0.20)))
