@@ -228,6 +228,23 @@ def get_local_ip() -> str:
         return "127.0.0.1"
 
 
+def responsive_window_geometry(screen_width: int, screen_height: int) -> tuple[int, int, int, int, int, int]:
+    """Return screen-aware width, height, position and minimum dimensions."""
+    sw = max(320, int(screen_width))
+    sh = max(320, int(screen_height))
+    margin_x = max(12, min(28, int(sw * 0.018)))
+    margin_y = max(18, min(36, int(sh * 0.035)))
+    available_w = max(280, sw - 2 * margin_x)
+    available_h = max(300, sh - 2 * margin_y)
+    min_w = min(560, available_w)
+    min_h = min(600, available_h)
+    width = min(available_w, max(min_w, int(sw * 0.74)))
+    height = min(available_h, max(min_h, int(sh * 0.84)))
+    x = max(0, (sw - width) // 2)
+    y = max(0, (sh - height) // 2)
+    return width, height, x, y, min_w, min_h
+
+
 class TapoGUI:
     """
     Modern glassmorphic desktop GUI matching reference screenshots exactly.
@@ -235,9 +252,6 @@ class TapoGUI:
     atmospheric themes for Ambient Drift, Northern Lights, Fireplace, Sakura,
     Golden Hour, and Deep Ocean.
     """
-
-    WIDTH = 540
-    HEIGHT = 760
 
     def __init__(self, hub, on_quit):
         self.hub = hub
@@ -251,17 +265,14 @@ class TapoGUI:
         self.theme = THEMES[self.current_theme_key]
 
         self.app = ctk.CTk()
-        self.app.title("Tapo Light Control Hub")
+        self.app.title("Summer — Light Control Hub")
         self.app.resizable(True, True)
-        self.app.minsize(460, 580)
-        self.app.overrideredirect(True)
-        try:
-            self.app.attributes("-toolwindow", True)
-        except Exception:
-            pass
-
+        screen_w, screen_h = self.app.winfo_screenwidth(), self.app.winfo_screenheight()
+        _, _, _, _, min_w, min_h = responsive_window_geometry(screen_w, screen_h)
+        self.app.minsize(min_w, min_h)
+        # Native Windows chrome provides standard minimize, maximize and resize controls.
+        # The tray icon remains active independently while this window is hidden.
         self.app.configure(fg_color=self.theme["bg"])
-        self.app.attributes("-alpha", 0.96)
 
         self.buttons = {}
         self.tab_buttons = {}
@@ -280,6 +291,8 @@ class TapoGUI:
         self._click_test_timer = None
         self.quick_level_buttons = {}
         self.card_frames = []
+        self._responsive_grids = []
+        self._resize_job = None
         self.active_picker = None
         self.local_ip = get_local_ip()
 
@@ -289,7 +302,8 @@ class TapoGUI:
 
         # Clean window controls (Escape or header Close button hides to tray)
         self.app.bind("<Escape>", lambda e: self.hide_window())
-        self.app.protocol("WM_DELETE_WINDOW", self.quit)
+        # Closing the window hides it to the tray; Quit remains explicit in the tray menu.
+        self.app.protocol("WM_DELETE_WINDOW", self.hide_window)
 
         # Global mousewheel listening ensures smooth scrolling regardless of widget hovered
         self.app.bind_all("<MouseWheel>", self._on_global_mousewheel)
@@ -297,6 +311,7 @@ class TapoGUI:
         self.app.bind_all("<Button-5>", lambda e: self._on_mousewheel_linux(1))
 
         self._build_ui()
+        self.app.bind("<Configure>", self._on_window_configure, add="+")
         self.hub.subscribe(self._on_hub_update)
 
     def _on_global_mousewheel(self, event):
@@ -364,6 +379,43 @@ class TapoGUI:
         except Exception:
             pass
 
+    def _register_responsive_grid(self, grid):
+        """Register a card/button grid for responsive column reflow."""
+        if grid not in self._responsive_grids:
+            self._responsive_grids.append(grid)
+
+    def _on_window_configure(self, event=None):
+        """Debounce resize events so reflow does not compete with Tk drawing."""
+        if event is not None and getattr(event, "widget", None) is not self.app:
+            return
+        if self._resize_job is not None:
+            try:
+                self.app.after_cancel(self._resize_job)
+            except Exception:
+                pass
+        try:
+            self._resize_job = self.app.after(90, self._reflow_responsive_grids)
+        except Exception:
+            self._resize_job = None
+
+    def _reflow_responsive_grids(self):
+        self._resize_job = None
+        for grid in list(self._responsive_grids):
+            try:
+                if not grid.winfo_exists():
+                    self._responsive_grids.remove(grid)
+                    continue
+                width = max(1, grid.winfo_width())
+                columns = 1 if width < 470 else (2 if width < 820 else 3)
+                for col in range(3):
+                    grid.columnconfigure(col, weight=1 if col < columns else 0, minsize=0)
+                children = [child for child in grid.winfo_children()
+                            if str(child.winfo_manager()) == "grid"]
+                for index, child in enumerate(children):
+                    child.grid_configure(row=index // columns, column=index % columns, sticky="nsew")
+            except Exception:
+                continue
+
     def _build_ui(self):
         t = self.theme
         self.root_frame = ctk.CTkFrame(
@@ -399,9 +451,7 @@ class TapoGUI:
         self.header_status_lbl = ctk.CTkLabel(sub_row, text="Live Connected", font=ctk.CTkFont(size=10, weight="bold"), text_color=t["text_secondary"])
         self.header_status_lbl.pack(side="left")
 
-        self._enable_drag(self.header)
-        self._enable_drag(self.header_title)
-
+        # Native window decorations handle move, resize, minimize and maximize.
         # Right buttons: Circular glowing power button & Close
         btn_box = ctk.CTkFrame(self.header, fg_color="transparent")
         btn_box.grid(row=0, column=2, rowspan=2, sticky="e")
@@ -417,9 +467,9 @@ class TapoGUI:
         self.btn_top_power.pack(side="left", padx=(0, 8))
 
         btn_close = ctk.CTkButton(
-            btn_box, text="✕", width=34, height=34, corner_radius=17,
-            fg_color=t["surface_raised"], hover_color="#f43f5e",
-            text_color=t["text_secondary"], font=ctk.CTkFont(size=12, weight="bold"),
+            btn_box, text="Tray", width=52, height=34, corner_radius=10,
+            fg_color=t["surface_raised"], hover_color=t["surface_high"],
+            text_color=t["text_secondary"], font=ctk.CTkFont(size=10, weight="bold"),
             command=self.hide_window
         )
         btn_close.pack(side="left")
@@ -804,6 +854,7 @@ class TapoGUI:
         # ── Visualizer Modes Grid (Party, Chill, EDM, Movie, Pulse, Spectrum, Flow) ──
         styles_grid = ctk.CTkFrame(vst_inner, fg_color="transparent")
         styles_grid.pack(fill="x", pady=(0, 8))
+        self._register_responsive_grid(styles_grid)
         styles_grid.columnconfigure((0, 1), weight=1, uniform="vst")
 
         base_modes_list = [
@@ -1001,6 +1052,7 @@ class TapoGUI:
 
         presets_grid = ctk.CTkFrame(preset_inner, fg_color="transparent")
         presets_grid.pack(fill="x")
+        self._register_responsive_grid(presets_grid)
         presets_grid.columnconfigure((0, 1), weight=1, uniform="pr")
 
         modes_list = list(self.hub.config.get("modes", {}).keys()) or [
@@ -1324,6 +1376,7 @@ class TapoGUI:
 
                 grid = ctk.CTkFrame(self.fx_grid_frame, fg_color="transparent")
                 grid.pack(fill="x", pady=(0, 6))
+                self._register_responsive_grid(grid)
                 grid.columnconfigure((0, 1), weight=1, uniform="fx")
                 self._effect_group_grids[grp_name] = grid
                 self._effect_group_labels[grp_name] = grp_lbl
@@ -1355,6 +1408,7 @@ class TapoGUI:
             ]
             grid = ctk.CTkFrame(self.fx_grid_frame, fg_color="transparent")
             grid.pack(fill="x")
+            self._register_responsive_grid(grid)
             grid.columnconfigure((0, 1), weight=1, uniform="fx")
 
             for idx, name in enumerate(eff_list):
@@ -2178,25 +2232,27 @@ class TapoGUI:
         self.scroll_body.pack(fill="both", expand=True, padx=16, pady=(0, 6))
 
     def hide_window(self):
-        self.app.withdraw()
+        """Hide the desktop window without stopping the tray-resident app."""
+        try:
+            self.app.withdraw()
+        except Exception:
+            pass
 
     def show_window(self):
+        """Pop the persistent desktop window out of the tray at a screen-aware size."""
         if not getattr(self, "_has_positioned", False):
             sw, sh = self.app.winfo_screenwidth(), self.app.winfo_screenheight()
-            w = min(self.WIDTH, max(460, sw - 60))
-            h = min(self.HEIGHT, max(560, sh - 80))
-            x = max(20, sw - w - 30)
-            y = max(30, (sh - h) // 2)
-            self.app.geometry(f"{w}x{h}+{x}+{y}")
+            width, height, x, y, min_w, min_h = responsive_window_geometry(sw, sh)
+            self.app.minsize(min_w, min_h)
+            self.app.geometry(f"{width}x{height}+{x}+{y}")
             self._has_positioned = True
         self.app.deiconify()
         self.app.lift()
         try:
-            self.app.attributes("-topmost", True)
-            self.app.after(150, lambda: self.app.attributes("-topmost", False))
+            self.app.focus_force()
         except Exception:
             pass
-        self.app.focus_force()
+        self._on_window_configure()
 
     def run(self):
         self.app.mainloop()
