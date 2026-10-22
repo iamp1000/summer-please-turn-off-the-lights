@@ -100,7 +100,11 @@ class OutputArbiter:
     def is_current(self, dev_id: str, producer: str, generation: int) -> bool:
         with self._lock:
             return (
-                self._owners.get(dev_id, OutputProducer.IDLE) == producer
+                (
+                    self._owners.get(dev_id, OutputProducer.IDLE) == producer
+                    or (self._owners.get(dev_id, OutputProducer.IDLE) == OutputProducer.IDLE
+                        and producer in (OutputProducer.STATIC, OutputProducer.IDLE))
+                )
                 and self._generations.get(dev_id, 0) == generation
             )
 
