@@ -66,6 +66,14 @@ class AnimationEngine:
         if palette_name is not None:
             self._palette_name = str(palette_name).lower()
 
+    def _submit_frame(self, frame):
+        """Route render frames through FrameBus when the hub is active."""
+        if self._frame_bus is not None:
+            return self._frame_bus.publish_frame_dict(self._dev_id, OutputProducer.EFFECT, frame)
+        if hasattr(self._controller, "submit_frame"):
+            return self._controller.submit_frame(frame)
+        return False
+
     def is_running(self) -> bool:
         return self._running
 
@@ -196,7 +204,7 @@ class AnimationEngine:
                         continue
 
                 if hasattr(self._controller, "submit_frame"):
-                    self._controller.submit_frame(frame_data)
+                    self._submit_frame(frame_data)
                 elif hasattr(self._controller, "set_state"):
                     self._loop_runner.run(self._controller.set_state(
                         frame_data["h"], frame_data["s"], frame_data["b"], priority=1
