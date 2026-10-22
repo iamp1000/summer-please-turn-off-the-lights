@@ -81,7 +81,7 @@ async def test_physical_hardware_connection_and_effects():
         assert sent is True, "Physical device rejected 50-zone addressable segment frame"
 
         # 4. Telemetry check
-        rtt = ctrl.diagnostics.last_send_latency
+        rtt = ctrl.diagnostics.total_latency_ms
         assert rtt >= 0.0, "Physical device diagnostics did not record valid RTT"
 
     finally:

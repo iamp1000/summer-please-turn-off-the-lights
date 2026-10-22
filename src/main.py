@@ -178,11 +178,12 @@ def main():
         gui.app.after(0, _do)
 
     # 7. System Tray Application
-    from src.effects_l930 import CUSTOM_EFFECTS
+    from src.effects_l930 import CUSTOM_EFFECTS, CREATIVE_EFFECTS
     all_eff_names = sorted(list(set(list(config.get("effects", {}).keys()) + list(CUSTOM_EFFECTS))))
     tray = TrayApp(
         mode_names=list(config.get("modes", {}).keys()),
         effect_names=all_eff_names,
+        creative_effects=CREATIVE_EFFECTS,
         on_mode_apply=lambda m: hub.apply_mode("all", m),
         on_effect_apply=lambda e: hub.apply_effect("all", e),
         on_toggle_power=lambda: hub.set_power("all"),

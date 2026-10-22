@@ -519,16 +519,26 @@ def test_firmware_deployment_failure_is_returned_to_caller():
 
 
 def test_effect_catalog_curation_structure():
-    """Verify curated breakdown: 22 Core, 10 Advanced, 2 Seasonal, 1 Novelty, 10 Aliases, 1 Reactive."""
-    from src.effects_l930 import CORE_EFFECTS, ADVANCED_EFFECTS, SEASONAL_EFFECTS, NOVELTY_EFFECTS, OCCASIONAL_EFFECTS, ACTIVE_EFFECTS, EFFECT_CATALOG
+    """Verify curated breakdown: 22 Core, 10 Advanced, 2 Seasonal, 1 Novelty, 7 Creative, 10 Aliases, 1 Reactive."""
+    from src.effects_l930 import (
+        CORE_EFFECTS, ADVANCED_EFFECTS, SEASONAL_EFFECTS, NOVELTY_EFFECTS,
+        OCCASIONAL_EFFECTS, CREATIVE_EFFECTS, ACTIVE_EFFECTS, EFFECT_CATALOG
+    )
 
-    assert len(EFFECT_CATALOG) == 46, f"Expected 46 total catalog entries, got {len(EFFECT_CATALOG)}"
+    assert len(EFFECT_CATALOG) == 53, f"Expected 53 total catalog entries, got {len(EFFECT_CATALOG)}"
     assert len(CORE_EFFECTS) == 22, f"Expected 22 core effects, got {len(CORE_EFFECTS)}"
     assert len(ADVANCED_EFFECTS) == 10, f"Expected 10 advanced effects, got {len(ADVANCED_EFFECTS)}"
     assert len(SEASONAL_EFFECTS) == 2, f"Expected 2 seasonal effects, got {len(SEASONAL_EFFECTS)}"
     assert len(NOVELTY_EFFECTS) == 1, f"Expected 1 novelty effect, got {len(NOVELTY_EFFECTS)}"
+    assert len(CREATIVE_EFFECTS) == 7, f"Expected 7 creative effects, got {len(CREATIVE_EFFECTS)}"
     assert len(OCCASIONAL_EFFECTS) == 3, f"Expected 3 occasional effects, got {len(OCCASIONAL_EFFECTS)}"
-    assert len(ACTIVE_EFFECTS) == 35, f"Expected 35 active effects, got {len(ACTIVE_EFFECTS)}"
+    assert len(ACTIVE_EFFECTS) == 42, f"Expected 42 active effects, got {len(ACTIVE_EFFECTS)}"
+
+    expected_creative = {
+        "oil_slick", "silk_ribbons", "nebula_bloom", "holographic_moire",
+        "bioluminescent_tide", "ember_drift", "cyberpunk"
+    }
+    assert set(CREATIVE_EFFECTS) == expected_creative
 
     expected_advanced = {
         "meteor_shower", "juggle", "spiral_vortex", "gravity_slosh", "lissajous_orbit",
@@ -630,13 +640,15 @@ def test_hub_full_state_includes_curated_categories(monkeypatch):
         assert "seasonal_effects" in st
         assert "novelty_effects" in st
         assert "occasional_effects" in st
+        assert "creative_effects" in st
         assert "active_effects" in st
         assert len(st["core_effects"]) == 22
         assert len(st["advanced_effects"]) == 10
         assert len(st["seasonal_effects"]) == 2
         assert len(st["novelty_effects"]) == 1
         assert len(st["occasional_effects"]) == 3
-        assert len(st["active_effects"]) == 35
+        assert len(st["creative_effects"]) == 7
+        assert len(st["active_effects"]) == 42
         # Ensure bpm_resonator is exposed in visualizer styles
         assert any(s["id"] == "bpm_resonator" for s in st.get("visualizer_styles", []))
     finally:

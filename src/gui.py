@@ -174,6 +174,14 @@ MODE_TRANSITIONS = {
 }
 
 EFFECT_COLORS = {
+    # Creative Original Designs (L930 WRGBIC)
+    "oil_slick":           "#06b6d4",
+    "silk_ribbons":        "#ec4899",
+    "nebula_bloom":        "#8b5cf6",
+    "holographic_moire":   "#3b82f6",
+    "bioluminescent_tide": "#0ea5e9",
+    "ember_drift":         "#f97316",
+    "cyberpunk":           "#d946ef",
     # Reworked L930 & L900 Effects
     "tide":             "#00c7be",
     "drift":            "#7c6ef5",
@@ -1285,8 +1293,9 @@ class TapoGUI:
             full_st = self.hub.get_full_state()
             catalog = full_st.get("effects_catalog", {})
 
-            # Curated shelf: Core (22), Advanced (10), Seasonal (2), Novelty (1)
+            # Curated shelf: Creative (7), Core (22), Advanced (10), Seasonal (2), Novelty (1)
             groups = {
+                "Creative Original Designs": [k for k, v in catalog.items() if v.get("category") == "creative"],
                 "Core Effects": [k for k, v in catalog.items() if v.get("category") == "core"],
                 "Advanced Effects": [k for k, v in catalog.items() if v.get("category") == "advanced"],
                 "Seasonal": [k for k, v in catalog.items() if v.get("category") == "seasonal"],
@@ -1370,7 +1379,8 @@ class TapoGUI:
                 haystack = f"{name} {meta.get('desc', '')} {meta.get('group', '')}".lower()
                 cat = meta.get("category", "")
                 grp_target = (
-                    "Core Effects" if cat == "core"
+                    "Creative Original Designs" if cat == "creative"
+                    else "Core Effects" if cat == "core"
                     else "Advanced Effects" if cat == "advanced"
                     else "Seasonal" if cat == "seasonal"
                     else "Novelty (⚠️ Rapid Flashing)" if cat == "novelty"

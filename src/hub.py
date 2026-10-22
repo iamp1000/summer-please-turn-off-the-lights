@@ -12,7 +12,11 @@ from src.device_l930 import L930Controller
 from src.event_loop import BackgroundLoop
 from src.modes import ModeManager
 from src.effects import AnimationEngine
-from src.effects_l930 import L930EffectsEngine, EFFECT_CATALOG, CORE_EFFECTS, ADVANCED_EFFECTS, SEASONAL_EFFECTS, NOVELTY_EFFECTS, OCCASIONAL_EFFECTS, ACTIVE_EFFECTS, resolve_effect_alias, NATIVE_ALIASES
+from src.effects_l930 import (
+    L930EffectsEngine, EFFECT_CATALOG, CORE_EFFECTS, ADVANCED_EFFECTS,
+    SEASONAL_EFFECTS, NOVELTY_EFFECTS, OCCASIONAL_EFFECTS, CREATIVE_EFFECTS,
+    ACTIVE_EFFECTS, resolve_effect_alias, NATIVE_ALIASES
+)
 from src.music_reactive import MusicReactive, list_available_audio_devices
 from src.music_reactive_l930 import MusicReactiveL930
 from src.screen_sync import ScreenSync
@@ -188,6 +192,7 @@ class LightHub:
             "seasonal_effects": SEASONAL_EFFECTS,
             "novelty_effects": NOVELTY_EFFECTS,
             "occasional_effects": OCCASIONAL_EFFECTS,
+            "creative_effects": CREATIVE_EFFECTS,
             "active_effects": ACTIVE_EFFECTS,
             "palettes": ["auto", "sunset", "forest", "fire", "pastel", "tide", "dusk", "ember", "warm_mono"],
             "visualizer_styles": [

@@ -78,6 +78,10 @@ NATIVE_ALIASES: Dict[str, str] = {
     "rainbow_native": "rainbow",
     "candy_cane_native": "candy_cane",
     "haunted_mansion_native": "haunted_mansion",
+    "liquid_iridescence": "oil_slick",
+    "moire": "holographic_moire",
+    "pacifica": "bioluminescent_tide",
+    "embers_drift": "ember_drift",
 }
 
 
@@ -383,6 +387,64 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness'],
     },
 
+    # ── 3b. Creative Original Designs (7) ────────────────────────────────────
+    'oil_slick': {
+        'kind': 'streamed_slow',
+        'group': 'Ambient',
+        'category': 'creative',
+        'desc': 'Thin-film interference fields drifting across petrol cyan, indigo, violet, rose, and amber hues',
+        'default_palette': 'sunset',
+        'supported_controls': ['speed', 'brightness'],
+    },
+    'silk_ribbons': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'creative',
+        'desc': 'Broad, soft-edged luminous ribbons flowing in opposite directions and blending smoothly in OKLab space',
+        'default_palette': 'dusk',
+        'supported_controls': ['speed', 'brightness'],
+    },
+    'nebula_bloom': {
+        'kind': 'streamed_slow',
+        'group': 'Ambient',
+        'category': 'creative',
+        'desc': 'Atmospheric cosmic violet, indigo, and fuchsia clouds expanding and breathing over deep space negative space',
+        'default_palette': 'dusk',
+        'supported_controls': ['speed', 'brightness'],
+    },
+    'holographic_moire': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'creative',
+        'desc': 'Two detuned spatial carrier waves producing moving macroscopic interference fringes and holographic sheen',
+        'default_palette': 'dusk',
+        'supported_controls': ['speed', 'brightness', 'palette'],
+    },
+    'bioluminescent_tide': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'creative',
+        'desc': 'Pacifica-inspired multi-layer oceanic swell simulation with glowing turquoise crests and deep abyssal baseline',
+        'default_palette': 'tide',
+        'supported_controls': ['speed', 'brightness'],
+    },
+    'ember_drift': {
+        'kind': 'streamed_slow',
+        'group': 'Ambient',
+        'category': 'creative',
+        'desc': 'Simulated 1D thermal convection with drifting copper coals and breathing heat pockets',
+        'default_palette': 'ember',
+        'supported_controls': ['speed', 'brightness'],
+    },
+    'cyberpunk': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'creative',
+        'desc': 'Dedicated synthwave dual-layer composition with electric cyan waves, neon magenta baseline, and golden highlights',
+        'default_palette': 'dusk',
+        'supported_controls': ['speed', 'brightness'],
+    },
+
     # ── 4. Merged Entries / Aliases (10) ─────────────────────────────────────
     'dusk': {
         'kind': 'streamed_slow',
@@ -511,8 +573,9 @@ CORE_EFFECTS: List[str] = [k for k, v in EFFECT_CATALOG.items() if v.get('catego
 ADVANCED_EFFECTS: List[str] = [k for k, v in EFFECT_CATALOG.items() if v.get('category') == 'advanced']
 SEASONAL_EFFECTS: List[str] = [k for k, v in EFFECT_CATALOG.items() if v.get('category') == 'seasonal']
 NOVELTY_EFFECTS: List[str] = [k for k, v in EFFECT_CATALOG.items() if v.get('category') == 'novelty']
+CREATIVE_EFFECTS: List[str] = [k for k, v in EFFECT_CATALOG.items() if v.get('category') == 'creative']
 OCCASIONAL_EFFECTS: List[str] = SEASONAL_EFFECTS + NOVELTY_EFFECTS
-ACTIVE_EFFECTS: List[str] = CORE_EFFECTS + ADVANCED_EFFECTS + SEASONAL_EFFECTS + NOVELTY_EFFECTS
+ACTIVE_EFFECTS: List[str] = CORE_EFFECTS + ADVANCED_EFFECTS + SEASONAL_EFFECTS + NOVELTY_EFFECTS + CREATIVE_EFFECTS
 
 
 CUSTOM_EFFECTS = list(EFFECT_CATALOG.keys())
@@ -1434,6 +1497,22 @@ class L930EffectsEngine:
                     segs = self._render_haunted_mansion(t)
                 elif eff == "police":
                     segs = self._render_police(t)
+
+                # ── Creative Original Designs ────────────────────────────────
+                elif eff in ("oil_slick", "liquid_iridescence"):
+                    segs = self._render_oil_slick(t)
+                elif eff == "silk_ribbons":
+                    segs = self._render_silk_ribbons(t)
+                elif eff == "nebula_bloom":
+                    segs = self._render_nebula_bloom(t)
+                elif eff in ("holographic_moire", "moire"):
+                    segs = self._render_holographic_moire(t)
+                elif eff in ("bioluminescent_tide", "pacifica"):
+                    segs = self._render_bioluminescent_tide(t)
+                elif eff in ("ember_drift", "embers_drift"):
+                    segs = self._render_ember_drift(t)
+                elif eff == "cyberpunk":
+                    segs = self._render_cyberpunk(t)
                 else:
                     segs = [[30, 60, 50]] * NUM_SEGMENTS
 
@@ -1788,32 +1867,38 @@ class L930EffectsEngine:
         return segs
 
     def _render_anatomical_heartbeat(self, t: float) -> List[List[int]]:
-        """Anatomical Heartbeat Wave: Center ICs (22..27) pulse first (lub), 150ms later secondary dub blooms at 10 and 40."""
+        """
+        Rhythmic Cardiac Glow: Continuous resting cardiovascular wave with smooth
+        systolic compression and diastolic vascular relaxation expanding outward.
+        """
         pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "sunset")
         c_lub = pal[0]
-        c_dub = pal[1] if len(pal) > 1 else pal[0]
+        c_dub = pal[1] if len(pal) > 1 else (c_lub[0], max(10, c_lub[1] - 25), c_lub[2])
 
-        cycle_period = 1.2 / max(0.3, self._speed)
+        sp = max(0.2, self._speed)
+        interval = self._effective_render_interval()
+        cycle_period = max(3.4 / sp, 6.0 * interval)
         phase = (t % cycle_period) / cycle_period
 
-        # Lub pulse (center, phase 0.0 to 0.35)
-        lub_env = math.exp(-0.5 * ((phase - 0.10) / 0.06) ** 2) if phase < 0.35 else 0.0
-        # Dub pulse (secondary lateral beds at 10 and 39, phase 0.18 to 0.55)
-        dub_env = math.exp(-0.5 * ((phase - 0.26) / 0.07) ** 2) if phase < 0.55 else 0.0
+        # Smooth double-pulse cardiovascular envelope with resting diastole
+        lub_env = math.exp(-0.5 * ((phase - 0.12) / 0.08) ** 2) if phase < 0.28 else 0.0
+        dub_env = math.exp(-0.5 * ((phase - 0.35) / 0.10) ** 2) if 0.18 < phase < 0.60 else 0.0
 
+        fs = max(0.2, min(3.0, getattr(self, "_flash_strength", 1.0)))
         segs = []
         half = 24.5
         for i in range(NUM_SEGMENTS):
-            w_lub = math.exp(-0.5 * ((i - half) / 4.0) ** 2) * lub_env
-            w_dub = (math.exp(-0.5 * ((i - 10.0) / 4.5) ** 2) + math.exp(-0.5 * ((i - 39.0) / 4.5) ** 2)) * dub_env
+            norm_dist = abs(i - half) / half
+            prop_lub = math.exp(-0.5 * ((norm_dist - phase * 1.4) / 0.28) ** 2) * lub_env
+            prop_dub = math.exp(-0.5 * ((norm_dist - (phase - 0.18) * 1.4) / 0.32) ** 2) * dub_env
 
+            pulse = (prop_lub * 1.1 + prop_dub * 0.85) * fs
             base_b = 8
-            fs = max(0.2, min(3.0, getattr(self, "_flash_strength", 1.0)))
-            total_b = int(max(base_b, min(100, base_b + (w_lub * 85.0 + w_dub * 70.0) * fs)))
-            if w_dub > w_lub:
-                h, s = c_dub[0], c_dub[1]
-            else:
-                h, s = c_lub[0], c_lub[1]
+            total_b = int(max(base_b, min(100, base_b + pulse * 82.0)))
+
+            mix = prop_dub / (prop_lub + prop_dub + 1e-4)
+            h = int((c_lub[0] * (1.0 - mix) + c_dub[0] * mix) % 360)
+            s = int(c_lub[1] * (1.0 - mix) + c_dub[1] * mix)
             segs.append([h, s, total_b])
         return segs
 
@@ -1898,14 +1983,19 @@ class L930EffectsEngine:
         return segs
 
     def _render_multi_pod_comet(self, t: float) -> List[List[int]]:
-        """Multi-Pod Comets: 2 comets bouncing and crossing with exponential tails."""
+        """Multi-Pod Comets: 2 comets gliding and crossing with cadence-adapted harmonic motion and exponential tails."""
         pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "sunset")
         from src.visual_styles import sample_palette_oklab
-        sp = self._speed
+        sp = max(0.2, self._speed)
+        interval = self._effective_render_interval()
         tail_mult = max(0.2, getattr(self, "_tail_length", 1.0))
-        decay_sigma = 3.5 * tail_mult
-        pos_a = 24.5 + 24.0 * math.sin(t * 1.6 * sp)
-        pos_b = 24.5 - 24.0 * math.sin(t * 2.1 * sp)
+        decay_sigma = 4.5 * tail_mult
+
+        period_a = max(6.5 / sp, 12.0 * interval)
+        period_b = max(9.0 / sp, 16.0 * interval)
+        pos_a = 24.5 + 22.0 * math.sin((t / period_a) * 2.0 * math.pi)
+        pos_b = 24.5 - 22.0 * math.sin((t / period_b) * 2.0 * math.pi)
+
         segs = []
         for i in range(NUM_SEGMENTS):
             dist_a = abs(i - pos_a)
@@ -1914,7 +2004,7 @@ class L930EffectsEngine:
             tail_b = math.exp(-dist_b / decay_sigma)
             total = min(1.0, tail_a + tail_b)
             h, s, _ = sample_palette_oklab(pal, total)
-            b = int(max(5, min(100, total * 100)))
+            b = int(max(6, min(100, 8 + total * 92)))
             segs.append([h, s, b])
         return segs
 
@@ -1929,74 +2019,82 @@ class L930EffectsEngine:
 
     def _render_harmonic_juggle(self, t: float) -> List[List[int]]:
         """
-        FastLED Juggle (adapted for L930 50 ICs):
-        8 colored orbs weaving in and out of sync with prime harmonic frequencies.
-        Additive Gaussian intensity and chromatic blending.
+        Harmonic Juggle: 4 broad glowing orbs weaving in and out of phase
+        with true OKLab additive chromatic blending and smooth spatial envelopes.
         """
         pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "sunset")
         from src.visual_styles import sample_palette_oklab
-        sp = self._speed
-        segs: List[List[int]] = []
+        sp = max(0.2, self._speed)
+        interval = self._effective_render_interval()
 
-        orb_positions = []
-        orb_colors = []
-        for k in range(8):
-            freq = 0.35 * (k + 7) / 10.0 * sp
-            phase = k * (math.pi / 4.0)
-            pos = 24.5 + 23.5 * math.sin(t * freq + phase)
-            orb_positions.append(pos)
-            norm_k = (k / 8.0 + t * 0.05 * sp) % 1.0
+        # 4 harmonic orbs with slow prime periods
+        periods = [
+            max(8.0 / sp, 14.0 * interval),
+            max(11.0 / sp, 18.0 * interval),
+            max(14.0 / sp, 22.0 * interval),
+            max(17.0 / sp, 26.0 * interval),
+        ]
+        orb_data = []
+        for k in range(4):
+            phase = (t / periods[k] + k * 0.25) * 2.0 * math.pi
+            pos = 24.5 + 22.0 * math.sin(phase)
+            norm_k = (k / 4.0 + t * 0.03 * sp) % 1.0
             h, s, _ = sample_palette_oklab(pal, norm_k, cyclic=True)
-            orb_colors.append((h, s))
+            orb_data.append((pos, h, s, norm_k))
 
+        segs: List[List[int]] = []
         for i in range(NUM_SEGMENTS):
             total_weight = 0.0
-            max_weight = 0.0
-            dominant_h, dominant_s = orb_colors[0]
-
-            for k in range(8):
-                dist = abs(i - orb_positions[k])
-                weight = math.exp(-0.5 * (dist / 1.8) ** 2)
-                if weight > 0.05:
+            weighted_norm = 0.0
+            for pos, _, _, norm_k in orb_data:
+                dist = abs(i - pos)
+                weight = math.exp(-0.5 * (dist / 4.5) ** 2)
+                if weight > 0.02:
                     total_weight += weight
-                    if weight > max_weight:
-                        max_weight = weight
-                        dominant_h, dominant_s = orb_colors[k]
+                    weighted_norm += norm_k * weight
 
-            v = int(max(6, min(100, (total_weight * 85.0))))
-            segs.append([dominant_h, dominant_s, v])
-
+            if total_weight > 0.02:
+                avg_norm = (weighted_norm / total_weight) % 1.0
+                h, s, _ = sample_palette_oklab(pal, avg_norm, cyclic=True)
+                v = int(max(10, min(100, 12 + total_weight * 72.0)))
+            else:
+                h, s = pal[0][0], pal[0][1]
+                v = 10
+            segs.append([h, s, v])
         return segs
 
     def _render_sinelon_sweep(self, t: float) -> List[List[int]]:
         """
         FastLED Sinelon (adapted for L930 50 ICs):
         A sweeping beacon gliding harmonically back and forth, leaving an exponential
-        phosphorescent decay trail.
+        phosphorescent decay trail paced for hardware cadence.
         """
         pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "dusk")
         from src.visual_styles import sample_palette_oklab
-        sp = self._speed
-        pos = 24.5 + 24.0 * math.sin(t * 2.2 * sp)
-        vel = math.cos(t * 2.2 * sp)
+        sp = max(0.2, self._speed)
+        interval = self._effective_render_interval()
+        period = max(7.0 / sp, 14.0 * interval)
+        phase = (t / period) * 2.0 * math.pi
+        pos = 24.5 + 22.0 * math.sin(phase)
+        vel = math.cos(phase)
 
-        norm_t = (t * 0.12 * sp) % 1.0
+        norm_t = (t * 0.05 * sp) % 1.0
         beacon_h, beacon_s, _ = sample_palette_oklab(pal, norm_t, cyclic=True)
 
         segs = []
+        tl = max(0.2, min(3.0, getattr(self, "_tail_length", 1.0)))
         for i in range(NUM_SEGMENTS):
             dist = abs(i - pos)
-            head_glow = math.exp(-0.5 * (dist / 1.5) ** 2)
+            head_glow = math.exp(-0.5 * (dist / 3.0) ** 2)
             trailing_offset = (pos - i) if vel > 0 else (i - pos)
-            tl = max(0.2, min(3.0, getattr(self, "_tail_length", 1.0)))
             if trailing_offset > 0:
-                trail_glow = math.exp(-trailing_offset / (5.5 * tl)) * 0.65
+                trail_glow = math.exp(-trailing_offset / (7.0 * tl)) * 0.65
             else:
                 trail_glow = 0.0
 
             intensity = min(1.0, head_glow + trail_glow)
-            v = int(max(5, min(100, intensity * 95.0)))
-            if head_glow < 0.5 and intensity > 0.1:
+            v = int(max(8, min(100, 8 + intensity * 92.0)))
+            if head_glow < 0.4 and intensity > 0.08:
                 tail_h, tail_s, _ = sample_palette_oklab(pal, (norm_t + 0.25) % 1.0, cyclic=True)
                 segs.append([tail_h, tail_s, v])
             else:
@@ -2014,37 +2112,52 @@ class L930EffectsEngine:
             self._particle_density = old_d
 
     def _render_meteor_shower(self, t: float) -> List[List[int]]:
-        """Three staggered meteor heads cross the strip with asymmetric cool-white tails."""
+        """Three staggered meteor heads cross the strip with smooth cadence-paced drift and long luminous tails."""
         from src.visual_styles import sample_palette_oklab
         pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "tide")
         sp = max(0.2, self._speed)
+        interval = self._effective_render_interval()
         tail_mult = max(0.2, getattr(self, "_tail_length", 1.0))
+
+        travel_span = NUM_SEGMENTS + 20.0
+        period_a = max(12.0 / sp, (travel_span * interval) / 2.2)
+        period_b = max(16.0 / sp, (travel_span * interval) / 1.8)
+        period_c = max(20.0 / sp, (travel_span * interval) / 1.5)
+
+        pos_a = ((t / period_a) % 1.0) * travel_span - 10.0
+        pos_b = (((t / period_b) + 0.38) % 1.0) * travel_span - 10.0
+        pos_c = (((t / period_c) + 0.72) % 1.0) * travel_span - 10.0
+
         meteors = [
-            ((t * 13.0 * sp + 3.0) % (NUM_SEGMENTS + 16.0) - 8.0, 1.0, 7.0 * tail_mult),
-            ((t * 9.0 * sp + 27.0) % (NUM_SEGMENTS + 20.0) - 10.0, 0.72, 10.0 * tail_mult),
-            ((t * 16.0 * sp + 41.0) % (NUM_SEGMENTS + 12.0) - 6.0, 0.48, 5.0 * tail_mult),
+            (pos_a, 1.0, 16.0 * tail_mult, 2.8),
+            (pos_b, 0.78, 20.0 * tail_mult, 3.2),
+            (pos_c, 0.60, 14.0 * tail_mult, 2.5),
         ]
         segs: List[List[int]] = []
         for i in range(NUM_SEGMENTS):
             peak, tail_pos = 0.0, 0.0
-            for head, gain, tail_len in meteors:
+            for head, gain, tail_len, core_r in meteors:
+                dist = abs(i - head)
+                core_glow = gain * math.exp(-0.5 * (dist / core_r) ** 2)
+                if core_glow > peak:
+                    peak = core_glow
+                    tail_pos = 0.0
+
                 behind = head - i
-                if 0.0 <= behind <= tail_len:
-                    glow = math.exp(-behind / max(1.2, tail_len * 0.38)) * gain
-                    if glow > peak:
-                        peak, tail_pos = glow, behind / tail_len
-                if abs(i - head) <= 1.15:
-                    head_glow = gain * (1.0 - abs(i - head) / 1.15)
-                    if head_glow > peak:
-                        peak, tail_pos = head_glow, 0.0
-            if peak <= 0.015:
-                segs.append([pal[0][0], pal[0][1], 2])
-                continue
-            hue, sat, _ = sample_palette_oklab(pal, min(1.0, 0.08 + tail_pos * 0.92), cyclic=False)
-            white_mix = max(0.0, 1.0 - tail_pos * 2.8)
+                if 0.0 < behind <= tail_len:
+                    tail_glow = gain * math.exp(-behind / max(2.5, tail_len * 0.40)) * 0.85
+                    if tail_glow > peak:
+                        peak = tail_glow
+                        tail_pos = behind / tail_len
+
+            ambient_glow = 0.08 + 0.04 * math.sin(i * 0.3 + t * 0.2)
+            total_intensity = min(1.0, ambient_glow + peak)
+
+            hue, sat, _ = sample_palette_oklab(pal, min(1.0, 0.10 + tail_pos * 0.90), cyclic=False)
+            white_mix = max(0.0, 1.0 - tail_pos * 2.5) * (peak ** 1.5)
             hue = int((hue * (1.0 - white_mix) + 195 * white_mix) % 360)
-            sat = int(sat * (1.0 - white_mix) + 22 * white_mix)
-            value = int(max(2, min(100, 2 + 98 * peak)))
+            sat = int(sat * (1.0 - white_mix) + 20 * white_mix)
+            value = int(max(8, min(100, 8 + 92 * total_intensity)))
             segs.append([hue, max(0, min(100, sat)), value])
         return segs
 
@@ -2076,23 +2189,26 @@ class L930EffectsEngine:
 
     def _render_spiral_vortex(self, t: float) -> List[List[int]]:
         """
-        2D Polar Angle Vortex:
-        Uses StripTopology polar angle projection phi in [0, 1] around (0.0, 0.0)
-        to rotate a continuous angular pinwheel.
+        Hypnotic Spiral Vortex: Smooth continuous logarithmic spiral wave
+        flowing inward with seamless OKLab gradient advection and zero angular phase jumps.
         """
         pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "sunset")
         from src.visual_styles import sample_palette_oklab
-        sp = self._speed
-        topo = get_l930_topology()
-        phi_angles = topo.polar_projection(center_x=0.0, center_y=0.0)
+        sp = max(0.2, self._speed)
+        interval = self._effective_render_interval()
+
+        period = max(11.0 / sp, 18.0 * interval)
+        rot_phase = (t / period) % 1.0
 
         segs = []
-        rot = (t * 0.5 * sp) % 1.0
         for i in range(NUM_SEGMENTS):
-            phi = phi_angles[i]
-            t_col = (phi + rot) % 1.0
-            h, s, _ = sample_palette_oklab(pal, t_col, cyclic=True)
-            v = int(max(20, min(100, 60 + 35 * math.sin((phi + rot * 2.0) * 2.0 * math.pi))))
+            norm_r = abs(i - 24.5) / 24.5
+            spiral_phase = (norm_r * 2.2 - rot_phase) % 1.0
+            wave = 0.5 + 0.5 * math.cos(spiral_phase * 2.0 * math.pi)
+
+            h, s, _ = sample_palette_oklab(pal, (norm_r * 0.6 + rot_phase * 0.4) % 1.0, cyclic=True)
+            core_intensity = 0.35 + 0.65 * (wave ** 1.4)
+            v = int(max(15, min(100, 15 + core_intensity * 75 * (1.0 - 0.25 * norm_r))))
             segs.append([h, s, v])
         return segs
 
@@ -2232,78 +2348,80 @@ class L930EffectsEngine:
         return segs
 
     def _render_vaporwave_neon(self, t: float) -> List[List[int]]:
-        """Thick magenta, cyan, and violet bands with deep gaps and slow scanline."""
-        sp = self._speed
-        segs = []
-        scan = (t * 0.18 * sp) % 1.0
-        colors = [(315, 100, 95), (185, 100, 100), (275, 100, 90)]  # Magenta, Cyan, Violet
-        for i in range(NUM_SEGMENTS):
-            x = (i / float(NUM_SEGMENTS - 1) - scan) % 1.0
-            band_idx = int(x * 6) % 3
-            band_pos = (x * 6) % 1.0
+        """
+        Synthwave Neon Horizons: Continuous trigonometric OKLab blending between
+        electric cyan, neon magenta, and deep violet bands with smooth antialiased dark valleys.
+        """
+        from src.visual_styles import sample_palette_oklab
+        sp = max(0.2, self._speed)
+        interval = self._effective_render_interval()
+        period = max(14.0 / sp, 22.0 * interval)
+        scan = (t / period) % 1.0
 
-            # Strong graphic contrast with deep dark gaps
-            if 0.15 <= band_pos <= 0.85:
-                c = colors[band_idx]
-                h, s = c[0], c[1]
-                v = int(max(20, min(100, c[2] * (1.0 - abs(band_pos - 0.5) * 1.2))))
-            else:
-                h, s, v = 260, 90, 4  # Deep dark gap
+        neon_pal = [(315, 100, 95), (185, 100, 100), (275, 100, 90)]
+        segs = []
+        for i in range(NUM_SEGMENTS):
+            norm_pos = (i / float(NUM_SEGMENTS - 1) - scan) % 1.0
+            wave = 0.5 + 0.5 * math.sin(norm_pos * 3.0 * 2.0 * math.pi)
+            h, s, _ = sample_palette_oklab(neon_pal, norm_pos, cyclic=True)
+            v = int(max(10, min(100, 12 + (wave ** 1.6) * 88)))
             segs.append([h, s, v])
         return segs
 
     def _render_lantern_sweep(self, t: float) -> List[List[int]]:
-        """Warm moving core with wide golden halo and gentle lingering tail consuming tail length."""
-        sp = self._speed
-        tl = max(0.2, min(3.0, getattr(self, "_tail_length", 1.0)))
-        pos = 24.5 + 23.5 * math.sin(t * 1.1 * sp)
+        """
+        Warm Lantern Sweep: Gentle harmonic lantern swaying with a broad warm
+        amber core, golden halo, and graceful cadence-adapted motion.
+        """
+        sp = max(0.2, self._speed)
+        interval = self._effective_render_interval()
+        tl = max(0.4, min(2.5, getattr(self, "_tail_length", 1.0)))
+
+        period = max(8.0 / sp, 15.0 * interval)
+        pos = 24.5 + 21.0 * math.sin((t / period) * 2.0 * math.pi)
+
         segs = []
         for i in range(NUM_SEGMENTS):
             dist = abs(i - pos)
-            core = math.exp(-0.5 * (dist / 1.6) ** 2)
-            halo = math.exp(-0.5 * (dist / (6.0 * tl)) ** 2) * 0.55
-            intensity = min(1.0, core + halo)
+            core = math.exp(-0.5 * (dist / 3.5) ** 2)
+            halo = math.exp(-0.5 * (dist / (10.0 * tl)) ** 2) * 0.60
+            intensity = min(1.0, core * 0.85 + halo * 0.45)
 
-            h = int(32 + (1.0 - core) * 12)
-            s = int(85 + core * 15)
-            v = int(max(4, min(100, 6 + intensity * 94)))
+            h = int(30 + (1.0 - core) * 12)
+            s = int(82 + core * 18)
+            v = int(max(10, min(100, 12 + intensity * 88)))
             segs.append([h, s, v])
         return segs
 
     def _render_aurora(self, t: float) -> List[List[int]]:
-        """Broad aurora curtains blended continuously through emerald, teal, and violet."""
-        from src.pipeline import tapo_hsv_to_rgb, rgb_to_tapo_hsv
+        """Broad aurora curtains blended continuously through emerald, teal, and violet in OKLab space."""
+        from src.visual_styles import sample_palette_oklab
 
-        sp = self._speed
+        sp = max(0.2, self._speed)
         ww = max(0.3, min(3.0, getattr(self, "_wave_width", 1.0)))
-        colors = ((140, 95), (185, 90), (275, 85))
+        aurora_palette = [
+            (140, 95, 88),  # Vibrant Emerald
+            (165, 92, 92),  # Luminous Mint
+            (185, 90, 90),  # Turquoise/Cyan
+            (235, 85, 85),  # Deep Celestial Blue
+            (275, 88, 85),  # Ethereal Violet
+        ]
         segs = []
         for i in range(NUM_SEGMENTS):
             x = i / float(NUM_SEGMENTS - 1)
+            # Overlapping atmospheric curtain ribbons with wave width scaling
             c1 = math.sin(x * (2.2 / ww) * math.pi + t * 0.25 * sp)
             c2 = math.cos(x * (3.1 / ww) * math.pi - t * 0.18 * sp + 1.2)
             c3 = math.sin(x * (1.5 / ww) * math.pi + t * 0.32 * sp + 2.4)
-            waves = (c1, c2, c3)
 
-            # Softmax weights preserve all three curtains; no hue can abruptly win a zone.
-            weights_raw = [math.exp(1.4 * value) for value in waves]
-            weight_total = sum(weights_raw)
-            weights = [value / weight_total for value in weights_raw]
-            brightnesses = (
-                max(12, min(88, 22 + (c1 + 1.0) * 31)),
-                max(12, min(90, 20 + (c2 + 1.0) * 33)),
-                max(12, min(86, 18 + (c3 + 1.0) * 31)),
-            )
-            rgb_candidates = [
-                tapo_hsv_to_rgb(colors[j][0], colors[j][1], int(brightnesses[j]))
-                for j in range(3)
-            ]
-            rgb = tuple(
-                sum(rgb_candidates[j][channel] * weights[j] for j in range(3))
-                for channel in range(3)
-            )
-            h, sat, val = rgb_to_tapo_hsv(*rgb)
-            segs.append([h, sat, max(10, min(90, val))])
+            # Continuous normalized curtain position in [0.0, 1.0]
+            curtain_pos = 0.5 + 0.32 * c1 + 0.18 * c2
+            curtain_pos = max(0.0, min(1.0, curtain_pos))
+
+            h, s, _ = sample_palette_oklab(aurora_palette, curtain_pos, cyclic=False)
+            intensity = 0.5 + 0.5 * c3
+            val = int(max(15, min(92, 22 + intensity * 68)))
+            segs.append([h, s, val])
         return segs
 
     def _render_deep_ocean(self, t: float) -> List[List[int]]:
@@ -2372,38 +2490,41 @@ class L930EffectsEngine:
         return out
 
     def _render_lightning(self, t: float) -> List[List[int]]:
-        """Thunderstorm simulation with sharp strikes, flash strength scaling, and trailing amber thunder roll."""
+        """
+        Atmospheric Thunderstorm: Continuous dark ambient storm front with rolling
+        electric sheet lightning blooming smoothly over 1.0-1.5s and trailing warm amber thunder roll.
+        """
         sp = max(0.2, self._speed)
-        flash_mult = max(0.2, getattr(self, "_flash_strength", 1.0))
         sub_t = (t * sp) % 7.0
-        segs = [[230, 95, 2]] * NUM_SEGMENTS
 
-        # Strike timings within 7.0s base cycle
-        strikes = [
-            (0.80, 0.12, 1.0 * flash_mult, 15, 35),
-            (0.95, 0.08, 0.7 * flash_mult, 10, 45),
-            (3.40, 0.10, 0.9 * flash_mult, 0, 30),
-            (3.52, 0.06, 0.6 * flash_mult, 20, 48),
-            (3.68, 0.18, 1.0 * flash_mult, 5, 45),
-        ]
-        has_flash = False
-        for s_start, s_dur, s_str, seg_start, seg_end in strikes:
-            if s_start <= sub_t <= (s_start + s_dur):
-                has_flash = True
-                prog = (sub_t - s_start) / s_dur
-                flash = (1.0 - prog) * s_str
-                for i in range(seg_start, min(NUM_SEGMENTS, seg_end)):
-                    h = 205
-                    s = int(max(5, 30 - min(1.0, flash) * 25))
-                    v = int(max(segs[i][2], min(100, flash * 100)))
-                    segs[i] = [h, s, v]
+        segs = []
+        for i in range(NUM_SEGMENTS):
+            cloud = 0.5 + 0.5 * math.sin(i * 0.2 + t * 0.15 * sp)
+            segs.append([230, 90, int(6 + cloud * 8)])
 
-        # Coordinated amber thunder roll rumble following strike episode
-        if not has_flash and 4.2 <= sub_t <= 5.8:
-            roll_prog = (sub_t - 4.2) / 1.6
-            heat = math.sin(roll_prog * math.pi) * 0.35 * min(1.5, flash_mult)
+        flash_mult = max(0.3, min(2.5, getattr(self, "_flash_strength", 1.0)))
+
+        # Sheet lightning episode: 1.0s to 3.6s
+        if 1.0 <= sub_t <= 2.2:
+            prog = (sub_t - 1.0) / 1.2
+            envelope = math.sin(prog * math.pi) * flash_mult
+            for i in range(10, 40):
+                local_f = envelope * (1.0 - abs(i - 25.0) / 16.0)
+                if local_f > 0:
+                    segs[i] = [205, int(max(8, 38 - local_f * 30)), int(max(segs[i][2], min(100, 15 + local_f * 85)))]
+        elif 2.4 <= sub_t <= 3.6:
+            prog = (sub_t - 2.4) / 1.2
+            envelope = (math.sin(prog * math.pi) ** 1.3) * flash_mult
             for i in range(NUM_SEGMENTS):
-                segs[i] = [28, 95, int(max(2, min(40, heat * 38)))]
+                local_f = envelope * (0.6 + 0.4 * math.sin(i * 0.35))
+                segs[i] = [210, int(max(5, 35 - local_f * 30)), int(max(segs[i][2], min(100, 12 + local_f * 88)))]
+
+        # Coordinated amber thunder roll rumble following strike episode (4.2s to 5.8s)
+        if 4.2 <= sub_t <= 5.8:
+            roll_prog = (sub_t - 4.2) / 1.6
+            rumble = math.sin(roll_prog * math.pi) * 0.38 * min(1.5, flash_mult)
+            for i in range(NUM_SEGMENTS):
+                segs[i] = [28, 95, int(max(segs[i][2], min(45, 6 + rumble * 36)))]
 
         return segs
 
@@ -2515,83 +2636,105 @@ class L930EffectsEngine:
     # ── 2D Spatial & Geometric Renderers (LEDGeometry Inspired) ───────────────
 
     def _render_gravity_slosh(self, t: float) -> List[List[int]]:
-        """2D U-tube gravity slosh falling from headboard arch apex and rebounding at corners."""
+        """
+        Viscous U-tube fluid dynamics: Gentle liquid rocking with smooth
+        continuous meniscus curvature, surface tension, and zero boundary clipping.
+        """
         from src.visual_styles import sample_palette_oklab
         pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "tide")
-        sp = self._speed
-        # Liquid height oscillation in U-tube: -1.0 (left high) to 1.0 (right high)
-        theta = t * 2.2 * sp
+        sp = max(0.2, self._speed)
+        interval = self._effective_render_interval()
+
+        period = max(9.0 / sp, 16.0 * interval)
+        theta = (t / period) * 2.0 * math.pi
         slosh = math.sin(theta)
+
         segs = []
-        topo = get_l930_topology()
-
+        ww = max(0.4, min(2.5, getattr(self, "_wave_width", 1.0)))
         for i in range(NUM_SEGMENTS):
-            x, y = topo.coords[i]
-            # Height relative to liquid surface level: surface tilts with slosh
-            ww = max(0.3, min(3.0, getattr(self, "_wave_width", 1.0)))
-            surface_y = slosh * x * 0.65
-            submerged = max(0.0, min(1.0, (surface_y - y + 0.6) / (0.8 * ww)))
+            norm_x = (i - 24.5) / 24.5
+            surface_height = slosh * norm_x * 0.65 - 0.15 * (1.0 - norm_x ** 2)
+            submerged = 1.0 / (1.0 + math.exp(-surface_height / (0.35 * ww)))
+            meniscus_factor = math.exp(-0.5 * (surface_height / (0.22 * ww)) ** 2)
 
-            if submerged > 0.05:
-                h, s, _ = sample_palette_oklab(pal, submerged, cyclic=False)
-                v = int(max(10, min(100, submerged * 90)))
-            else:
-                h, s, v = pal[0][0], pal[0][1], 3
+            h, s, _ = sample_palette_oklab(pal, submerged * 0.75 + meniscus_factor * 0.25, cyclic=False)
+            v = int(max(12, min(100, 15 + submerged * 55 + meniscus_factor * 30)))
             segs.append([h, s, v])
         return segs
 
     def _render_lissajous_orbit(self, t: float) -> List[List[int]]:
-        """Invisible 2D Lissajous orbit with soft Euclidean proximity glow."""
+        """
+        Harmonic Lissajous Orbit: 2D celestial orbit with a broad Euclidean
+        gravity well and trailing ether wake, paced for hardware cadence.
+        """
         from src.visual_styles import sample_palette_oklab
         pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "sunset")
-        sp = self._speed
+        sp = max(0.2, self._speed)
+        interval = self._effective_render_interval()
         topo = get_l930_topology()
-        # Invisible point orbiting in 2D room space
-        px = 0.80 * math.sin(1.15 * t * sp)
-        py = 0.70 * math.cos(1.65 * t * sp + 0.4)
+
+        t_a = t / max(13.0 / sp, 22.0 * interval)
+        t_b = t / max(19.0 / sp, 30.0 * interval)
+        px = 0.75 * math.sin(t_a * 2.0 * math.pi)
+        py = 0.65 * math.cos(t_b * 2.0 * math.pi + 0.5)
 
         segs = []
         for i in range(NUM_SEGMENTS):
             x, y = topo.coords[i]
             d = math.sqrt((x - px) ** 2 + (y - py) ** 2)
-            glow = math.exp(-0.5 * (d / 0.40) ** 2)
-            h, s, _ = sample_palette_oklab(pal, (t * 0.08 * sp + d * 0.5) % 1.0, cyclic=True)
-            v = int(max(4, min(100, 6 + glow * 94)))
+            glow = math.exp(-0.5 * (d / 0.95) ** 2)
+            h, s, _ = sample_palette_oklab(pal, (d * 0.4 + t * 0.04 * sp) % 1.0, cyclic=True)
+            v = int(max(12, min(100, 12 + glow * 88)))
             segs.append([h, s, v])
         return segs
 
     def _render_planar_wind(self, t: float) -> List[List[int]]:
-        """45-degree planar wavefront slicing diagonally across 2D physical room space."""
+        """
+        Atmospheric Planar Wind: Broad atmospheric breeze advecting across
+        room space with gentle envelope progression and lush foliage/sage tones.
+        """
         from src.visual_styles import sample_palette_oklab
         pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "forest")
-        sp = self._speed
+        sp = max(0.2, self._speed)
+        interval = self._effective_render_interval()
         topo = get_l930_topology()
         proj = topo.directional_projection(angle_deg=45.0)
 
+        period = max(13.0 / sp, 22.0 * interval)
+        phase = (t / period) % 1.0
+        ww = max(0.5, min(2.5, getattr(self, "_wave_width", 1.0)))
+
         segs = []
-        phase = (t * 0.6 * sp) % 1.0
-        ww = max(0.3, min(3.0, getattr(self, "_wave_width", 1.0)))
         for i in range(NUM_SEGMENTS):
             p = proj[i]
-            wave = 0.5 + 0.5 * math.sin((p - phase) * (3.0 / ww) * 2.0 * math.pi)
-            h, s, _ = sample_palette_oklab(pal, (p + phase * 0.5) % 1.0, cyclic=True)
-            v = int(max(10, min(100, 15 + (wave ** 1.8) * 85)))
+            wave = 0.5 + 0.5 * math.sin((p - phase) * (1.2 / ww) * 2.0 * math.pi)
+            subtle = 0.15 * math.sin((p * 2.5 + phase * 1.5) * math.pi)
+            intensity = min(1.0, wave ** 1.3 + subtle)
+
+            h, s, _ = sample_palette_oklab(pal, (p * 0.5 + phase * 0.5) % 1.0, cyclic=True)
+            v = int(max(15, min(100, 18 + intensity * 78)))
             segs.append([h, s, v])
         return segs
 
     def _render_radar_sweep(self, t: float) -> List[List[int]]:
-        """Focused angular beam rotating around room center with configurable palette, tail length, and echo decay."""
-        sp = self._speed
+        """
+        Phosphor Radar Sweep: Continuous sweeping beam with broad Gaussian
+        beam profile and lingering phosphor persistence across physical frames.
+        """
+        sp = max(0.2, self._speed)
         pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "forest")
+        interval = self._effective_render_interval()
         tail_mult = max(0.2, getattr(self, "_tail_length", 1.0))
         topo = get_l930_topology()
         angles = topo.polar_projection(center_x=0.0, center_y=0.0)
-        beam_angle = (t * 0.6 * sp) % 1.0
+
+        period = max(8.5 / sp, 15.0 * interval)
+        beam_angle = (t / period) % 1.0
 
         segs = []
-        head_h = pal[0][0] if pal else 135
-        trail_window = min(0.85, 0.45 * tail_mult)
-        decay_rate = 0.12 * tail_mult
+        head_h = pal[0][0] if pal else 142
+        trail_window = min(0.92, 0.55 * tail_mult)
+        decay_rate = 0.20 * tail_mult
 
         for i in range(NUM_SEGMENTS):
             phi = angles[i]
@@ -2599,10 +2742,10 @@ class L930EffectsEngine:
             if diff < trail_window:
                 decay = math.exp(-diff / decay_rate)
                 h = head_h
-                s = int(max(20, 95 - decay * 60))
-                v = int(max(4, min(100, 5 + decay * 95)))
+                s = int(max(30, 95 - decay * 55))
+                v = int(max(8, min(100, 8 + decay * 92)))
             else:
-                h, s, v = head_h, 95, 2
+                h, s, v = head_h, 85, 8
             segs.append([h, s, v])
         return segs
 
@@ -2654,6 +2797,206 @@ class L930EffectsEngine:
             return self._render_lightning(t)
         finally:
             self._flash_strength = old_f
+
+    # ── Creative Original Designs (Cadence-Aware Procedural Fields) ──────────
+
+    def _render_oil_slick(self, t: float) -> List[List[int]]:
+        """
+        Oil Slick / Liquid Iridescence:
+        Multiple thin-film interference fields drifting at irrational phase rates,
+        producing petrol-like shifts: Cyan -> Indigo -> Violet -> Rose -> Amber -> Cyan.
+        Overlapping waves continuously modulate local hue and brightness with zero jumps.
+        """
+        from src.visual_styles import sample_palette_oklab
+        sp = max(0.2, self._speed)
+        oil_palette = [
+            (185, 95, 90),  # Electric Cyan
+            (235, 90, 85),  # Deep Indigo
+            (280, 90, 95),  # Fluorescent Violet
+            (335, 90, 90),  # Neon Rose
+            (35, 95, 95),   # Golden Amber
+        ]
+        segs = []
+        for i in range(NUM_SEGMENTS):
+            x = i / float(NUM_SEGMENTS - 1)
+            f1 = math.sin(x * 3.4 * math.pi + t * 0.22 * sp)
+            f2 = math.cos(x * 5.1 * math.pi - t * 0.17 * sp + 1.4)
+            f3 = math.sin(x * 2.1 * math.pi + t * 0.31 * sp + 2.7)
+            phase = (0.5 + 0.28 * f1 + 0.22 * f2 + 0.18 * f3) % 1.0
+            h, s, _ = sample_palette_oklab(oil_palette, phase, cyclic=True)
+            intensity = 0.5 + 0.3 * f1 + 0.2 * f3
+            val = int(max(15, min(95, 25 + intensity * 68)))
+            segs.append([h, s, val])
+        return segs
+
+    def _render_silk_ribbons(self, t: float) -> List[List[int]]:
+        """
+        Silk Ribbons:
+        Three broad, soft-edged luminous bands gliding in opposing directions.
+        The brightness peaks move gradually, and the bands blend into one another smoothly in OKLab space.
+        """
+        from src.pipeline import tapo_hsv_to_rgb, rgb_to_tapo_hsv
+        sp = max(0.2, self._speed)
+        col_gold = tapo_hsv_to_rgb(42, 95, 95)
+        col_magenta = tapo_hsv_to_rgb(320, 90, 95)
+        col_teal = tapo_hsv_to_rgb(180, 90, 90)
+
+        c1 = (0.5 + 0.45 * math.sin(t * 0.19 * sp)) * (NUM_SEGMENTS - 1)
+        c2 = (0.5 + 0.45 * math.cos(t * 0.14 * sp + 1.2)) * (NUM_SEGMENTS - 1)
+        c3 = (0.5 + 0.45 * math.sin(t * 0.23 * sp + 2.8)) * (NUM_SEGMENTS - 1)
+
+        sigma = 6.8
+        base_rgb = tapo_hsv_to_rgb(260, 80, 4)
+
+        segs = []
+        for i in range(NUM_SEGMENTS):
+            w1 = math.exp(-0.5 * ((i - c1) / sigma) ** 2)
+            w2 = math.exp(-0.5 * ((i - c2) / sigma) ** 2)
+            w3 = math.exp(-0.5 * ((i - c3) / sigma) ** 2)
+
+            r = min(1.0, base_rgb[0] + col_gold[0] * w1 * 0.8 + col_magenta[0] * w2 * 0.8 + col_teal[0] * w3 * 0.8)
+            g = min(1.0, base_rgb[1] + col_gold[1] * w1 * 0.8 + col_magenta[1] * w2 * 0.8 + col_teal[1] * w3 * 0.8)
+            b = min(1.0, base_rgb[2] + col_gold[2] * w1 * 0.8 + col_magenta[2] * w2 * 0.8 + col_teal[2] * w3 * 0.8)
+
+            h, s, v = rgb_to_tapo_hsv(r, g, b)
+            segs.append([h, s, max(6, min(95, v))])
+        return segs
+
+    def _render_nebula_bloom(self, t: float) -> List[List[int]]:
+        """
+        Nebula Bloom:
+        Atmospheric clouds of violet, indigo, cyan, and fuchsia expanding and drifting
+        over deep space navy, preserving rich negative space with zero strip-wide flashes.
+        """
+        from src.visual_styles import sample_palette_oklab
+        sp = max(0.2, self._speed)
+        nebula_palette = [
+            (240, 95, 30),  # Deep Space Navy
+            (265, 90, 65),  # Royal Indigo
+            (295, 85, 80),  # Celestial Violet
+            (330, 90, 85),  # Cosmic Fuchsia
+            (195, 90, 75),  # Starlight Cyan
+        ]
+        segs = []
+        for i in range(NUM_SEGMENTS):
+            x = i / float(NUM_SEGMENTS - 1)
+            n1 = math.sin(x * 2.8 * math.pi + t * 0.12 * sp)
+            n2 = 0.5 * math.cos(x * 6.2 * math.pi - t * 0.18 * sp + 1.1)
+            n3 = 0.25 * math.sin(x * 11.5 * math.pi + t * 0.25 * sp + 2.3)
+            density = (n1 + n2 + n3 + 1.75) / 3.5
+
+            contrast = max(0.0, density - 0.35) / 0.65
+            cloud_p = contrast ** 1.6
+
+            h, s, _ = sample_palette_oklab(nebula_palette, cloud_p, cyclic=False)
+            val = int(max(2, min(90, 3 + cloud_p * 85)))
+            segs.append([h, s, val])
+        return segs
+
+    def _render_holographic_moire(self, t: float) -> List[List[int]]:
+        """
+        Holographic Moiré:
+        Two periodic optical waves with slightly detuned spatial frequencies sliding past
+        each other, producing macroscopic moving interference envelopes and holographic sheen.
+        """
+        from src.visual_styles import sample_palette_oklab
+        sp = max(0.2, self._speed)
+        pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "dusk")
+        segs = []
+        for i in range(NUM_SEGMENTS):
+            x = i / float(NUM_SEGMENTS - 1)
+            c1 = math.sin(2.0 * math.pi * 4.0 * x - t * 0.35 * sp)
+            c2 = math.sin(2.0 * math.pi * 4.6 * x + t * 0.28 * sp + 0.8)
+            envelope = 0.5 + 0.5 * (c1 * c2)
+            pal_t = (envelope + x * 0.3 + t * 0.08 * sp) % 1.0
+            h, s, _ = sample_palette_oklab(pal, pal_t, cyclic=True)
+            val = int(max(6, min(95, 10 + envelope * 82)))
+            segs.append([h, s, val])
+        return segs
+
+    def _render_bioluminescent_tide(self, t: float) -> List[List[int]]:
+        """
+        Bioluminescent Tide:
+        Pacifica-inspired multi-layer oceanic swell simulation.
+        Deep oceanic navy floor with rolling aquamarine waves and localized glowing cyan crests.
+        """
+        sp = max(0.2, self._speed)
+        segs = []
+        for i in range(NUM_SEGMENTS):
+            x = i / float(NUM_SEGMENTS - 1)
+            w1 = math.sin(x * 2.5 * math.pi + t * 0.22 * sp)
+            w2 = math.cos(x * 3.8 * math.pi - t * 0.16 * sp + 1.2)
+            w3 = math.sin(x * 5.2 * math.pi + t * 0.31 * sp + 2.5)
+            w4 = math.cos(x * 1.8 * math.pi - t * 0.11 * sp + 0.7)
+
+            combined = (w1 * 0.35 + w2 * 0.30 + w3 * 0.20 + w4 * 0.15)
+            height = 0.5 + 0.5 * combined
+
+            hue = int(225 - height * 45)
+            sat = int(max(65, min(95, 95 - height * 25)))
+
+            if height > 0.78:
+                crest = (height - 0.78) / 0.22
+                hue = 175
+                sat = int(max(30, 80 - crest * 45))
+                val = int(min(100, 55 + crest * 45))
+            else:
+                val = int(max(4, min(65, 8 + height * 52)))
+            segs.append([hue, sat, val])
+        return segs
+
+    def _render_ember_drift(self, t: float) -> List[List[int]]:
+        """
+        Ember Drift:
+        Simulated 1D thermal convection bed. Warm copper and deep ruby coals drift slowly,
+        punctuated by gentle glowing heat pockets that swell and cool organically.
+        """
+        from src.visual_styles import sample_palette_oklab
+        sp = max(0.2, self._speed)
+        ember_palette = [
+            (0, 100, 25),    # Dark Charred Ruby
+            (12, 100, 60),   # Glowing Copper
+            (28, 95, 85),    # Warm Flame Amber
+            (42, 90, 100),   # Radiant Golden Glow
+        ]
+        segs = []
+        for i in range(NUM_SEGMENTS):
+            x = i / float(NUM_SEGMENTS - 1)
+            heat1 = 0.5 + 0.5 * math.sin(x * 3.2 * math.pi + t * 0.14 * sp)
+            heat2 = 0.5 + 0.5 * math.cos(x * 6.0 * math.pi - t * 0.21 * sp + 1.8)
+            pulse = 0.5 + 0.5 * math.sin(t * 0.35 * sp + i * 2.7)
+            temp = heat1 * 0.55 + heat2 * 0.30 + pulse * 0.15
+
+            h, s, _ = sample_palette_oklab(ember_palette, temp, cyclic=False)
+            val = int(max(5, min(95, 12 + temp * 80)))
+            segs.append([h, s, val])
+        return segs
+
+    def _render_cyberpunk(self, t: float) -> List[List[int]]:
+        """
+        Cyberpunk:
+        Rich synthwave dual-layer composition. Electric cyan carrier waves sliding over
+        neon magenta and deep ultraviolet baselines with golden apex highlights.
+        """
+        from src.visual_styles import sample_palette_oklab
+        sp = max(0.2, self._speed)
+        cyber_palette = [
+            (280, 95, 40),  # Dark Ultraviolet
+            (325, 95, 90),  # Neon Magenta
+            (185, 95, 95),  # Electric Cyan
+            (45, 90, 100),  # Neon Gold
+        ]
+        segs = []
+        for i in range(NUM_SEGMENTS):
+            x = i / float(NUM_SEGMENTS - 1)
+            w1 = math.sin(x * 3.5 * math.pi + t * 0.28 * sp)
+            w2 = math.cos(x * 2.2 * math.pi - t * 0.19 * sp + 1.5)
+            comp = (w1 + w2) * 0.5
+            pos = (0.5 + 0.5 * comp + x * 0.2) % 1.0
+            h, s, _ = sample_palette_oklab(cyber_palette, pos, cyclic=True)
+            val = int(max(15, min(95, 25 + (0.5 + 0.5 * w1) * 68)))
+            segs.append([h, s, val])
+        return segs
 
     def _compute(self, name: str, t: float = 0.0, apply_brightness: bool = False) -> List[List[int]]:
         """Realistic preview generator and backward compatibility computation for all catalog effects and aliases."""
@@ -2742,6 +3085,20 @@ class L930EffectsEngine:
             return self._render_haunted_mansion(t)
         elif eff in ("rainbow", "infinite_prism"):
             return self._render_rainbow(t)
+        elif eff in ("oil_slick", "liquid_iridescence"):
+            return self._render_oil_slick(t)
+        elif eff == "silk_ribbons":
+            return self._render_silk_ribbons(t)
+        elif eff == "nebula_bloom":
+            return self._render_nebula_bloom(t)
+        elif eff in ("holographic_moire", "moire"):
+            return self._render_holographic_moire(t)
+        elif eff in ("bioluminescent_tide", "pacifica"):
+            return self._render_bioluminescent_tide(t)
+        elif eff in ("ember_drift", "embers_drift"):
+            return self._render_ember_drift(t)
+        elif eff == "cyberpunk":
+            return self._render_cyberpunk(t)
         elif eff == "flicker":
             # Candle flicker: localized warm candle micro-surges with speed, brightness, and palette
             sp = max(0.2, self._speed)

@@ -53,7 +53,16 @@ const EXPERIENCE_METADATA = {
   lantern_sweep: { tags: "Warm · Ambient motion", desc: "Warm slow lantern pendulum swaying gently.", tab: "motion", cat: "advanced" },
   candy_cane: { tags: "Seasonal · Holiday stripes", desc: "Festive rotating red and white peppermint candy stripes.", tab: "motion", cat: "seasonal" },
   haunted_mansion: { tags: "Seasonal · Spooky mist", desc: "Eerie spectral green and deep phantom violet shadows.", tab: "motion", cat: "seasonal" },
-  police: { tags: "Novelty · Emergency beacon", desc: "High-speed alternating red and blue emergency split flash.", tab: "motion", cat: "novelty", warning: "Rapid flashing emergency strobe." },
+  police: { tags: "Novelty · Emergency beacon", desc: "Smooth alternating red and blue emergency siren pulses.", tab: "motion", cat: "novelty", warning: "Emergency vehicle siren warning." },
+
+  // Creative (L930 WRGBIC Spatial & Optical)
+  oil_slick: { tags: "Iridescent · Thin film", desc: "Petrol-like interference waves drifting across cyan, indigo, violet, rose, and amber.", tab: "motion", cat: "creative" },
+  silk_ribbons: { tags: "Flowing · Opposing currents", desc: "Broad soft-edged Gaussian ribbons flowing in counter-currents with OKLab blending.", tab: "motion", cat: "creative" },
+  nebula_bloom: { tags: "Cosmic · Deep space", desc: "Expansive celestial gas clouds with subtle cosmic shifts and dark negative space.", tab: "motion", cat: "creative" },
+  holographic_moire: { tags: "Optical · Interference", desc: "Detuned spatial carrier wave interference creating macroscopic holographic light fringes.", tab: "motion", cat: "creative" },
+  bioluminescent_tide: { tags: "Marine · Ocean swell", desc: "Multi-layer ocean swell simulation with glowing cyan crest highlights on dark navy.", tab: "motion", cat: "creative" },
+  ember_drift: { tags: "Thermal · Heat bed", desc: "Convective heat bed with drifting copper and amber coals and localized flare-ups.", tab: "motion", cat: "creative" },
+  cyberpunk: { tags: "Synthwave · High contrast", desc: "High-contrast synthwave waves in electric cyan, neon magenta, and deep ultraviolet with dark gaps.", tab: "motion", cat: "creative" },
 
   // Music
   pulse: { tags: "Rhythmic · Beat sync", desc: "High-energy transient bursts locked to bass kicks.", tab: "music", cat: "core" },
@@ -450,6 +459,134 @@ function drawCardBanner(canvas, effId) {
       ctx.fillRect(0, 0, w, h);
       break;
     }
+    case "oil_slick": {
+      const grad = ctx.createLinearGradient(0, 0, w, h);
+      grad.addColorStop(0, "#030712");
+      grad.addColorStop(1, "#0a0a1a");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+      const cols = ["#06b6d4", "#4338ca", "#8b5cf6", "#ec4899", "#f59e0b"];
+      cols.forEach((col, idx) => {
+        ctx.beginPath();
+        for (let x = 0; x <= w; x += 4) {
+          const y = h * (0.3 + idx * 0.1) + Math.sin(x * 0.02 + idx * 1.3) * 16 + Math.cos(x * 0.035 - idx * 0.8) * 10;
+          if (x === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 4;
+        ctx.shadowColor = col;
+        ctx.shadowBlur = 10;
+        ctx.stroke();
+      });
+      ctx.shadowBlur = 0;
+      break;
+    }
+    case "silk_ribbons": {
+      ctx.fillStyle = "#050510";
+      ctx.fillRect(0, 0, w, h);
+      const ribbons = [
+        { col: "rgba(236, 72, 153, 0.75)", y: h * 0.35, freq: 0.018, amp: 22 },
+        { col: "rgba(6, 182, 212, 0.75)", y: h * 0.52, freq: 0.022, amp: 26 },
+        { col: "rgba(168, 85, 247, 0.75)", y: h * 0.68, freq: 0.016, amp: 20 }
+      ];
+      ribbons.forEach(rb => {
+        ctx.beginPath();
+        for (let x = 0; x <= w; x += 3) {
+          const y = rb.y + Math.sin(x * rb.freq) * rb.amp;
+          if (x === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = rb.col;
+        ctx.lineWidth = 6;
+        ctx.shadowColor = rb.col;
+        ctx.shadowBlur = 12;
+        ctx.stroke();
+      });
+      ctx.shadowBlur = 0;
+      break;
+    }
+    case "nebula_bloom": {
+      ctx.fillStyle = "#030208";
+      ctx.fillRect(0, 0, w, h);
+      const centers = [
+        { x: w * 0.28, y: h * 0.45, r: 55, c1: "rgba(139, 92, 246, 0.6)", c2: "rgba(139, 92, 246, 0)" },
+        { x: w * 0.68, y: h * 0.55, r: 65, c1: "rgba(217, 70, 239, 0.5)", c2: "rgba(217, 70, 239, 0)" },
+        { x: w * 0.48, y: h * 0.32, r: 45, c1: "rgba(59, 130, 246, 0.4)", c2: "rgba(59, 130, 246, 0)" }
+      ];
+      centers.forEach(ct => {
+        const rad = ctx.createRadialGradient(ct.x, ct.y, 2, ct.x, ct.y, ct.r);
+        rad.addColorStop(0, ct.c1);
+        rad.addColorStop(1, ct.c2);
+        ctx.fillStyle = rad;
+        ctx.beginPath();
+        ctx.arc(ct.x, ct.y, ct.r, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      break;
+    }
+    case "holographic_moire": {
+      ctx.fillStyle = "#02040a";
+      ctx.fillRect(0, 0, w, h);
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 16; i++) {
+        const x = (i / 15) * w;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(w - x, h);
+        ctx.strokeStyle = (i % 2 === 0) ? "rgba(56, 189, 248, 0.6)" : "rgba(129, 140, 248, 0.6)";
+        ctx.stroke();
+      }
+      break;
+    }
+    case "bioluminescent_tide": {
+      const sea = ctx.createLinearGradient(0, 0, 0, h);
+      sea.addColorStop(0, "#010d18");
+      sea.addColorStop(1, "#031e30");
+      ctx.fillStyle = sea;
+      ctx.fillRect(0, 0, w, h);
+      const layers = [
+        { y: h * 0.42, amp: 18, freq: 0.02, col: "rgba(14, 165, 233, 0.4)", lw: 6 },
+        { y: h * 0.58, amp: 24, freq: 0.025, col: "rgba(6, 182, 212, 0.65)", lw: 5 },
+        { y: h * 0.72, amp: 30, freq: 0.03, col: "rgba(34, 211, 238, 0.9)", lw: 3 }
+      ];
+      layers.forEach(l => {
+        ctx.beginPath();
+        for (let x = 0; x <= w; x += 3) {
+          const y = l.y + Math.sin(x * l.freq + 1.0) * l.amp;
+          if (x === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = l.col;
+        ctx.lineWidth = l.lw;
+        ctx.shadowColor = "#22d3ee";
+        ctx.shadowBlur = 12;
+        ctx.stroke();
+      });
+      ctx.shadowBlur = 0;
+      break;
+    }
+    case "ember_drift": {
+      const grad = ctx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, "#0a0302");
+      grad.addColorStop(1, "#260803");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+      const coals = [
+        [0.2, 0.75, 5, "#ff7700"], [0.35, 0.6, 4, "#ffaa00"], [0.5, 0.8, 6, "#ff4400"],
+        [0.65, 0.55, 4, "#ff8800"], [0.8, 0.7, 5, "#ffbb00"], [0.45, 0.4, 3, "#ff5500"]
+      ];
+      coals.forEach(([rx, ry, r, col]) => {
+        ctx.beginPath();
+        ctx.arc(rx * w, ry * h, r, 0, Math.PI * 2);
+        ctx.fillStyle = col;
+        ctx.shadowColor = col;
+        ctx.shadowBlur = 10;
+        ctx.fill();
+      });
+      ctx.shadowBlur = 0;
+      break;
+    }
     default: {
       const c = EFFECT_COLORS[effId] || "#7c6ef5";
       const g = ctx.createLinearGradient(0, 0, w, h);
@@ -481,6 +618,13 @@ const MODE_COLORS = {
 };
 
 const EFFECT_COLORS = {
+  oil_slick: "#06b6d4",
+  silk_ribbons: "#ec4899",
+  nebula_bloom: "#8b5cf6",
+  holographic_moire: "#3b82f6",
+  bioluminescent_tide: "#0ea5e9",
+  ember_drift: "#f97316",
+  cyberpunk: "#d946ef",
   ambient_drift: "#a855f7",
   northern_lights: "#10b981",
   fireplace: "#f97316",
@@ -1687,12 +1831,14 @@ function renderUI() {
       keys = keys.filter(k => {
         const m = catalog[k] || {};
         const meta = EXPERIENCE_METADATA[k] || {};
-        return (m.group === "Motion" || m.group === "Seasonal & Novelty" || meta.tab === "motion");
+        return (m.group === "Motion" || m.group === "Seasonal & Novelty" || m.group === "Creative" || meta.tab === "motion");
       });
       if (currentEffectCategory === "core") {
         keys = keys.filter(k => catalog[k]?.category === "core");
       } else if (currentEffectCategory === "advanced") {
         keys = keys.filter(k => catalog[k]?.category === "advanced");
+      } else if (currentEffectCategory === "creative") {
+        keys = keys.filter(k => catalog[k]?.category === "creative");
       } else if (currentEffectCategory === "seasonal") {
         keys = keys.filter(k => catalog[k]?.category === "seasonal");
       } else if (currentEffectCategory === "novelty") {
@@ -1730,11 +1876,14 @@ function renderUI() {
     const isActive = (activeLabel === id) || (currentExperienceTab === "music" && state.audio_style === id);
     const isWarn = Boolean(meta.warning);
     const isAdv = meta.category === "advanced" || meta.cat === "advanced";
+    const isCreative = meta.category === "creative" || meta.cat === "creative";
     const isSeasonal = meta.category === "seasonal" || meta.cat === "seasonal";
 
     let badgeOverlay = "";
     if (isWarn) {
       badgeOverlay = `<span class="card-badge-overlay warning">⚠️ Rapid Flash</span>`;
+    } else if (isCreative) {
+      badgeOverlay = `<span class="card-badge-overlay creative">Creative</span>`;
     } else if (isSeasonal) {
       badgeOverlay = `<span class="card-badge-overlay seasonal">Seasonal</span>`;
     } else if (isAdv) {

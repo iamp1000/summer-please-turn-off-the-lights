@@ -11,9 +11,10 @@ def _make_icon_image(color=(255, 140, 0)):
     return img
 
 class TrayApp:
-    def __init__(self, mode_names, effect_names, on_mode_apply, on_effect_apply, on_toggle_power, on_music_toggle, on_screen_toggle, on_show_dashboard, on_quit):
+    def __init__(self, mode_names, effect_names, on_mode_apply, on_effect_apply, on_toggle_power, on_music_toggle, on_screen_toggle, on_show_dashboard, on_quit, creative_effects=None):
         self._mode_names = mode_names
         self._effect_names = effect_names
+        self._creative_effects = creative_effects or []
         self._on_mode_apply = on_mode_apply
         self._on_effect_apply = on_effect_apply
         self._on_toggle_power = on_toggle_power
@@ -30,6 +31,11 @@ class TrayApp:
         def create_effect_action(effect_name):
             return lambda icon, item: self._on_effect_apply(effect_name)
 
+        creative_items = [
+            pystray.MenuItem(name.replace("_", " ").title(), create_effect_action(name))
+            for name in self._creative_effects
+        ]
+
         mode_items = [
             pystray.MenuItem(name.replace("_", " ").title(), create_mode_action(name))
             for name in self._mode_names
@@ -40,18 +46,24 @@ class TrayApp:
             for name in self._effect_names
         ]
 
-        return pystray.Menu(
+        menu_items = [
             pystray.MenuItem("Show Dashboard", lambda icon, item: self._on_show_dashboard(), default=True),
             pystray.MenuItem("Toggle Power", lambda icon, item: self._on_toggle_power()),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Static Vibes", pystray.Menu(*mode_items)),
+        ]
+        if creative_items:
+            menu_items.append(pystray.MenuItem("Creative Experiences (L930)", pystray.Menu(*creative_items)))
+        menu_items.extend([
             pystray.MenuItem("Organic Effects", pystray.Menu(*effect_items)),
+            pystray.MenuItem("Static Vibes", pystray.Menu(*mode_items)),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Music Reactive", lambda icon, item: self._on_music_toggle()),
             pystray.MenuItem("Screen Sync", lambda icon, item: self._on_screen_toggle()),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Quit", lambda icon, item: self._quit()),
-        )
+        ])
+
+        return pystray.Menu(*menu_items)
 
     def _quit(self):
         try:
