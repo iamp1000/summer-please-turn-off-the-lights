@@ -1,5 +1,6 @@
 from __future__ import annotations
 import colorsys
+import math
 import socket
 import time
 import customtkinter as ctk
@@ -439,10 +440,7 @@ class TapoGUI:
         """Build the redesigned desktop workspace with clear, separate pages."""
         t = self.theme
         sw, sh = self.app.winfo_screenwidth(), self.app.winfo_screenheight()
-        width = min(max(680, int(sw * 0.86)), max(680, sw - 24))
-        height = min(max(620, int(sh * 0.88)), max(620, sh - 36))
-        x, y = max(0, (sw - width) // 2), max(0, (sh - height) // 2)
-        _, _, _, _, min_w, min_h = responsive_window_geometry(sw, sh)
+        width, height, x, y, min_w, min_h = responsive_window_geometry(sw, sh)
         self.app.minsize(min_w, min_h)
         self.app.geometry(f"{width}x{height}+{x}+{y}")
         self._has_positioned = True
@@ -1273,6 +1271,10 @@ class TapoGUI:
             except Exception:
                 pass
         self._bind_mousewheel_recursive(self.scroll_body)
+        try:
+            self.app.after(100, self._reflow_responsive_grids)
+        except Exception:
+            pass
 
     def _make_item_button(self, parent, label: str, dot_color: str, cmd):
         t = self.theme
@@ -1797,12 +1799,12 @@ class TapoGUI:
         if any_on:
             self.hero_status_dot.configure(text_color="#10b981")
             self.hero_status_lbl.configure(text="Active", text_color=self.theme["text_primary"])
-            self.btn_top_power.configure(fg_color=self.theme["accent_soft"], border_color=self.theme["power_glow"], text="⏻")
+            self.btn_top_power.configure(fg_color=self.theme["accent_soft"], border_color=self.theme["power_glow"], text="⏻  Power")
             self.btn_hero_power.configure(fg_color=self.theme["accent_soft"], border_color=self.theme["power_glow"])
         else:
             self.hero_status_dot.configure(text_color=self.theme["text_muted"])
             self.hero_status_lbl.configure(text="Idle / Off", text_color=self.theme["text_muted"])
-            self.btn_top_power.configure(fg_color="#3a1111", border_color="#f43f5e", text="⏻")
+            self.btn_top_power.configure(fg_color="#3a1111", border_color="#f43f5e", text="⏻  Power")
             self.btn_hero_power.configure(fg_color="#3a1111", border_color="#f43f5e")
 
         # Quick level button highlights
