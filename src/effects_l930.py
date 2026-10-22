@@ -2204,28 +2204,22 @@ class L930EffectsEngine:
         return segs
 
     def _render_aurora(self, t: float) -> List[List[int]]:
-        """Broad, slow-moving green, teal, and violet curtains consuming wave width."""
+        """Continuous spectral curtains: blend emerald, teal and violet instead of switching hues."""
         sp = self._speed
         ww = max(0.3, min(3.0, getattr(self, "_wave_width", 1.0)))
         segs = []
+        palette = [(140, 92, 78), (170, 90, 72), (195, 88, 76), (235, 82, 70), (275, 82, 68)]
+        from src.visual_styles import sample_palette_oklab
         for i in range(NUM_SEGMENTS):
             x = i / float(NUM_SEGMENTS - 1)
-            # Overlapping atmospheric curtain ribbons
-            c1 = math.sin(x * (2.2 / ww) * math.pi + t * 0.25 * sp)
-            c2 = math.cos(x * (3.1 / ww) * math.pi - t * 0.18 * sp + 1.2)
-            c3 = math.sin(x * (1.5 / ww) * math.pi + t * 0.32 * sp + 2.4)
-
-            # Dominant wavelength selection
-            if c1 > c2 and c1 > c3:
-                h, s = 140, 95  # Emerald aurora
-                v = int(max(10, min(90, 25 + (c1 + 1.0) * 30)))
-            elif c2 > c3:
-                h, s = 185, 90  # Cyan-teal ribbon
-                v = int(max(10, min(90, 20 + (c2 + 1.0) * 32)))
-            else:
-                h, s = 275, 85  # Violet curtain
-                v = int(max(10, min(90, 18 + (c3 + 1.0) * 30)))
-            segs.append([h, s, v])
+            c1 = 0.5 + 0.5 * math.sin(x * (2.2 / ww) * math.pi + t * 0.25 * sp)
+            c2 = 0.5 + 0.5 * math.cos(x * (3.1 / ww) * math.pi - t * 0.18 * sp + 1.2)
+            c3 = 0.5 + 0.5 * math.sin(x * (1.5 / ww) * math.pi + t * 0.32 * sp + 2.4)
+            hue_pos = (0.46 * c1 + 0.34 * c2 + 0.20 * c3 + 0.07 * math.sin(t * 0.09 * sp)) % 1.0
+            h, s, _ = sample_palette_oklab(palette, hue_pos, cyclic=True)
+            veil = 0.55 * c1 + 0.30 * c2 + 0.15 * c3
+            v = int(max(12, min(76, 18 + 58 * veil)))
+            segs.append([int(h), int(s), v])
         return segs
 
     def _render_deep_ocean(self, t: float) -> List[List[int]]:
@@ -2249,28 +2243,25 @@ class L930EffectsEngine:
         return segs
 
     def _render_raindrop(self, t: float) -> List[List[int]]:
-        """Dark background punctuated by isolated drops consuming particle density."""
-        sp = self._speed
+        """Coherent bidirectional rain with trails that remain visible at slow send cadence."""
+        sp = max(0.15, self._speed)
         dens = max(0.2, min(3.0, getattr(self, "_particle_density", 1.0)))
-        segs = [[220, 90, 3]] * NUM_SEGMENTS
-        all_drops = [
-            ((t * 14.0 * sp + 2.0) % (NUM_SEGMENTS + 8.0) - 4.0, 0.9),
-            ((t * 11.0 * sp + 18.0) % (NUM_SEGMENTS + 12.0) - 6.0, 0.75),
-            ((t * 16.0 * sp + 31.0) % (NUM_SEGMENTS + 10.0) - 5.0, 0.85),
-            ((t * 9.5 * sp + 44.0) % (NUM_SEGMENTS + 15.0) - 7.0, 0.65),
-            ((t * 13.0 * sp + 8.0) % (NUM_SEGMENTS + 9.0) - 4.5, 0.80),
-            ((t * 17.5 * sp + 25.0) % (NUM_SEGMENTS + 11.0) - 5.5, 0.90),
-        ]
-        num_drops = max(1, min(len(all_drops), int(round(4 * dens))))
-        drops = all_drops[:num_drops]
-        out = [list(c) for c in segs]
-        for head, str_val in drops:
-            for i in range(NUM_SEGMENTS):
-                behind = head - i
-                if 0.0 <= behind <= 3.5:
-                    decay = (1.0 - behind / 3.5) ** 1.5 * str_val * min(1.0, math.sqrt(dens))
-                    v = int(max(out[i][2], min(100, 10 + decay * 88)))
-                    out[i] = [195, max(15, int(90 - decay * 55)), v]
+        out = [[220, 72, 5] for _ in range(NUM_SEGMENTS)]
+        particles = [(0.10, 13.0, 4.8, 0.92), (0.38, 8.0, 6.0, 0.78),
+                     (0.67, 10.0, 5.4, 0.86), (0.86, 6.5, 7.0, 0.72)]
+        count = max(1, min(len(particles), int(round(dens + 1))))
+        for idx, (phase, speed, trail, strength) in enumerate(particles[:count]):
+            travel = (t * speed * sp + phase * NUM_SEGMENTS) % (2 * NUM_SEGMENTS)
+            head = travel if travel < NUM_SEGMENTS else 2 * NUM_SEGMENTS - travel
+            direction = 1 if travel < NUM_SEGMENTS else -1
+            for zone in range(NUM_SEGMENTS):
+                distance = (head - zone) * direction
+                if 0 <= distance <= trail:
+                    envelope = max(0.0, 1.0 - distance / trail) ** 1.7
+                    v = int(5 + 66 * strength * envelope)
+                    if v > out[zone][2]:
+                        hue = 188 + int(18 * envelope)
+                        out[zone] = [hue, 78 - int(18 * envelope), min(76, v)]
         return out
 
     def _render_lightning(self, t: float) -> List[List[int]]:
@@ -2310,66 +2301,54 @@ class L930EffectsEngine:
         return segs
 
     def _render_police(self, t: float) -> List[List[int]]:
-        """Crisp red and blue alternating sections with tiny dark gaps between flashes."""
-        sp = self._speed
-        phase = (t * 4.0 * sp) % 2.0  # 4 Hz strobe
+        """Slow alternating red/blue siren pulses with eased envelopes; no strobe."""
+        sp = max(0.2, min(2.0, self._speed))
+        cycle = (t * 0.72 * sp) % 2.0
         half = NUM_SEGMENTS // 2
         segs = []
-        is_red_phase = (phase < 1.0)
-        strobe_on = (phase % 0.5) < 0.28  # Strobe pulse with dark gap
-
         for i in range(NUM_SEGMENTS):
-            if i < half:
-                # Left half: Red
-                if is_red_phase and strobe_on:
-                    segs.append([0, 100, 100])
-                else:
-                    segs.append([0, 100, 0])
-            else:
-                # Right half: Blue
-                if (not is_red_phase) and strobe_on:
-                    segs.append([240, 100, 100])
-                else:
-                    segs.append([240, 100, 0])
+            local = cycle if i < half else (cycle + 1.0) % 2.0
+            phase = local % 1.0
+            # Raised-cosine pulse: a visible crest and a long, smooth falloff.
+            envelope = (0.5 - 0.5 * math.cos(2.0 * math.pi * phase)) ** 0.75
+            hue = 2 if i < half else 224
+            value = int(10 + 64 * envelope)
+            segs.append([hue, 88, value])
         return segs
 
     def _render_candy_cane(self, t: float) -> List[List[int]]:
-        """Wide alternating red and white bands visibly moving along strip with clean edges."""
-        sp = self._speed
-        offset = t * 6.0 * sp
+        """Soft peppermint bands with gentle luminance and feathered transitions."""
+        sp = max(0.15, self._speed)
+        offset = t * 2.4 * sp
         segs = []
-        band_width = 6.0
+        band_width = 7.0
         for i in range(NUM_SEGMENTS):
             pos = (i - offset) % (band_width * 2.0)
+            edge = min(pos, band_width * 2.0 - pos, abs(pos - band_width))
+            blend = max(0.0, min(1.0, (edge - 0.25) / 1.8))
             if pos < band_width:
-                # Peppermint Red
-                segs.append([355, 100, 100])
+                h, s, base = 354, 82, 58
             else:
-                # Crisp White
-                segs.append([0, 0, 100])
+                h, s, base = 35, 18, 72
+            value = int(base * (0.72 + 0.28 * blend))
+            segs.append([h, s, value])
         return segs
 
     def _render_haunted_mansion(self, t: float) -> List[List[int]]:
-        """Near-black base with rare emerald glows, eerie violet pools, and sudden flashes."""
-        sp = self._speed
+        """Slow localized haunted glow that drifts through emerald and violet pools."""
+        sp = max(0.15, self._speed)
+        center_a = (NUM_SEGMENTS - 1) * (0.5 + 0.36 * math.sin(t * 0.19 * sp))
+        center_b = (NUM_SEGMENTS - 1) * (0.5 + 0.30 * math.sin(t * 0.13 * sp + 2.0))
+        width = 7.5
         segs = []
-        flash_time = (t * 0.4 * sp) % 5.0
-        is_flash = (flash_time < 0.12)
         for i in range(NUM_SEGMENTS):
-            x = i / float(NUM_SEGMENTS - 1)
-            eerie_violet = math.sin(x * 3.0 * math.pi + t * 0.3 * sp)
-            emerald_pool = math.cos(x * 4.5 * math.pi - t * 0.22 * sp)
-
-            if is_flash:
-                segs.append([140, 30, 95])  # Spooky flash
-            elif emerald_pool > 0.65:
-                # Eerie emerald glow
-                segs.append([135, 100, int(max(8, min(80, (emerald_pool - 0.65) * 200)))])
-            elif eerie_violet > 0.50:
-                # Eerie violet pool
-                segs.append([285, 95, int(max(6, min(65, (eerie_violet - 0.50) * 120)))])
-            else:
-                segs.append([270, 95, 2])  # Near-black base
+            x = float(i)
+            glow_a = math.exp(-0.5 * ((x - center_a) / width) ** 2)
+            glow_b = math.exp(-0.5 * ((x - center_b) / (width * 1.25)) ** 2)
+            v = int(2 + 43 * glow_a + 27 * glow_b)
+            hue = int(145 + 125 * (glow_b / max(0.01, glow_a + glow_b)))
+            sat = int(70 + 22 * glow_a)
+            segs.append([hue % 360, sat, min(62, v)])
         return segs
 
     def _render_rainbow(self, t: float) -> List[List[int]]:
