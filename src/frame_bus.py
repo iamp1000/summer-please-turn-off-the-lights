@@ -108,13 +108,13 @@ class OutputArbiter:
                 and self._generations.get(dev_id, 0) == generation
             )
 
-    def run_if_current(self, dev_id: str, producer: str, generation: int, callback: Callable[[], None]) -> bool:
+    def run_if_current(self, dev_id: str, producer: str, generation: int, callback: Callable[[], Any]) -> bool:
         """Run enqueue while holding the ownership lock, making check+enqueue atomic to handoff."""
         with self._lock:
             if not self.is_current(dev_id, producer, generation):
                 return False
-            callback()
-            return True
+            # A controller can reject a frame (e.g. it is switched off); propagate that result.
+            return callback() is not False
 
     def get_owner(self, dev_id: str) -> str:
         with self._lock:
@@ -213,13 +213,16 @@ class FrameBus:
         if controller is not None and token is not None:
             frame = self._to_frame(packet)
             def enqueue():
-                controller.submit_frame(frame, _frame_bus_token=token)
+                return controller.submit_frame(frame, _frame_bus_token=token)
             if arbiter:
                 accepted = arbiter.run_if_current(packet.dev_id, packet.producer, packet.generation, enqueue)
-                if not accepted:
-                    return False
             else:
-                enqueue()
+                accepted = enqueue() is not False
+            if not accepted:
+                with self._lock:
+                    if self._latest_frames.get(packet.dev_id) is packet:
+                        self._latest_frames.pop(packet.dev_id, None)
+                return False
 
         for callback in callbacks:
             try:
