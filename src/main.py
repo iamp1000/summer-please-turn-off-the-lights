@@ -179,7 +179,13 @@ def main():
 
     # 7. System Tray Application
     from src.effects_l930 import CUSTOM_EFFECTS, CREATIVE_EFFECTS
-    all_eff_names = sorted(list(set(list(config.get("effects", {}).keys()) + list(CUSTOM_EFFECTS))))
+    # Keep the tray menu focused on the L900's ambient set plus the curated L930
+    # originals/spatial experiments; stock Tapo duplicates are intentionally omitted.
+    l900_ambient_effects = {
+        "ambient_drift", "fireplace", "golden_hour",
+        "ocean_waves", "color_breath", "candle_flicker",
+    }
+    all_eff_names = sorted(l900_ambient_effects | set(CUSTOM_EFFECTS))
     tray = TrayApp(
         mode_names=list(config.get("modes", {}).keys()),
         effect_names=all_eff_names,
