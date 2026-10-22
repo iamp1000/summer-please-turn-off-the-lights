@@ -1160,6 +1160,7 @@ class AudioCaptureCoordinator:
         self._stop_event = threading.Event()
         self.status = "stopped"
         self.last_error: Optional[str] = None
+        self.active_device_name: Optional[str] = None
 
         t_now = time.perf_counter()
         self._latest_slot: Tuple[MusicState, Dict[str, float]] = (
@@ -1249,6 +1250,7 @@ class AudioCaptureCoordinator:
             return
         if stop_event.is_set() or not self._running:
             return
+        self.active_device_name = getattr(mic, "name", None)
 
         try:
             vol_probe = get_master_volume_probe()
@@ -1274,6 +1276,8 @@ class AudioCaptureCoordinator:
                                 )
                                 if new_mic and new_mic.id != mic.id:
                                     mic = new_mic
+                                    self.active_device_name = getattr(mic, "name", None)
+                                    print(f"[AudioCapture] Switched to live source: {self.active_device_name}")
                                     silent_chunks = 0
                                     break
                         else:
