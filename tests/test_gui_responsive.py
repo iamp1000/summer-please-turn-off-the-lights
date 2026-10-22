@@ -27,3 +27,22 @@ def test_responsive_geometry_handles_tiny_display_without_negative_sizes():
     assert width > 0 and height > 0
     assert min_width > 0 and min_height > 0
     assert x >= 0 and y >= 0
+
+
+def test_responsive_grid_columns_follow_width_breakpoints():
+    from src.window_layout import responsive_grid_columns
+
+    assert responsive_grid_columns(320) == 1
+    assert responsive_grid_columns(469) == 1
+    assert responsive_grid_columns(470) == 2
+    assert responsive_grid_columns(819) == 2
+    assert responsive_grid_columns(820) == 3
+
+
+def test_responsive_grid_columns_respect_grid_specific_cap():
+    from src.window_layout import responsive_grid_columns
+
+    assert responsive_grid_columns(1400, max_columns=2) == 2
+    assert responsive_grid_columns(600, max_columns=2) == 2
+    assert responsive_grid_columns(320, max_columns=2) == 1
+    assert responsive_grid_columns(1400, max_columns=1) == 1
