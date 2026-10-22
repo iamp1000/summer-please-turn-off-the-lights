@@ -356,6 +356,11 @@ class LightHub:
                       else ("active" if sync.is_running() else "stopped"))
             )
             capture_error = coord_error if uses_shared_capture else getattr(sync, "_last_error", None)
+            # A renderer can fail while the shared capture thread itself stays healthy.
+            renderer_error = getattr(sync, "_last_error", None)
+            if renderer_error:
+                capture_error = renderer_error
+                capture_status = "error"
             audio_active = sync.is_running() and (
                 not uses_shared_capture or capture_status == "active"
             )
