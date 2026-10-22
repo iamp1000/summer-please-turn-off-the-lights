@@ -457,7 +457,7 @@ def test_l930_explicit_zero_transition_is_not_replaced_by_music_fade():
     assert controller.music_transition_ms == 120
 
 
-def test_original_effects_use_firmware_playback_not_repeated_network_frames():
+def test_original_effects_use_procedural_playback_not_firmware_colour_sequences():
     from src.effects_l930 import EFFECT_CATALOG, CREATIVE_EFFECTS, CUSTOM_EFFECTS
 
     expected = {"oil_slick", "silk_ribbons", "nebula_bloom", "holographic_moire", "ember_drift"}
@@ -465,7 +465,7 @@ def test_original_effects_use_firmware_playback_not_repeated_network_frames():
     assert set(CREATIVE_EFFECTS) == expected
     assert expected | spatial <= set(CUSTOM_EFFECTS)
     for name in expected | spatial:
-        assert EFFECT_CATALOG[name]["kind"] == "firmware"
+        assert EFFECT_CATALOG[name]["kind"] == "streamed_slow"
 
 
 def test_effect_switch_clears_old_frames_and_bypasses_slider_throttle():
