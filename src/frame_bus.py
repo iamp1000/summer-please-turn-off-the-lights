@@ -58,8 +58,11 @@ class FrameBus:
             self._controllers[dev_id] = controller
             self._consumers[dev_id] = lambda packet, c=controller: self._deliver(c, packet)
             sender = getattr(controller, "frame_sender", None)
+            frame_authorizer = lambda frame, d=dev_id: self.is_frame_current(d, frame)
             if sender and hasattr(sender, "set_frame_authorizer"):
-                sender.set_frame_authorizer(lambda frame, d=dev_id: self.is_frame_current(d, frame))
+                sender.set_frame_authorizer(frame_authorizer)
+            if hasattr(controller, "set_frame_authorizer"):
+                controller.set_frame_authorizer(frame_authorizer)
             if hasattr(controller, "set_output_token_authorizer"):
                 controller.set_output_token_authorizer(
                     lambda producer, generation, producer_id, d=dev_id:
