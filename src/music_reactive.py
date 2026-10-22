@@ -103,7 +103,7 @@ def get_audio_input_source(samplerate: int = 44100, blocksize: int = 1024, prefe
 
     # Keep the chosen device when it really carries signal; otherwise don't let
     # a silent Voicemeeter/mixer input hide sound playing through speakers/headphones.
-    if preferred is not None and preferred_rms >= 0.0015:
+    if preferred is not None and preferred_rms >= 0.005:
         print(f"[AudioDetector] Using selected live source: {preferred.name} (RMS={preferred_rms:.4f})")
         return preferred
     if best_device is not None and best_rms >= 0.0005:
