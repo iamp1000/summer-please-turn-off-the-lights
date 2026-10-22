@@ -240,6 +240,9 @@ class L930Controller:
         self.last_k = 4000
         self.last_segments: list[list[int]] = [[0, 0, 0] for _ in range(NUM_SEGMENTS)]
         self._is_on = True
+        # First segment-rule call creates the custom effect ID. Prime it with black
+        # so firmware does not visibly paint the first multicolour frame IC-by-IC.
+        self._segment_effect_initialized = False
 
         # Telemetry & Frame Sender
         self.diagnostics = DeviceDiagnostics(dev_id=self.dev_id)
@@ -466,6 +469,9 @@ class L930Controller:
         async with self._lock:
             try:
                 await self._ensure_connected()
+                if not await self._ensure_segment_effect_initialized():
+                    log.warning(f"[{self.dev_id}] L930 segment-effect initialization was rejected")
+                    return False
                 payload = build_segment_payload()
                 success = await self._apply_segment_effect_rule(payload)
                 if not success:
@@ -488,6 +494,8 @@ class L930Controller:
                 async with self._lock:
                     try:
                         await self._ensure_connected()
+                        if not await self._ensure_segment_effect_initialized():
+                            return False
                         payload = build_segment_payload()
                         success = await self._apply_segment_effect_rule(payload)
                         if not success:
@@ -498,6 +506,20 @@ class L930Controller:
                         log.error(f"[{self.dev_id}] L930 frame retry failed after re-auth: {e}")
                         return False
         return False
+
+    async def _ensure_segment_effect_initialized(self) -> bool:
+        """Create the stable custom effect ID with an invisible black frame once."""
+        if getattr(self, "_segment_effect_initialized", False):
+            return True
+        black = make_50_zone_segment_payload(
+            [[0, 0, 0] for _ in range(NUM_SEGMENTS)],
+            master_brightness=100,
+            pre_corrected=True,
+        )
+        accepted = await self._apply_segment_effect_rule(black)
+        if accepted:
+            self._segment_effect_initialized = True
+        return bool(accepted)
 
     async def _apply_segment_effect_rule(self, payload: dict[str, Any]) -> bool:
         """Send a 50-zone static painting frame through the L930 segment endpoint."""
@@ -521,6 +543,7 @@ class L930Controller:
 
     async def turn_on(self, priority: int = 0):
         self.clear_frames()
+        self._segment_effect_initialized = False
         async with self._lock:
             try:
                 await self._ensure_connected()
@@ -534,6 +557,7 @@ class L930Controller:
     async def turn_off(self, priority: int = 0):
         self.clear_frames()
         self._is_on = False
+        self._segment_effect_initialized = False
         async with self._lock:
             try:
                 await self._ensure_connected()
@@ -569,6 +593,7 @@ class L930Controller:
                 await self._ensure_connected()
                 if percent == 0:
                     self.clear_frames()
+                    self._segment_effect_initialized = False
                     if self._is_on:
                         try:
                             off_effect = LightEffect(
@@ -609,6 +634,7 @@ class L930Controller:
                     await self._device.turn_on()
                     self._is_on = True
                 await self._device.set_hue_saturation(hue, saturation)
+                self._segment_effect_initialized = False
                 self._last_successful_response = time.time()
             except Exception as e:
                 asyncio.create_task(self._handle_failure(e))
@@ -624,6 +650,7 @@ class L930Controller:
                     await self._device.turn_on()
                     self._is_on = True
                 await self._device.set_color_temperature(kelvin)
+                self._segment_effect_initialized = False
                 self._last_successful_response = time.time()
             except Exception as e:
                 asyncio.create_task(self._handle_failure(e))
@@ -643,6 +670,7 @@ class L930Controller:
                     self._is_on = True
                 await self._device.set_brightness(max(1, brightness))
                 await self._device.set_hue_saturation(hue, saturation)
+                self._segment_effect_initialized = False
                 self._last_successful_response = time.time()
             except Exception as e:
                 asyncio.create_task(self._handle_failure(e))
@@ -680,6 +708,7 @@ class L930Controller:
         if not self._native_effect_token_is_current(output_token):
             return False
         self.clear_frames()
+        self._segment_effect_initialized = False
         if priority > 0 and self._lock.locked():
             return False
         async with self._lock:
