@@ -2315,7 +2315,7 @@ class L930EffectsEngine:
             envelope = math.sin(2 * math.pi * (x * 0.78 - t * 0.018 * sp + 0.2))
             interference = lattice_a * lattice_b
             hue = int((188 + 76 * interference + 44 * envelope) % 360)
-            value = int(max(10, min(70, 20 + 29 * (0.5 + 0.5 * interference) + 17 * (0.5 + 0.5 * envelope)))
+            value = int(max(10, min(70, 20 + 29 * (0.5 + 0.5 * interference) + 17 * (0.5 + 0.5 * envelope))))
             saturation = int(max(62, min(95, 84 + 10 * lattice_a)))
             out.append([hue, saturation, value])
         return out
