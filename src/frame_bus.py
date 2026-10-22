@@ -195,19 +195,16 @@ class FrameBus:
             else:
                 packet.generation = max(0, packet.generation)
             previous = self._latest_frames.get(packet.dev_id)
-            if previous is not None and (
-                previous.producer == packet.producer
+            if (
+                previous is not None
+                and previous.producer == packet.producer
                 and previous.generation == packet.generation
                 and previous.segments == packet.segments
-                and tuple(previous.hsv) == tuple(packet.hsv) if previous.hsv is not None and packet.hsv is not None else (
-                    previous is not None
-                    and previous.producer == packet.producer
-                    and previous.generation == packet.generation
-                    and previous.segments == packet.segments
-                    and previous.hsv == packet.hsv
-                )
+                and previous.hsv == packet.hsv
+                and previous.brightness == packet.brightness
+                and previous.transition == packet.transition
             ):
-                # Legacy producer adapters may follow an explicit publish with the same frame.
+                # Legacy adapters can follow an explicit publish with the same frame.
                 return True
             self._latest_frames[packet.dev_id] = packet
             callbacks = list(self._subscribers.get(packet.dev_id, ())) + list(self._subscribers.get("*", ()))
