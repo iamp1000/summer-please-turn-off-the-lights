@@ -146,9 +146,10 @@ class LatestFrameSender:
             for i in range(min(len(segs), len(self._last_sent_segments))):
                 s_new = segs[i]
                 s_old = self._last_sent_segments[i]
-                diff_v = abs(int(s_new[2]) - int(s_old[2]))
                 diff_h = (abs(int(s_new[0]) - int(s_old[0])) + 180) % 360 - 180
-                max_delta = max(max_delta, diff_v, abs(diff_h))
+                diff_s = abs(int(s_new[1]) - int(s_old[1]))
+                diff_v = abs(int(s_new[2]) - int(s_old[2]))
+                max_delta = max(max_delta, abs(diff_h), diff_s, diff_v)
                 if max_delta >= self.min_zone_delta:
                     return True
             return False
@@ -164,8 +165,9 @@ class LatestFrameSender:
         if self._last_sent_hsb is None:
             return True
         diff_v = abs(hsb[2] - self._last_sent_hsb[2])
+        diff_s = abs(hsb[1] - self._last_sent_hsb[1])
         diff_h = (abs(hsb[0] - self._last_sent_hsb[0]) + 180) % 360 - 180
-        return max(diff_v, abs(diff_h)) >= self.min_zone_delta
+        return max(abs(diff_h), diff_s, diff_v) >= self.min_zone_delta
 
     async def _worker_loop(self):
         """Main sender loop running strictly inside the asyncio event loop."""
