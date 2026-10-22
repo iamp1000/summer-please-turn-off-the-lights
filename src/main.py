@@ -190,6 +190,7 @@ def main():
         on_music_toggle=lambda: hub.toggle_music("all"),
         on_screen_toggle=lambda: hub.toggle_screen("all"),
         on_show_dashboard=show_dashboard,
+        on_hide_dashboard=lambda: gui.app.after(0, gui.hide_window),
         on_quit=on_quit,
     )
     tray.run()
