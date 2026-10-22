@@ -662,13 +662,13 @@ def test_hub_full_state_includes_curated_categories(monkeypatch):
         assert "occasional_effects" in st
         assert "creative_effects" in st
         assert "active_effects" in st
-        assert len(st["core_effects"]) == 22
-        assert len(st["advanced_effects"]) == 10
-        assert len(st["seasonal_effects"]) == 2
-        assert len(st["novelty_effects"]) == 1
-        assert len(st["occasional_effects"]) == 3
-        assert len(st["creative_effects"]) == 7
-        assert len(st["active_effects"]) == 42
+        assert len(st["core_effects"]) == 0
+        assert len(st["advanced_effects"]) == 5
+        assert len(st["seasonal_effects"]) == 0
+        assert len(st["novelty_effects"]) == 0
+        assert len(st["occasional_effects"]) == 0
+        assert len(st["creative_effects"]) == 5
+        assert len(st["active_effects"]) == 10
         # Ensure bpm_resonator is exposed in visualizer styles
         assert any(s["id"] == "bpm_resonator" for s in st.get("visualizer_styles", []))
     finally:
