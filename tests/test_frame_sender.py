@@ -376,3 +376,73 @@ async def test_frame_popped_before_handoff_is_dropped_by_live_arbiter_check():
     assert not handoff_thread.is_alive()
     assert sent == []
     assert diag.frames_dropped >= 1
+
+
+def test_framebus_rejects_untagged_live_stream_and_stale_generation():
+    """Bound live devices reject tokenless streams and never accept a prior owner token."""
+    from src.frame_bus import FrameBus, OutputArbiter, OutputProducer, FramePacket
+
+    arbiter = OutputArbiter()
+    bus = FrameBus(arbiter)
+
+    class Sink:
+        def __init__(self):
+            self.frames = []
+        def submit_frame(self, frame):
+            self.frames.append(frame)
+        def clear_frames(self):
+            # Test sink keeps a history; physical sender clears only its pending slot.
+            pass
+
+    sink = Sink()
+    bus.bind_device("strip1", sink)
+    arbiter.claim_output("strip1", OutputProducer.EFFECT, renew=True)
+    token = bus.capture_token("strip1", OutputProducer.EFFECT)
+    assert token is not None
+
+    tokenless = FramePacket(
+        dev_id="strip1",
+        producer=OutputProducer.EFFECT,
+        segments=[[210, 80, 50]] * 50,
+        brightness=50,
+    )
+    assert bus.publish(tokenless) is False
+    assert sink.frames == []
+
+    generation, producer_id = token
+    assert bus.publish(FramePacket(
+        dev_id="strip1",
+        producer=OutputProducer.EFFECT,
+        segments=[[210, 80, 50]] * 50,
+        brightness=50,
+        generation=generation,
+        producer_id=producer_id,
+    )) is True
+    assert len(sink.frames) == 1
+
+    arbiter.claim_output("strip1", OutputProducer.AUDIO, renew=True)
+    stale = FramePacket(
+        dev_id="strip1",
+        producer=OutputProducer.EFFECT,
+        segments=[[25, 100, 100]] * 50,
+        brightness=100,
+        generation=generation,
+        producer_id=producer_id,
+    )
+    assert bus.publish(stale) is False
+    assert len(sink.frames) == 1
+    assert bus.get_latest_frame("strip1") is None
+
+
+def test_framebus_allows_only_one_physical_consumer_per_device():
+    from src.frame_bus import FrameBus, OutputArbiter
+
+    bus = FrameBus(OutputArbiter())
+
+    class Sink:
+        def submit_frame(self, _frame):
+            pass
+
+    bus.bind_device("strip1", Sink())
+    with pytest.raises(ValueError, match="already bound"):
+        bus.bind_device("strip1", Sink())
