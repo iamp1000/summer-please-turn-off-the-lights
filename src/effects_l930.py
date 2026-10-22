@@ -389,7 +389,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
 
     # ── 3b. Creative Original Designs (7) ────────────────────────────────────
     'oil_slick': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Ambient',
         'category': 'creative',
         'desc': 'Thin-film interference fields drifting across petrol cyan, indigo, violet, rose, and amber hues',
@@ -397,7 +397,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness'],
     },
     'silk_ribbons': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Motion',
         'category': 'creative',
         'desc': 'Broad, soft-edged luminous ribbons flowing in opposite directions and blending smoothly in OKLab space',
@@ -405,7 +405,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness'],
     },
     'nebula_bloom': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Ambient',
         'category': 'creative',
         'desc': 'Atmospheric cosmic violet, indigo, and fuchsia clouds expanding and breathing over deep space negative space',
@@ -413,7 +413,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness'],
     },
     'holographic_moire': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Motion',
         'category': 'creative',
         'desc': 'Two detuned spatial carrier waves producing moving macroscopic interference fringes and holographic sheen',
@@ -429,7 +429,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness'],
     },
     'ember_drift': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Ambient',
         'category': 'creative',
         'desc': 'Simulated 1D thermal convection with drifting copper coals and breathing heat pockets',
@@ -569,16 +569,18 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
     },
 }
 
-CORE_EFFECTS: List[str] = [k for k, v in EFFECT_CATALOG.items() if v.get('category') == 'core']
-ADVANCED_EFFECTS: List[str] = [k for k, v in EFFECT_CATALOG.items() if v.get('category') == 'advanced']
-SEASONAL_EFFECTS: List[str] = [k for k, v in EFFECT_CATALOG.items() if v.get('category') == 'seasonal']
-NOVELTY_EFFECTS: List[str] = [k for k, v in EFFECT_CATALOG.items() if v.get('category') == 'novelty']
-CREATIVE_EFFECTS: List[str] = [k for k, v in EFFECT_CATALOG.items() if v.get('category') == 'creative']
-OCCASIONAL_EFFECTS: List[str] = SEASONAL_EFFECTS + NOVELTY_EFFECTS
-ACTIVE_EFFECTS: List[str] = CORE_EFFECTS + ADVANCED_EFFECTS + SEASONAL_EFFECTS + NOVELTY_EFFECTS + CREATIVE_EFFECTS
-
-
-CUSTOM_EFFECTS = list(EFFECT_CATALOG.keys())
+# Deliberately curated shelf: remove stock Tapo modes, aliases, strobe toys and
+# one-dimensional chase effects from the user-facing catalog.
+CREATIVE_EFFECTS: List[str] = [
+    "oil_slick", "silk_ribbons", "nebula_bloom",
+    "holographic_moire", "ember_drift",
+]
+SPATIAL_EXPERIMENTS: List[str] = [
+    "spiral_vortex", "gravity_slosh", "lissajous_orbit",
+    "planar_wind", "vaporwave_neon",
+]
+ACTIVE_EFFECTS: List[str] = CREATIVE_EFFECTS + SPATIAL_EXPERIMENTS
+CUSTOM_EFFECTS = list(ACTIVE_EFFECTS)
 
 
 class L930EffectsEngine:
