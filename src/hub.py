@@ -120,6 +120,8 @@ class LightHub:
                 arbiter=self.arbiter, audio_coordinator=self.audio_coordinator
             )
             self.devices[dev_id] = ctx
+            # Install exactly one authorized physical consumer for this device.
+            self.frame_bus.attach_device(dev_id, ctrl)
 
         self.composite_mgr = CompositeSystemManager(self)
         self.preset_mgr = PresetManager()
