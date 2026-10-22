@@ -374,10 +374,7 @@ class MusicReactiveL930:
 
             elapsed = time.perf_counter() - t0
             sleep_time = max(0.001, target_dt - elapsed)
-            if self._coordinator and hasattr(self._coordinator, "new_frame_event"):
-                self._coordinator.new_frame_event.wait(timeout=sleep_time)
-            else:
-                stop_event.wait(sleep_time)
+            stop_event.wait(sleep_time)
 
     def _render_from_music_state(self, st: MusicState, dt: float, timing: Optional[Dict[str, float]] = None):
         master_ceiling = self._app_state.get("brightness", 100) / 100.0
