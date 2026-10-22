@@ -139,21 +139,21 @@ class AnimationEngine:
                 # 1. Determine send interval & transition duration based on physical nature
                 sp_mult = max(0.2, self._speed_multiplier)
                 if eff_name == "candle_flicker":
-                    # Rapid, irregular updates with short attack to prevent smoothing away flickers
-                    interval = random.uniform(0.12, 0.28) / sp_mult
-                    trans_ms = max(40, int(interval * 500))
+                    # L900 is single-zone: keep candle movement warm and slow.
+                    interval = random.uniform(1.25, 1.85) / sp_mult
+                    trans_ms = int(interval * 1000)
                 elif eff_name == "fireplace":
-                    # Active thermal turbulence with surging attacks
-                    interval = max(0.25, 0.45 / sp_mult)
-                    trans_ms = int(interval * 700)
+                    # Long, overlapping thermal fades instead of sharp intensity jumps.
+                    interval = max(1.1, 1.45 / sp_mult)
+                    trans_ms = int(interval * 1000)
                 elif eff_name == "color_breath":
-                    # Smooth respiratory pacing
-                    interval = max(0.35, 0.60 / sp_mult)
-                    trans_ms = int(interval * 950)
+                    # One continuous breath per several seconds.
+                    interval = max(1.2, 1.65 / sp_mult)
+                    trans_ms = int(interval * 1000)
                 elif eff_name == "ocean_waves":
-                    # Swell and surf rhythm
-                    interval = max(0.40, 0.85 / sp_mult)
-                    trans_ms = int(interval * 900)
+                    # Broad swells with a long fade across the full send interval.
+                    interval = max(1.3, 1.8 / sp_mult)
+                    trans_ms = int(interval * 1000)
                 elif eff_name == "golden_hour":
                     # Stable, sunlit slow drift
                     interval = max(1.0, 3.2 / sp_mult)
