@@ -461,9 +461,10 @@ def test_original_effects_use_firmware_playback_not_repeated_network_frames():
     from src.effects_l930 import EFFECT_CATALOG, CREATIVE_EFFECTS, CUSTOM_EFFECTS
 
     expected = {"oil_slick", "silk_ribbons", "nebula_bloom", "holographic_moire", "ember_drift"}
+    spatial = {"spiral_vortex", "gravity_slosh", "lissajous_orbit", "planar_wind", "vaporwave_neon"}
     assert set(CREATIVE_EFFECTS) == expected
-    assert expected.issubset(set(CUSTOM_EFFECTS))
-    for name in expected:
+    assert expected | spatial <= set(CUSTOM_EFFECTS)
+    for name in expected | spatial:
         assert EFFECT_CATALOG[name]["kind"] == "firmware"
 
 
@@ -544,36 +545,30 @@ def test_firmware_deployment_failure_is_returned_to_caller():
 
 
 def test_effect_catalog_curation_structure():
-    """Verify curated breakdown: 22 Core, 10 Advanced, 2 Seasonal, 1 Novelty, 7 Creative, 10 Aliases, 1 Reactive."""
+    """Keep the user-facing shelf limited to five original designs and five spatial experiments."""
     from src.effects_l930 import (
         CORE_EFFECTS, ADVANCED_EFFECTS, SEASONAL_EFFECTS, NOVELTY_EFFECTS,
         OCCASIONAL_EFFECTS, CREATIVE_EFFECTS, ACTIVE_EFFECTS, EFFECT_CATALOG
     )
 
-    assert len(EFFECT_CATALOG) == 53, f"Expected 53 total catalog entries, got {len(EFFECT_CATALOG)}"
-    assert len(CORE_EFFECTS) == 22, f"Expected 22 core effects, got {len(CORE_EFFECTS)}"
-    assert len(ADVANCED_EFFECTS) == 10, f"Expected 10 advanced effects, got {len(ADVANCED_EFFECTS)}"
-    assert len(SEASONAL_EFFECTS) == 2, f"Expected 2 seasonal effects, got {len(SEASONAL_EFFECTS)}"
-    assert len(NOVELTY_EFFECTS) == 1, f"Expected 1 novelty effect, got {len(NOVELTY_EFFECTS)}"
-    assert len(CREATIVE_EFFECTS) == 7, f"Expected 7 creative effects, got {len(CREATIVE_EFFECTS)}"
-    assert len(OCCASIONAL_EFFECTS) == 3, f"Expected 3 occasional effects, got {len(OCCASIONAL_EFFECTS)}"
-    assert len(ACTIVE_EFFECTS) == 42, f"Expected 42 active effects, got {len(ACTIVE_EFFECTS)}"
+    assert len(EFFECT_CATALOG) == 53, f"Expected 53 internal definitions, got {len(EFFECT_CATALOG)}"
+    assert CORE_EFFECTS == [], "Stock/core effects should not be exposed in the curated UI"
+    assert len(ADVANCED_EFFECTS) == 5
+    assert SEASONAL_EFFECTS == []
+    assert NOVELTY_EFFECTS == []
+    assert len(CREATIVE_EFFECTS) == 5
+    assert OCCASIONAL_EFFECTS == []
+    assert len(ACTIVE_EFFECTS) == 10
 
     expected_creative = {
-        "oil_slick", "silk_ribbons", "nebula_bloom", "holographic_moire",
-        "bioluminescent_tide", "ember_drift", "cyberpunk"
+        "oil_slick", "silk_ribbons", "nebula_bloom", "holographic_moire", "ember_drift"
     }
     assert set(CREATIVE_EFFECTS) == expected_creative
 
     expected_advanced = {
-        "meteor_shower", "juggle", "spiral_vortex", "gravity_slosh", "lissajous_orbit",
-        "planar_wind", "radar_sweep", "vaporwave_neon", "neon_heartbeat", "lantern_sweep"
+        "spiral_vortex", "gravity_slosh", "lissajous_orbit", "planar_wind", "vaporwave_neon"
     }
     assert set(ADVANCED_EFFECTS) == expected_advanced
-
-    expected_seasonal = {"candy_cane", "haunted_mansion"}
-    assert set(SEASONAL_EFFECTS) == expected_seasonal
-    assert NOVELTY_EFFECTS == ["police"]
     assert "warning" in EFFECT_CATALOG["police"]
     assert "Rapid flashing" in EFFECT_CATALOG["police"]["warning"]
 

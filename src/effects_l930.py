@@ -293,7 +293,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness', 'palette'],
     },
     'spiral_vortex': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Motion',
         'category': 'advanced',
         'desc': '2D polar angle vortex spinning smoothly with layered chromatic bands',
@@ -301,7 +301,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness', 'palette'],
     },
     'gravity_slosh': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Motion',
         'category': 'advanced',
         'desc': '2D U-tube gravity slosh falling from arch apex and rebounding at bottom corners',
@@ -309,7 +309,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness', 'palette', 'wave_width'],
     },
     'lissajous_orbit': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Motion',
         'category': 'advanced',
         'desc': 'Invisible 2D Lissajous orbit with soft Euclidean proximity glow',
@@ -317,7 +317,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness', 'palette'],
     },
     'planar_wind': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Motion',
         'category': 'advanced',
         'desc': '45-degree planar wavefront slicing diagonally across 2D physical room space',
@@ -333,7 +333,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness', 'palette', 'tail_length'],
     },
     'vaporwave_neon': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Motion',
         'category': 'advanced',
         'desc': 'Thick magenta, cyan, and violet bands with deep gaps and slow scanline',
@@ -569,8 +569,9 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
     },
 }
 
-# Deliberately curated shelf: remove stock Tapo modes, aliases, strobe toys and
-# one-dimensional chase effects from the user-facing catalog.
+# Deliberately curated shelf: stock Tapo modes, aliases, strobe toys and
+# one-dimensional chase effects remain internal for compatibility but are not exposed.
+CORE_EFFECTS: List[str] = []
 CREATIVE_EFFECTS: List[str] = [
     "oil_slick", "silk_ribbons", "nebula_bloom",
     "holographic_moire", "ember_drift",
@@ -579,6 +580,10 @@ SPATIAL_EXPERIMENTS: List[str] = [
     "spiral_vortex", "gravity_slosh", "lissajous_orbit",
     "planar_wind", "vaporwave_neon",
 ]
+ADVANCED_EFFECTS: List[str] = list(SPATIAL_EXPERIMENTS)
+SEASONAL_EFFECTS: List[str] = []
+NOVELTY_EFFECTS: List[str] = []
+OCCASIONAL_EFFECTS: List[str] = []
 ACTIVE_EFFECTS: List[str] = CREATIVE_EFFECTS + SPATIAL_EXPERIMENTS
 CUSTOM_EFFECTS = list(ACTIVE_EFFECTS)
 

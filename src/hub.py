@@ -185,8 +185,8 @@ class LightHub:
             "effects_l900": [
                 "ambient_drift", "fireplace", "golden_hour", "ocean_waves", "color_breath", "candle_flicker"
             ],
-            "effects_l930": list(EFFECT_CATALOG.keys()),
-            "effects_catalog": EFFECT_CATALOG,
+            "effects_l930": list(ACTIVE_EFFECTS),
+            "effects_catalog": {name: EFFECT_CATALOG[name] for name in ACTIVE_EFFECTS if name in EFFECT_CATALOG},
             "core_effects": CORE_EFFECTS,
             "advanced_effects": ADVANCED_EFFECTS,
             "seasonal_effects": SEASONAL_EFFECTS,
