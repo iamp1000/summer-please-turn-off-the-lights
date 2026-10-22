@@ -209,10 +209,11 @@ class L930Controller:
             )
             self.frame_sender.start()
 
-    def bind_frame_bus(self, token: object, validator=None):
+    def bind_frame_bus(self, token: object, validator=None, publisher=None):
         """Bind the sole authorized output route for this physical device."""
         self._frame_bus_token = token
         self._frame_bus_validator = validator
+        self._frame_bus_publisher = publisher
         if self.frame_sender:
             self.frame_sender.set_frame_validator(validator)
 
@@ -531,7 +532,9 @@ class L930Controller:
                 asyncio.create_task(self._handle_failure(e))
 
     async def set_state(self, hue: int, saturation: int, brightness: int, priority: int = 1):
-        """Atomically sets hue, saturation, and brightness across all 50 zones."""
+        """Atomically sets hue, saturation, and brightness through the authorized output route."""
+        if getattr(self, "_frame_bus_publisher", None):
+            return self._frame_bus_publisher({"segments": [[int(hue), int(saturation), int(brightness)] for _ in range(NUM_SEGMENTS)], "brightness": int(brightness), "_pre_corrected": True})
         if priority > 0 and self._lock.locked():
             return
         async with self._lock:
