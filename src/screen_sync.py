@@ -188,6 +188,7 @@ class ScreenSync:
         self._zone_smoother = ZoneAsymmetricSmoother(num_zones=50, attack_rate=0.70, decay_rate=0.22)
         self._l900_smoother = AsymmetricSmoother(attack_rate=0.70, decay_rate=0.22)
         self._last_sampled_v = 50.0
+        self._smoothed_global_hsv = (30.0, 45.0, 50.0)
         self._rendered_segs: list[list[int]] = [[0, 0, 0]] * 50
         self.latest_screen_data: ScreenData = ScreenData()
 
@@ -336,15 +337,15 @@ class ScreenSync:
         )
 
         if is_l930 and segs:
-            # Check for hard scene cut
+            # Scene cuts are damped, never snapped: the output cadence is too low for hard jumps.
             avg_v_target = sum(s[2] for s in segs) / 50.0
             diff = abs(avg_v_target - self._last_sampled_v) / 100.0
             if diff > cut_thresh:
-                # Hard scene cut: bypass filter, jump immediately
-                smoothed_segs = segs
+                # Temporarily reduce attack while the cut settles; decay remains gentle.
+                self._zone_smoother.attack = min(self._zone_smoother.attack, 0.22)
             else:
-                smoothed_segs = self._zone_smoother.update(segs)
-
+                self._zone_smoother.attack = profile["attack_rate"]
+            smoothed_segs = self._zone_smoother.update(segs)
             self._last_sampled_v = avg_v_target
             self._rendered_segs = smoothed_segs
             scaled_b = max(1, int(100 * master_ceiling))
@@ -362,8 +363,16 @@ class ScreenSync:
                 self._submit_frame({"segments": smoothed_segs, "brightness": scaled_b, "transition": 0})
         else:
             gh, gs, gv = global_hsv
+            prev_h, prev_s, prev_v = self._smoothed_global_hsv
+            hue_delta = ((float(gh) - prev_h + 180.0) % 360.0) - 180.0
+            # Dominant hue and saturation are low-pass filtered to avoid scene-cut flashes.
+            alpha = 0.16 if abs(hue_delta) > 45.0 else 0.24
+            smooth_h = (prev_h + alpha * hue_delta) % 360.0
+            smooth_s = prev_s + alpha * (float(gs) - prev_s)
             smoothed_v = self._l900_smoother.update(float(gv))
+            self._smoothed_global_hsv = (smooth_h, smooth_s, smoothed_v)
             final_b = max(1, int(smoothed_v * master_ceiling))
+            gh, gs = int(round(smooth_h)) % 360, int(round(smooth_s))
 
             if self._frame_bus:
                 self._frame_bus.publish(FramePacket(
