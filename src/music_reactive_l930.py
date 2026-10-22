@@ -62,6 +62,7 @@ class MusicReactiveL930:
         self._frame_bus = frame_bus
         self._dev_id = dev_id
         self._output_token: Optional[tuple[int, str]] = None
+        self._output_context = threading.local()
         self._sr = samplerate
         self._samplerate = samplerate
         self._bs = blocksize
@@ -185,9 +186,10 @@ class MusicReactiveL930:
     def _publish_frame(self, frame: dict) -> bool:
         """Route frames through the captured AUDIO ownership generation."""
         if self._frame_bus:
-            if self._output_token is None:
+            output_token = getattr(self._output_context, "token", self._output_token)
+            if output_token is None:
                 return False
-            generation, producer_id = self._output_token
+            generation, producer_id = output_token
             return self._frame_bus.publish_frame(
                 self._dev_id, OutputProducer.AUDIO, frame,
                 generation=generation, producer_id=producer_id,
@@ -209,9 +211,9 @@ class MusicReactiveL930:
         if self._coordinator:
             self._coordinator.register_subscriber(self)
             self._coordinator.start()
-            self._thread = threading.Thread(target=self._render_loop, daemon=True, name="MusicReactiveL930RenderLoop")
+            self._thread = threading.Thread(target=self._render_loop, args=(self._output_token,), daemon=True, name="MusicReactiveL930RenderLoop")
         else:
-            self._thread = threading.Thread(target=self._run, daemon=True, name="MusicReactiveL930Worker")
+            self._thread = threading.Thread(target=self._run, args=(self._output_token,), daemon=True, name="MusicReactiveL930Worker")
         self._thread.start()
 
     def stop(self):
@@ -225,7 +227,8 @@ class MusicReactiveL930:
             self._ctrl.clear_frames()
         self._publish_frame({"segments": dark, "brightness": 0, "transition": 0, "_pre_corrected": True})
 
-    def _render_loop(self):
+    def _render_loop(self, output_token=None):
+        self._output_context.token = output_token
         last_t = time.perf_counter()
         target_fps = 60.0
         target_dt = 1.0 / target_fps
@@ -369,7 +372,8 @@ class MusicReactiveL930:
 
         self._publish_frame(frame_dict)
 
-    def _run(self):
+    def _run(self, output_token=None):
+        self._output_context.token = output_token
         mic = get_audio_input_source(self._sr, self._bs, self._preferred_device)
         if not mic:
             print("[MusicReactiveL930] No audio input found.")
