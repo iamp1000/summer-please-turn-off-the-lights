@@ -23,6 +23,11 @@ try:
 except ImportError:
     from plugp100.new.device_factory import DeviceConnectConfiguration, connect
 from plugp100.api.light_effect import LightEffect
+try:
+    from plugp100.api.requests.tapo_request import TapoRequest
+except ImportError:
+    # plugp100 4.x exposed TapoRequest at the previous package path.
+    from plugp100.requests.tapo_request import TapoRequest
 
 from src.diagnostics import DeviceDiagnostics
 from src.frame_sender import LatestFrameSender
@@ -126,6 +131,48 @@ def make_50_zone_effect(
         transition_range=None,
         type="static",
     )
+
+
+def make_50_zone_segment_payload(
+    segments_hsv: list[tuple[int, int, int] | list[int]],
+    master_brightness: int = 100,
+    pre_corrected: bool = False,
+) -> dict[str, Any]:
+    """
+    Build the L930 per-segment painting payload.
+
+    The strip exposes per-zone painting through apply_segment_effect_rule,
+    not set_lighting_effect. Each states entry is [h, s, v, 0], and segments
+    contains the cumulative end index for each zone (0..49 at full resolution).
+    Keep one stable ID so successive frames update in place.
+    """
+    effect = make_50_zone_effect(
+        segments_hsv,
+        master_brightness=master_brightness,
+        transition=0,
+        pre_corrected=pre_corrected,
+        init_states=[],
+    )
+    states = [
+        [int(zone[0]) % 360, max(0, min(100, int(zone[1]))),
+         max(0, min(100, int(zone[2]))), 0]
+        for zone in (effect.sequence or [])[:NUM_SEGMENTS]
+    ]
+    while len(states) < NUM_SEGMENTS:
+        states.append(list(states[-1]) if states else [0, 0, 0, 0])
+
+    return {
+        "brightness": 100,
+        "custom": 1,
+        "deviceType": "strip",
+        "display_colors": [list(state) for state in states[:4]],
+        "enable": 1,
+        "id": _STATIC_EFFECT_ID,
+        "name": "DynamicZones",
+        "segments": list(range(NUM_SEGMENTS)),
+        "states": states,
+        "type": "none",
+    }
 
 
 class L930Controller:
@@ -398,24 +445,18 @@ class L930Controller:
         configured_transition = getattr(self, "default_transition_ms", None)
         trans = max(0, int(configured_transition)) if configured_transition is not None else max(0, int(trans))
 
-        def build_effect_from_latest_state():
-            # This runs only while holding self._lock. It captures the last acknowledged
-            # output, rather than a stale state snapshot taken before waiting for the lock.
-            previous_state = [list(zone) for zone in self.last_segments[:NUM_SEGMENTS]]
-            while len(previous_state) < NUM_SEGMENTS:
-                previous_state.append([0, 0, 0])
-            return make_50_zone_effect(
+        def build_segment_payload():
+            # Called under the device lock. The segment endpoint updates these zones
+            # in place, rather than starting an ordinary strip-wide lighting effect.
+            return make_50_zone_segment_payload(
                 segs,
                 master_brightness=brightness,
-                transition=trans,
                 pre_corrected=pre_corrected,
-                init_states=previous_state,
             )
 
-        def remember_sent_state(effect):
-            # Track the serialized/corrected state actually sent to the ICs.
-            sequence = effect.sequence or segs
-            self.last_segments = [list(zone) for zone in sequence[:NUM_SEGMENTS]]
+        def remember_sent_state(payload):
+            # Track the three HSV values actually sent for every IC.
+            self.last_segments = [list(zone[:3]) for zone in payload["states"][:NUM_SEGMENTS]]
             while len(self.last_segments) < NUM_SEGMENTS:
                 self.last_segments.append(list(self.last_segments[-1]))
             self._last_successful_response = time.time()
@@ -425,13 +466,12 @@ class L930Controller:
         async with self._lock:
             try:
                 await self._ensure_connected()
-                effect = build_effect_from_latest_state()
-                res = await self._device.set_light_effect(effect)
-                success = res.is_success() if hasattr(res, "is_success") else bool(res)
+                payload = build_segment_payload()
+                success = await self._apply_segment_effect_rule(payload)
                 if not success:
-                    log.warning(f"[{self.dev_id}] L930 frame update was rejected by the device")
+                    log.warning(f"[{self.dev_id}] L930 segment frame update was rejected by the device")
                     return False
-                remember_sent_state(effect)
+                remember_sent_state(payload)
                 return True
             except Exception as e:
                 if is_session_timeout(e):
@@ -448,17 +488,34 @@ class L930Controller:
                 async with self._lock:
                     try:
                         await self._ensure_connected()
-                        effect = build_effect_from_latest_state()
-                        res = await self._device.set_light_effect(effect)
-                        success = res.is_success() if hasattr(res, "is_success") else bool(res)
+                        payload = build_segment_payload()
+                        success = await self._apply_segment_effect_rule(payload)
                         if not success:
                             return False
-                        remember_sent_state(effect)
+                        remember_sent_state(payload)
                         return True
                     except Exception as e:
                         log.error(f"[{self.dev_id}] L930 frame retry failed after re-auth: {e}")
                         return False
         return False
+
+    async def _apply_segment_effect_rule(self, payload: dict[str, Any]) -> bool:
+        """Send a 50-zone static painting frame through the L930 segment endpoint."""
+        if self._device is None:
+            return False
+        client = getattr(self._device, "client", None) or getattr(self._device, "_api", None)
+        execute = getattr(client, "execute_raw_request", None)
+        if not callable(execute):
+            raise RuntimeError(
+                "Installed plugp100 client does not expose execute_raw_request; "
+                "cannot send the L930 per-segment painting endpoint safely."
+            )
+        response = await execute(
+            TapoRequest(method="apply_segment_effect_rule", params=payload)
+        )
+        if hasattr(response, "is_success"):
+            return bool(response.is_success())
+        return bool(response)
 
     # ── Priority User Controls ────────────────────────────────────────────────
 
