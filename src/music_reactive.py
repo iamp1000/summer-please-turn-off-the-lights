@@ -308,13 +308,6 @@ class MusicReactive:
 
         if (st.energy <= 0.005 or getattr(st, "silent", False)) and not is_movie:
             self._target_state = (0, 0, 0)
-            if self._frame_bus:
-                self._frame_bus.publish(FramePacket(
-                    dev_id=self._dev_id,
-                    producer=OutputProducer.AUDIO,
-                    hsv=(0, 0, 0),
-                    brightness=0,
-                ))
             if hasattr(self._controller, "submit_frame"):
                 self._submit_frame({"h": 0, "s": 0, "b": 0, "_pre_corrected": True})
             return
@@ -364,14 +357,6 @@ class MusicReactive:
             frame_dict["t_analysis_done"] = timing.get("t_analysis_done", t_rendered)
             frame_dict["t_frame_rendered"] = t_rendered
 
-        if self._frame_bus:
-            self._frame_bus.publish(FramePacket(
-                dev_id=self._dev_id,
-                producer=OutputProducer.AUDIO,
-                hsv=(hc, sc, vc),
-                brightness=vc,
-                metadata={"music_state": st},
-            ))
 
         if hasattr(self._controller, "submit_frame"):
             self._submit_frame(frame_dict)
@@ -574,14 +559,6 @@ class MusicReactive:
             # Apply gamma and white-balance calibration in render thread
             hc, sc, vc = self._pipeline.correct_hsv_tuple(h, s, b, master_ceiling=master_ceiling)
             self._target_state = (vc, hc, sc)
-            if self._frame_bus:
-                self._frame_bus.publish(FramePacket(
-                    dev_id=self._dev_id,
-                    producer=OutputProducer.AUDIO,
-                    hsv=(hc, sc, vc),
-                    brightness=vc,
-                    metadata={"music_state": self.latest_music_state},
-                ))
             if hasattr(self._controller, "submit_frame"):
                 self._submit_frame({"h": hc, "s": sc, "b": vc, "_pre_corrected": True})
             return
