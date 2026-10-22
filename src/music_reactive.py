@@ -394,10 +394,10 @@ class MusicReactive:
         from src.master_volume import get_master_volume_probe
         vol_probe = get_master_volume_probe()
 
-        while self._running:
+        while self._running and generation == self._run_generation:
             try:
                 with mic.recorder(samplerate=self._samplerate, blocksize=self._blocksize, channels=1) as recorder:
-                    while self._running:
+                    while self._running and generation == self._run_generation:
                         data = recorder.record(numframes=self._blocksize)
                         raw_samples = data[:, 0]
                         samples = vol_probe.compensate_samples(raw_samples)
