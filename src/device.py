@@ -133,10 +133,24 @@ class LightController:
             )
             self.frame_sender.start()
 
-    def submit_frame(self, frame: Any):
-        """Submit frame to decoupled sender. Latest frame overwrites pending."""
+    def bind_frame_bus(self, token: object, validator=None):
+        """Bind the sole authorized output route for this physical device."""
+        self._frame_bus_token = token
+        self._frame_bus_validator = validator
+        if self.frame_sender:
+            self.frame_sender.set_frame_validator(validator)
+
+    def submit_frame(self, frame: Any, *, _frame_bus_token=None):
+        """Submit only frames dispatched by the authoritative FrameBus."""
+        if getattr(self, "_frame_bus_token", None) is not None:
+            if _frame_bus_token is not self._frame_bus_token:
+                return False
+            if self._frame_bus_validator and not self._frame_bus_validator(frame):
+                return False
         if self.frame_sender and self._is_on:
             self.frame_sender.submit_frame(frame)
+            return True
+        return False
 
     def clear_frames(self):
         """Immediately purge pending animation frames."""
