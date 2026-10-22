@@ -8,9 +8,10 @@ class FakeController:
         self.frames = []
         self.clears = 0
 
-    def bind_frame_bus(self, token, validator=None):
+    def bind_frame_bus(self, token, validator=None, publisher=None):
         self.token = token
         self.validator = validator
+        self.publisher = publisher
 
     def submit_frame(self, frame, *, _frame_bus_token=None):
         if _frame_bus_token is not self.token:
