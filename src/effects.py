@@ -190,21 +190,12 @@ class AnimationEngine:
                     "transition": trans_ms,
                 }
 
-                if self._frame_bus:
-                    published = self._frame_bus.publish(FramePacket(
-                        dev_id=self._dev_id,
-                        producer=OutputProducer.EFFECT,
-                        hsv=(frame_data["h"], frame_data["s"], frame_data["b"]),
-                        brightness=frame_data["b"],
-                        transition=trans_ms,
-                    ))
-                    if not published:
+                if hasattr(self._controller, "submit_frame"):
+                    accepted = self._submit_frame(frame_data)
+                    if accepted is False:
                         if stop_event.wait(0.1):
                             break
                         continue
-
-                if hasattr(self._controller, "submit_frame"):
-                    self._submit_frame(frame_data)
                 elif hasattr(self._controller, "set_state"):
                     self._loop_runner.run(self._controller.set_state(
                         frame_data["h"], frame_data["s"], frame_data["b"], priority=1
