@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from src.effects_l930 import L930EffectsEngine, CREATIVE_EFFECTS, EFFECT_CATALOG
+from src.effects_l930 import L930EffectsEngine, CREATIVE_EFFECTS, SPATIAL_EXPERIMENTS, ACTIVE_EFFECTS, EFFECT_CATALOG
 
 
 @pytest.fixture
@@ -10,12 +10,9 @@ def engine():
 
 
 def test_creative_effects_registered_and_configured(engine):
-    """Verify all 7 creative effects are properly registered in catalog with metadata."""
-    assert len(CREATIVE_EFFECTS) == 7
-    expected = {
-        "oil_slick", "silk_ribbons", "nebula_bloom", "holographic_moire",
-        "bioluminescent_tide", "ember_drift", "cyberpunk"
-    }
+    """The visible creative shelf contains five curated original designs."""
+    assert len(CREATIVE_EFFECTS) == 5
+    expected = {"oil_slick", "silk_ribbons", "nebula_bloom", "holographic_moire", "ember_drift"}
     assert set(CREATIVE_EFFECTS) == expected
 
     for eff in CREATIVE_EFFECTS:
@@ -24,6 +21,15 @@ def test_creative_effects_registered_and_configured(engine):
         assert meta["category"] == "creative"
         assert "speed" in meta["supported_controls"]
         assert "brightness" in meta["supported_controls"]
+
+
+def test_visible_effect_shelf_uses_procedural_renderers(engine):
+    """Visible designs use their 50-zone renderer rather than a firmware colour sequence."""
+    assert set(ACTIVE_EFFECTS) == set(CREATIVE_EFFECTS + SPATIAL_EXPERIMENTS)
+    assert len(ACTIVE_EFFECTS) == 10
+    for name in ACTIVE_EFFECTS:
+        assert EFFECT_CATALOG[name]["kind"] == "streamed_slow", name
+        assert len(engine._compute(name, t=1.37)) == 50, name
 
 
 def test_creative_effects_generate_valid_smooth_zones(engine):
