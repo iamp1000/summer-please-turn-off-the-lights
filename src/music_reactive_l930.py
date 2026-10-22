@@ -147,6 +147,14 @@ class MusicReactiveL930:
         if hasattr(self, "_analyzer"):
             self._analyzer.set_latency_lookahead(self._latency_lookahead_ms)
 
+    def _submit_frame(self, frame):
+        """Route render frames through FrameBus when the hub is active."""
+        if self._frame_bus is not None:
+            return self._frame_bus.publish_frame_dict(self._dev_id, OutputProducer.AUDIO, frame)
+        if hasattr(self._ctrl, "submit_frame"):
+            return self._ctrl.submit_frame(frame)
+        return False
+
     def is_running(self) -> bool:
         return self._running
 
@@ -203,7 +211,7 @@ class MusicReactiveL930:
         if hasattr(self._ctrl, "clear_frames"):
             self._ctrl.clear_frames()
         if hasattr(self._ctrl, "submit_frame"):
-            self._ctrl.submit_frame({"segments": dark, "brightness": 0, "transition": 0})
+            self._submit_frame({"segments": dark, "brightness": 0, "transition": 0})
 
     def _render_loop(self):
         last_t = time.perf_counter()
@@ -255,7 +263,7 @@ class MusicReactiveL930:
                         brightness=0,
                     ))
                 if hasattr(self._ctrl, "submit_frame"):
-                    self._ctrl.submit_frame({"segments": dark, "brightness": 0, "transition": 0, "_pre_corrected": True})
+                    self._submit_frame({"segments": dark, "brightness": 0, "transition": 0, "_pre_corrected": True})
 
             if self._silence_duration >= 3.0 and not self._powered_down_for_silence:
                 self._powered_down_for_silence = True
@@ -366,7 +374,7 @@ class MusicReactiveL930:
             ))
 
         if hasattr(self._ctrl, "submit_frame"):
-            self._ctrl.submit_frame(frame_dict)
+            self._submit_frame(frame_dict)
 
     def _run(self):
         mic = get_audio_input_source(self._sr, self._bs, self._preferred_device)
@@ -437,7 +445,7 @@ class MusicReactiveL930:
                     self._rendered_segs = dark
                     self.latest_spectrum = [0.0] * NUM_SEGMENTS
                     if hasattr(self._ctrl, "submit_frame"):
-                        self._ctrl.submit_frame({"segments": dark, "brightness": 0, "transition": 0, "_pre_corrected": True})
+                        self._submit_frame({"segments": dark, "brightness": 0, "transition": 0, "_pre_corrected": True})
                 else:
                     self._smooth_to_rendered(dark, alpha=0.45)
                     self.latest_spectrum = [0.0] * NUM_SEGMENTS
@@ -599,7 +607,7 @@ class MusicReactiveL930:
                         metadata={"music_state": self.latest_music_state},
                     ))
 
-                self._ctrl.submit_frame({"segments": corrected, "brightness": 100, "transition": trans, "_pre_corrected": True})
+                self._submit_frame({"segments": corrected, "brightness": 100, "transition": trans, "_pre_corrected": True})
             return
 
         segs = []
@@ -790,4 +798,4 @@ class MusicReactiveL930:
             corrected = self._pipeline.correct_hsv_sequence(smoothed, master_ceiling=master_ceiling)
             music_trans = getattr(self._ctrl, "music_transition_ms", None)
             trans = music_trans if music_trans is not None and music_trans > 0 else 120
-            self._ctrl.submit_frame({"segments": corrected, "brightness": 100, "transition": trans, "_pre_corrected": True})
+            self._submit_frame({"segments": corrected, "brightness": 100, "transition": trans, "_pre_corrected": True})
