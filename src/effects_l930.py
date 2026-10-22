@@ -344,6 +344,38 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'default_palette': 'warm_mono',
         'supported_controls': ['speed', 'brightness', 'tail_length'],
     },
+    'oil_slick': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'advanced',
+        'desc': 'Iridescent petrol sheen: layered cyan, indigo, rose and amber interference bands drift at different rates',
+        'default_palette': 'dusk',
+        'supported_controls': ['speed', 'brightness'],
+    },
+    'silk_ribbons': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'advanced',
+        'desc': 'Wide satin-like ribbons in pearl, orchid, teal and rose overlap with soft edges and slow counterflow',
+        'default_palette': 'dusk',
+        'supported_controls': ['speed', 'brightness'],
+    },
+    'nebula_bloom': {
+        'kind': 'streamed_slow',
+        'group': 'Ambient',
+        'category': 'advanced',
+        'desc': 'Deep-space clouds of violet, indigo, fuchsia and blue breathe and drift through one another without flashes',
+        'default_palette': 'dusk',
+        'supported_controls': ['speed', 'brightness'],
+    },
+    'holographic_moire': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'advanced',
+        'desc': 'A holographic moiré field where two smooth spectral lattices slide past each other, creating living interference',
+        'default_palette': 'dusk',
+        'supported_controls': ['speed', 'brightness'],
+    },
 
     # ── 3. Seasonal & Novelty Effects (3) ────────────────────────────────────
     'candy_cane': {
@@ -1384,6 +1416,14 @@ class L930EffectsEngine:
                     segs = self._render_anatomical_heartbeat(t)
                 elif eff == "lantern_sweep":
                     segs = self._render_lantern_sweep(t)
+                elif eff == "oil_slick":
+                    segs = self._render_oil_slick(t)
+                elif eff == "silk_ribbons":
+                    segs = self._render_silk_ribbons(t)
+                elif eff == "nebula_bloom":
+                    segs = self._render_nebula_bloom(t)
+                elif eff == "holographic_moire":
+                    segs = self._render_holographic_moire(t)
 
                 # ── Seasonal & Novelty Group Dispatching ─────────────────────
                 elif eff == "candy_cane":
@@ -2203,6 +2243,92 @@ class L930EffectsEngine:
             segs.append([h, s, v])
         return segs
 
+    def _render_oil_slick(self, t: float) -> List[List[int]]:
+        """Slow iridescent interference, like a thin oil film catching shifting light."""
+        sp = max(0.15, self._speed)
+        out = []
+        for i in range(NUM_SEGMENTS):
+            x = i / (NUM_SEGMENTS - 1)
+            a = math.sin(2.0 * math.pi * (x * 1.35 - t * 0.055 * sp))
+            b = math.sin(2.0 * math.pi * (x * 2.7 + t * 0.037 * sp + 0.42))
+            c = math.sin(2.0 * math.pi * (x * 0.62 - t * 0.021 * sp + 1.1))
+            hue = int((205 + 42 * a + 31 * b + 24 * c) % 360)
+            sheen = 0.5 + 0.25 * a + 0.17 * b + 0.08 * c
+            sat = int(max(68, min(96, 82 + 12 * b)))
+            value = int(max(12, min(62, 20 + 42 * sheen)))
+            out.append([hue, sat, value])
+        return out
+
+    def _render_silk_ribbons(self, t: float) -> List[List[int]]:
+        """Broad satin ribbons glide in counterflow; no hard edges or point-like chases."""
+        sp = max(0.15, self._speed)
+        ribbons = [
+            (0.18, 0.11, 318, 0.75),
+            (0.43, -0.075, 188, 0.82),
+            (0.68, 0.06, 42, 0.64),
+            (0.88, -0.045, 266, 0.70),
+        ]
+        out = []
+        for i in range(NUM_SEGMENTS):
+            x = i / (NUM_SEGMENTS - 1)
+            total = 0.0
+            hue_x = 0.0
+            for idx, (origin, velocity, hue, strength) in enumerate(ribbons):
+                center = (origin + velocity * t * sp + 0.035 * math.sin(t * 0.17 * sp + idx)) % 1.25 - 0.125
+                dist = (x - center) / (0.105 + 0.018 * math.sin(t * 0.13 * sp + idx * 1.7))
+                weight = math.exp(-0.5 * dist * dist) * strength
+                total += weight
+                hue_x += hue * weight
+            hue = int((hue_x / total) % 360) if total > 1e-6 else 235
+            halo = min(1.0, total)
+            value = int(max(7, min(78, 9 + 69 * (halo ** 0.8))))
+            saturation = int(max(58, min(92, 88 - 20 * halo)))
+            out.append([hue, saturation, value])
+        return out
+
+    def _render_nebula_bloom(self, t: float) -> List[List[int]]:
+        """Soft chromatic gas clouds drift and breathe over a deep-space floor."""
+        sp = max(0.15, self._speed)
+        blobs = [
+            (0.17, 0.13, 276, 0.80),
+            (0.39, -0.075, 226, 0.70),
+            (0.63, 0.095, 322, 0.68),
+            (0.84, -0.055, 194, 0.72),
+        ]
+        out = []
+        for i in range(NUM_SEGMENTS):
+            x = i / (NUM_SEGMENTS - 1)
+            energy = 0.0
+            hue_sum = 0.0
+            for j, (origin, velocity, hue, strength) in enumerate(blobs):
+                center = (origin + velocity * t * sp + 0.045 * math.sin(t * 0.12 * sp + j * 1.3)) % 1.2 - 0.1
+                width = 0.13 + 0.035 * (0.5 + 0.5 * math.sin(t * 0.19 * sp + j * 2.0))
+                weight = math.exp(-0.5 * ((x - center) / width) ** 2) * strength
+                energy += weight
+                hue_sum += hue * weight
+            hue = int(hue_sum / energy) if energy > 1e-6 else 244
+            breathe = 0.88 + 0.12 * math.sin(t * 0.28 * sp + x * 3.0)
+            value = int(max(3, min(68, 4 + 48 * (1.0 - math.exp(-1.35 * energy)) * breathe)))
+            saturation = int(max(70, min(98, 94 - 18 * min(1.0, energy))))
+            out.append([hue % 360, saturation, value])
+        return out
+
+    def _render_holographic_moire(self, t: float) -> List[List[int]]:
+        """Two phase-shifted spectral lattices create a slowly changing moiré shimmer."""
+        sp = max(0.15, self._speed)
+        out = []
+        for i in range(NUM_SEGMENTS):
+            x = i / (NUM_SEGMENTS - 1)
+            lattice_a = math.sin(2 * math.pi * (x * 3.2 - t * 0.041 * sp))
+            lattice_b = math.sin(2 * math.pi * (x * 3.65 + t * 0.029 * sp + 0.3))
+            envelope = math.sin(2 * math.pi * (x * 0.78 - t * 0.018 * sp + 0.2))
+            interference = lattice_a * lattice_b
+            hue = int((188 + 76 * interference + 44 * envelope) % 360)
+            value = int(max(10, min(70, 20 + 29 * (0.5 + 0.5 * interference) + 17 * (0.5 + 0.5 * envelope)))
+            saturation = int(max(62, min(95, 84 + 10 * lattice_a)))
+            out.append([hue, saturation, value])
+        return out
+
     def _render_aurora(self, t: float) -> List[List[int]]:
         """Continuous spectral curtains: blend emerald, teal and violet instead of switching hues."""
         sp = self._speed
@@ -2573,6 +2699,14 @@ class L930EffectsEngine:
             return self._render_vaporwave_neon(t)
         elif eff == "lantern_sweep":
             return self._render_lantern_sweep(t)
+        elif eff == "oil_slick":
+            return self._render_oil_slick(t)
+        elif eff == "silk_ribbons":
+            return self._render_silk_ribbons(t)
+        elif eff == "nebula_bloom":
+            return self._render_nebula_bloom(t)
+        elif eff == "holographic_moire":
+            return self._render_holographic_moire(t)
         elif eff == "aurora":
             return self._render_aurora(t)
         elif eff in ("deep_ocean", "bioluminescent_abyss"):
