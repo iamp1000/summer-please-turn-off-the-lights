@@ -364,6 +364,12 @@ class LightHub:
                 "active": audio_active,
                 "capture_status": capture_status,
                 "capture_error": capture_error,
+                "audio_source": (
+                    getattr(coordinator, "active_device_name", None) or getattr(coordinator, "preferred_device", None)
+                    if uses_shared_capture else getattr(sync, "_preferred_device", None)
+                ),
+                "renderer_running": bool(sync.is_running()),
+                "signal_active": bool(st is not None and not getattr(st, "silent", True) and float(getattr(st, "energy", 0.0)) >= 0.035),
                 "spectrum": [float(x) for x in raw_spectrum],
                 "bpm": float(getattr(st, "bpm", getattr(sync, "estimated_bpm", 120.0))),
                 "confidence": float(getattr(st, "bpm_confidence", getattr(sync, "confidence", 0.0))),
@@ -566,6 +572,21 @@ class LightHub:
             ctx.state["active_label"] = effect_name
         self.notify_change()
         return True
+
+    def retry_audio_capture(self, dev_id: str):
+        """Restart shared loopback capture and the selected light renderer."""
+        targets = self._resolve_targets(dev_id)
+        for ctx in targets:
+            try:
+                ctx.audio_sync.stop()
+            except Exception:
+                pass
+        coordinator = getattr(self, "audio_coordinator", None)
+        if coordinator:
+            coordinator.stop()
+        # All consumers share one analyzer; stopping the selected renderers ensures
+        # toggle_music starts fresh AUDIO ownership sessions rather than switching them off.
+        self.toggle_music(dev_id)
 
     def toggle_music(self, dev_id: str):
         targets = self._resolve_targets(dev_id)
