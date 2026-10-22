@@ -1129,6 +1129,8 @@ class AudioCaptureCoordinator:
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
+        self.status = "stopped"
+        self.last_error: Optional[str] = None
         self._subscribers: set = set()
         self.new_frame_event = threading.Event()
 
@@ -1156,12 +1158,16 @@ class AudioCaptureCoordinator:
             if self._running:
                 return
             self._running = True
+            self.status = "starting"
+            self.last_error = None
             self._thread = threading.Thread(target=self._worker, daemon=True, name="AudioCaptureCoordinatorWorker")
             self._thread.start()
 
     def stop(self):
         with self._lock:
             self._running = False
+            if self.status not in ("unavailable", "error"):
+                self.status = "stopped"
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=1.0)
             self._thread = None
@@ -1176,7 +1182,15 @@ class AudioCaptureCoordinator:
         vol_probe = get_master_volume_probe()
         mic = get_audio_input_source(self.samplerate, self.blocksize, self.preferred_device)
         if not mic:
+            self.status = "unavailable"
+            self.last_error = "No audio loopback source is available."
+            from src.logger import log
+            log.error("[AudioCapture] No audio source found; music reactivity is unavailable.")
+            self._running = False
+            self.new_frame_event.set()
             return
+        self.status = "active"
+        self.last_error = None
 
         silent_chunks = 0
         while self._running:
@@ -1214,5 +1228,11 @@ class AudioCaptureCoordinator:
                             },
                         )
                         self.new_frame_event.set()
-            except Exception:
+            except Exception as exc:
+                self.status = "error"
+                self.last_error = f"{type(exc).__name__}: {exc}"
+                from src.logger import log
+                log.exception(f"[AudioCapture] Capture/analysis failed: {exc}")
                 time.sleep(0.3)
+                if self._running:
+                    self.status = "recovering"
