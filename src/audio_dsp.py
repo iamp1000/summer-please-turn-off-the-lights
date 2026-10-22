@@ -925,6 +925,8 @@ class MusicAnalyzer:
         if self.source_preset == SourcePreset.MOVIE and speech_dominance > 0.60:
             energy *= 0.55
 
+        sens = max(0.1, min(4.0, float(self.sensitivity)))
+
         # 6. Spectral Centroid, Harmonic Ratio & Spectral Complexity (Shannon Entropy)
         total_mag = float(np.sum(fft_4096))
         centroid = float(np.sum(self.freqs_4096 * fft_4096) / max(1e-5, total_mag))
@@ -958,7 +960,6 @@ class MusicAnalyzer:
         raw_snare = float(np.mean(fft_4096[snare_mask])) if np.any(snare_mask) else 0.0
         raw_hat = float(np.mean(fft_4096[hat_mask])) if np.any(hat_mask) else 0.0
 
-        sens = max(0.1, min(4.0, float(self.sensitivity)))
         if is_silent:
             self._snare_env = 0.0
             self._hat_env = 0.0
