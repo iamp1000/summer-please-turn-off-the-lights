@@ -193,6 +193,7 @@ class L930Controller:
 
         # Output-token validator installed by FrameBus when this controller is bound.
         self._output_token_authorizer = None
+        self._frame_authorizer = None
 
         # Watchdog task
         self._watchdog_task: Optional[asyncio.Task] = None
@@ -211,6 +212,19 @@ class L930Controller:
                 min_zone_delta=min_delta,
             )
             self.frame_sender.start()
+
+    def set_frame_authorizer(self, authorizer):
+        """Install FrameBus ownership validation at the final hardware boundary."""
+        self._frame_authorizer = authorizer
+
+    def _frame_is_authorized(self, frame: Any) -> bool:
+        authorizer = self._frame_authorizer
+        if authorizer is None:
+            return True
+        try:
+            return bool(authorizer(frame))
+        except Exception:
+            return False
 
     def submit_frame(self, frame: Any):
         """Submit frame to decoupled sender. Latest frame overwrites pending."""
@@ -360,7 +374,7 @@ class L930Controller:
           - list of 50 [h, s, v] or (h, s, v) tuples
           - dict with 'segments', optional 'brightness', 'transition', '_pre_corrected'
         """
-        if not self._is_on:
+        if not self._is_on or not self._frame_is_authorized(frame):
             return False
 
         trans = getattr(self, "music_transition_ms", 120)
@@ -382,6 +396,8 @@ class L930Controller:
         async with self._lock:
             try:
                 await self._ensure_connected()
+                if not self._frame_is_authorized(frame):
+                    return False
                 res = await self._device.set_light_effect(effect)
                 self.last_segments = segs
                 self._last_successful_response = time.time()
@@ -401,6 +417,8 @@ class L930Controller:
             if reconnected:
                 async with self._lock:
                     try:
+                        if not self._frame_is_authorized(frame):
+                            return False
                         res = await self._device.set_light_effect(effect)
                         self._last_successful_response = time.time()
                         return res.is_success() if hasattr(res, "is_success") else bool(res)
