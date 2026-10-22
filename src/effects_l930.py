@@ -1361,7 +1361,7 @@ class L930EffectsEngine:
         Transition_ms matches update interval so the device hardware does the smooth crossfading.
         Firmware-run effects are strictly kept on firmware path; only procedural streamed effects run here.
         """
-        while not stop_event.is_set() and generation == self._generation:
+        while not stop_event.is_set() and generation == self._effect_generation:
             try:
                 eff = self._active_effect_name
                 if not eff or self._active_kind != "streamed_slow":
@@ -1444,7 +1444,7 @@ class L930EffectsEngine:
                 trans_ms = max(500, int(round(interval * 1000)))
 
                 # Early stale frame guard before CPU color correction
-                if generation != self._generation or stop_event.is_set():
+                if generation != self._effect_generation or stop_event.is_set():
                     break
 
                 # Master brightness and gamma correction
@@ -1453,7 +1453,7 @@ class L930EffectsEngine:
                 corrected = self._pipeline.correct_hsv_sequence(segs, master_ceiling=master_ceiling)
 
                 # Stale frame guard right before publishing or submitting
-                if generation != self._generation or stop_event.is_set():
+                if generation != self._effect_generation or stop_event.is_set():
                     break
 
                 frame_data = {
