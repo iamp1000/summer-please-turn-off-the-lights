@@ -29,7 +29,10 @@ def test_visible_effect_shelf_uses_procedural_renderers(engine):
     assert len(ACTIVE_EFFECTS) == 10
     for name in ACTIVE_EFFECTS:
         assert EFFECT_CATALOG[name]["kind"] == "streamed_slow", name
-        assert len(engine._compute(name, t=1.37)) == 50, name
+        frame = engine._compute(name, t=1.37)
+        assert len(frame) == 50, name
+        assert frame != engine._render_rainbow(t=1.37), f"{name} is falling back to Rainbow"
+        assert len({tuple(zone) for zone in frame}) > 1, f"{name} is spatially uniform"
 
 
 def test_creative_effects_generate_valid_smooth_zones(engine):
