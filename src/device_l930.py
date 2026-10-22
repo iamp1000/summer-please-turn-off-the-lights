@@ -364,15 +364,14 @@ class L930Controller:
 
     async def transmit_frame(self, frame: Any) -> bool:
         """
-        Transmits 50-zone HSV frame to the physical L930 hardware.
-        Accepts:
-          - list of 50 [h, s, v] or (h, s, v) tuples
-          - dict with 'segments', optional 'brightness', 'transition', '_pre_corrected'
+        Transmits a snapshot of the latest 50-zone HSV frame to the physical L930.
+        Previous IC state is read under the device lock immediately before each send,
+        so concurrent callers cannot seed a frame with stale init_states.
         """
         if not self._is_on:
             return False
 
-        trans = getattr(self, "music_transition_ms", 0)
+        trans = getattr(self, "music_transition_ms", 120)
         pre_corrected = False
         if isinstance(frame, dict):
             raw_segments = frame.get("segments", self.last_segments)
@@ -385,10 +384,10 @@ class L930Controller:
         else:
             return False
 
-        # Snapshot incoming state. Renderers may reuse or mutate lists in place;
-        # retaining their references corrupts init_states and aliases old/new frames.
+        # Snapshot renderer data so reused/mutated buffers cannot rewrite a queued frame.
         try:
             segs = [list(zone[:3]) for zone in list(raw_segments)[:NUM_SEGMENTS] if len(zone) >= 3]
+            brightness = max(0, min(100, int(b)))
         except (TypeError, ValueError):
             return False
         if not segs:
@@ -396,23 +395,24 @@ class L930Controller:
         while len(segs) < NUM_SEGMENTS:
             segs.append(list(segs[-1]))
 
-        # Respect the configured value exactly, including zero. Interrupted firmware
-        # fades are a likely source of the repeated flash on each streamed update.
         configured_transition = getattr(self, "default_transition_ms", None)
         trans = max(0, int(configured_transition)) if configured_transition is not None else max(0, int(trans))
-        previous_state = [list(zone) for zone in self.last_segments[:NUM_SEGMENTS]]
-        while len(previous_state) < NUM_SEGMENTS:
-            previous_state.append([0, 0, 0])
 
-        effect = make_50_zone_effect(
-            segs,
-            master_brightness=max(0, min(100, int(b))),
-            transition=trans,
-            pre_corrected=pre_corrected,
-            init_states=previous_state,
-        )
+        def build_effect_from_latest_state():
+            # This runs only while holding self._lock. It captures the last acknowledged
+            # output, rather than a stale state snapshot taken before waiting for the lock.
+            previous_state = [list(zone) for zone in self.last_segments[:NUM_SEGMENTS]]
+            while len(previous_state) < NUM_SEGMENTS:
+                previous_state.append([0, 0, 0])
+            return make_50_zone_effect(
+                segs,
+                master_brightness=brightness,
+                transition=trans,
+                pre_corrected=pre_corrected,
+                init_states=previous_state,
+            )
 
-        def remember_sent_state():
+        def remember_sent_state(effect):
             # Track the serialized/corrected state actually sent to the ICs.
             sequence = effect.sequence or segs
             self.last_segments = [list(zone) for zone in sequence[:NUM_SEGMENTS]]
@@ -425,12 +425,13 @@ class L930Controller:
         async with self._lock:
             try:
                 await self._ensure_connected()
+                effect = build_effect_from_latest_state()
                 res = await self._device.set_light_effect(effect)
                 success = res.is_success() if hasattr(res, "is_success") else bool(res)
                 if not success:
                     log.warning(f"[{self.dev_id}] L930 frame update was rejected by the device")
                     return False
-                remember_sent_state()
+                remember_sent_state(effect)
                 return True
             except Exception as e:
                 if is_session_timeout(e):
@@ -439,18 +440,20 @@ class L930Controller:
                     asyncio.create_task(self._handle_failure(e))
                     return False
 
-        # Lock is released before reauth! Never sleep while holding the device lock.
+        # Re-auth outside the lock. Rebuild after reconnect using the latest known state.
         if need_reauth:
             log.warning(f"[{self.dev_id}] Session timed out during frame push. Re-authenticating immediately...")
             reconnected = await self._handle_session_reauth()
             if reconnected:
                 async with self._lock:
                     try:
+                        await self._ensure_connected()
+                        effect = build_effect_from_latest_state()
                         res = await self._device.set_light_effect(effect)
                         success = res.is_success() if hasattr(res, "is_success") else bool(res)
                         if not success:
                             return False
-                        remember_sent_state()
+                        remember_sent_state(effect)
                         return True
                     except Exception as e:
                         log.error(f"[{self.dev_id}] L930 frame retry failed after re-auth: {e}")
