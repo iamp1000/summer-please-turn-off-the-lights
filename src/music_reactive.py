@@ -417,11 +417,7 @@ class MusicReactive:
 
             elapsed = time.perf_counter() - t0
             sleep_time = max(0.001, target_dt - elapsed)
-            if self._coordinator and hasattr(self._coordinator, "new_frame_event"):
-                self._coordinator.new_frame_event.wait(timeout=sleep_time)
-                self._coordinator.new_frame_event.clear()
-            else:
-                stop_event.wait(sleep_time)
+            stop_event.wait(sleep_time)
 
     def _run_shared(self):
         self._render_loop()
