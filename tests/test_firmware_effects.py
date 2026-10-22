@@ -461,9 +461,10 @@ def test_original_effects_use_firmware_playback_not_repeated_network_frames():
     from src.effects_l930 import EFFECT_CATALOG, CREATIVE_EFFECTS, CUSTOM_EFFECTS
 
     expected = {"oil_slick", "silk_ribbons", "nebula_bloom", "holographic_moire", "ember_drift"}
+    spatial = {"spiral_vortex", "gravity_slosh", "lissajous_orbit", "planar_wind", "vaporwave_neon"}
     assert set(CREATIVE_EFFECTS) == expected
-    assert expected.issubset(set(CUSTOM_EFFECTS))
-    for name in expected:
+    assert expected | spatial <= set(CUSTOM_EFFECTS)
+    for name in expected | spatial:
         assert EFFECT_CATALOG[name]["kind"] == "firmware"
 
 
