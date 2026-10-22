@@ -99,7 +99,7 @@ class AnimationEngine:
 
         self._thread = threading.Thread(
             target=self._run,
-            args=(stop_event, gen),
+            args=(stop_event, gen, self._output_token),
             daemon=True,
             name=f"L900Anim-{self._effect_name}"
         )
@@ -121,8 +121,8 @@ class AnimationEngine:
         if hasattr(self._controller, "clear_frames"):
             self._controller.clear_frames()
 
-    def _run(self, stop_event: threading.Event, generation: int):
-        while not stop_event.is_set() and generation == self._effect_generation:
+    def _run(self, stop_event: threading.Event, effect_generation: int, output_token=None):
+        while not stop_event.is_set() and effect_generation == self._effect_generation:
             try:
                 if not self._current_effect:
                     if stop_event.wait(0.1):
@@ -187,15 +187,18 @@ class AnimationEngine:
                     "transition": trans_ms,
                 }
 
+                # Recheck this specific worker session before publishing.
+                if stop_event.is_set() or effect_generation != self._effect_generation:
+                    break
                 if self._frame_bus:
-                    if self._output_token is None:
+                    if output_token is None:
                         if stop_event.wait(0.1):
                             break
                         continue
-                    generation, producer_id = self._output_token
+                    owner_generation, producer_id = output_token
                     published = self._frame_bus.publish_frame(
                         self._dev_id, OutputProducer.EFFECT, frame_data,
-                        generation=generation, producer_id=producer_id,
+                        generation=owner_generation, producer_id=producer_id,
                     )
                     if not published:
                         if stop_event.wait(0.1):
