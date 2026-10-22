@@ -139,9 +139,16 @@ class FrameBus:
             self._controllers[dev_id] = controller
             self._tokens[dev_id] = token
         if hasattr(controller, "bind_frame_bus"):
-            controller.bind_frame_bus(token)
+            controller.bind_frame_bus(token, lambda frame, d=dev_id: self.is_frame_current(d, frame))
         if self._arbiter:
             self._arbiter.register_invalidator(dev_id, lambda d=dev_id: self.clear_device(d))
+
+    def is_frame_current(self, dev_id: str, frame: Any) -> bool:
+        if not isinstance(frame, dict) or self._arbiter is None:
+            return True
+        producer = frame.get("_producer")
+        generation = frame.get("_generation")
+        return producer is not None and generation is not None and self._arbiter.is_current(dev_id, producer, int(generation))
 
     def clear_device(self, dev_id: str):
         with self._lock:
