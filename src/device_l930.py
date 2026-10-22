@@ -99,7 +99,8 @@ def make_50_zone_effect(
     while len(seq) < NUM_SEGMENTS:
         seq.append(list(last))
 
-    inits = init_states if init_states is not None else []
+    # Snapshot prior IC state; never share mutable zone lists with the caller.
+    inits = [list(state) for state in (init_states or [])[:NUM_SEGMENTS]]
 
     return LightEffect(
         id=_STATIC_EFFECT_ID,
@@ -164,8 +165,13 @@ class L930Controller:
         wb = calib.get("white_balance", [1.0, 0.96, 0.90]) if isinstance(calib, dict) else getattr(calib, "white_balance", [1.0, 0.96, 0.90])
         min_b = calib.get("min_brightness", 0) if isinstance(calib, dict) else getattr(calib, "min_brightness", 0)
         trans_ms = calib.get("transition_ms", 0) if isinstance(calib, dict) else getattr(calib, "transition_ms", 0)
-        self.music_transition_ms = calib.get("music_transition_ms", 120) if isinstance(calib, dict) else 120
-        self.default_transition_ms = trans_ms if trans_ms > 0 else self.music_transition_ms
+        # Zero is intentional: replacing it with the music fade makes each incoming
+        # frame interrupt the previous firmware ramp and can look like a flash.
+        self.default_transition_ms = max(0, int(trans_ms))
+        self.music_transition_ms = max(
+            0, int(calib.get("music_transition_ms", self.default_transition_ms)
+                   if isinstance(calib, dict) else self.default_transition_ms)
+        )
         self.movie_transition_ms = calib.get("movie_transition_ms", 800) if isinstance(calib, dict) else 800
         self._max_updates_per_s = float(calib.get("max_updates_per_s", 8.0) if isinstance(calib, dict) else 8.0)
         self._movie_max_updates_per_s = float(calib.get("movie_max_updates_per_s", 2.0) if isinstance(calib, dict) else 2.0)
@@ -185,7 +191,7 @@ class L930Controller:
         self.last_s = 0
         self.last_b = 50
         self.last_k = 4000
-        self.last_segments: list[list[int]] = [[0, 0, 0]] * NUM_SEGMENTS
+        self.last_segments: list[list[int]] = [[0, 0, 0] for _ in range(NUM_SEGMENTS)]
         self._is_on = True
 
         # Telemetry & Frame Sender
@@ -366,40 +372,65 @@ class L930Controller:
         if not self._is_on:
             return False
 
-        trans = getattr(self, "music_transition_ms", 120)
+        trans = getattr(self, "music_transition_ms", 0)
         pre_corrected = False
         if isinstance(frame, dict):
-            segs = frame.get("segments", self.last_segments)
+            raw_segments = frame.get("segments", self.last_segments)
             b = frame.get("brightness", self.last_b)
             trans = frame.get("transition", trans)
             pre_corrected = frame.get("_pre_corrected", False)
         elif isinstance(frame, list):
-            segs = frame
+            raw_segments = frame
             b = self.last_b
         else:
             return False
 
-        # Honor calibrated zero transition for instant flicker-free IC register writes
-        if hasattr(self, "default_transition_ms") and self.default_transition_ms == 0:
-            trans = 0
+        # Snapshot incoming state. Renderers may reuse or mutate lists in place;
+        # retaining their references corrupts init_states and aliases old/new frames.
+        try:
+            segs = [list(zone[:3]) for zone in list(raw_segments)[:NUM_SEGMENTS] if len(zone) >= 3]
+        except (TypeError, ValueError):
+            return False
+        if not segs:
+            return False
+        while len(segs) < NUM_SEGMENTS:
+            segs.append(list(segs[-1]))
+
+        # Respect the configured value exactly, including zero. Interrupted firmware
+        # fades are a likely source of the repeated flash on each streamed update.
+        trans = max(0, int(self.default_transition_ms)) if hasattr(self, "default_transition_ms") else max(0, int(trans))
+        previous_state = [list(zone) for zone in self.last_segments[:NUM_SEGMENTS]]
+        while len(previous_state) < NUM_SEGMENTS:
+            previous_state.append([0, 0, 0])
 
         effect = make_50_zone_effect(
             segs,
-            master_brightness=max(0, min(100, b)),
+            master_brightness=max(0, min(100, int(b))),
             transition=trans,
             pre_corrected=pre_corrected,
-            init_states=self.last_segments if self.last_segments else [],
+            init_states=previous_state,
         )
+
+        def remember_sent_state():
+            # Track the serialized/corrected state actually sent to the ICs.
+            sequence = effect.sequence or segs
+            self.last_segments = [list(zone) for zone in sequence[:NUM_SEGMENTS]]
+            while len(self.last_segments) < NUM_SEGMENTS:
+                self.last_segments.append(list(self.last_segments[-1]))
+            self._last_successful_response = time.time()
+            self._failure_streak = 0
 
         need_reauth = False
         async with self._lock:
             try:
                 await self._ensure_connected()
                 res = await self._device.set_light_effect(effect)
-                self.last_segments = segs
-                self._last_successful_response = time.time()
-                self._failure_streak = 0
-                return res.is_success() if hasattr(res, "is_success") else bool(res)
+                success = res.is_success() if hasattr(res, "is_success") else bool(res)
+                if not success:
+                    log.warning(f"[{self.dev_id}] L930 frame update was rejected by the device")
+                    return False
+                remember_sent_state()
+                return True
             except Exception as e:
                 if is_session_timeout(e):
                     need_reauth = True
@@ -415,9 +446,13 @@ class L930Controller:
                 async with self._lock:
                     try:
                         res = await self._device.set_light_effect(effect)
-                        self._last_successful_response = time.time()
-                        return res.is_success() if hasattr(res, "is_success") else bool(res)
-                    except Exception:
+                        success = res.is_success() if hasattr(res, "is_success") else bool(res)
+                        if not success:
+                            return False
+                        remember_sent_state()
+                        return True
+                    except Exception as e:
+                        log.error(f"[{self.dev_id}] L930 frame retry failed after re-auth: {e}")
                         return False
         return False
 
