@@ -41,67 +41,79 @@ def list_available_audio_devices() -> List[Dict[str, Any]]:
 
 
 def get_audio_input_source(samplerate: int = 44100, blocksize: int = 1024, preferred_name: str | None = None):
-    """
-    Finds the active audio stream currently playing on Windows.
-    1. If user selected a specific device in preferred_name, lock onto it.
-    2. Otherwise, check default speaker loopback.
-    3. If multiple devices exist, check which loopback currently has live signal (RMS > 0.001).
-    """
-    all_loopbacks = []
+    """Find a usable Windows loopback, preferring the selected endpoint only if it has signal."""
     try:
-        all_loopbacks = [m for m in sc.all_microphones(include_loopback=True) if m.isloopback]
+        all_loopbacks = [
+            mic for mic in sc.all_microphones(include_loopback=True)
+            if getattr(mic, "isloopback", False)
+        ]
+    except Exception as exc:
+        print(f"[AudioDetector] Could not enumerate loopback devices: {exc}")
+        all_loopbacks = []
+
+    preferred = None
+    if preferred_name and preferred_name.strip().lower() not in (
+        "auto", "auto-detect", "auto-detect active audio", "none", ""
+    ):
+        needle = preferred_name.strip().lower()
+        preferred = next(
+            (mic for mic in all_loopbacks
+             if needle == mic.name.strip().lower() or needle in mic.name.strip().lower()),
+            None,
+        )
+        if preferred is None:
+            print(f"[AudioDetector] Selected loopback not found: {preferred_name!r}; scanning other outputs.")
+
+    default_mic = None
+    try:
+        speaker = sc.default_speaker()
+        default_mic = sc.get_microphone(speaker.id, include_loopback=True)
     except Exception:
         pass
 
-    # 1. User preferred device
-    if preferred_name and preferred_name.strip().lower() not in ("auto", "auto-detect", "none", ""):
-        p_lower = preferred_name.strip().lower()
-        for m in all_loopbacks:
-            if p_lower in m.name.lower():
-                print(f"[AudioDetector] Using user-selected device: {m.name}")
-                return m
+    candidates = []
+    for mic in (preferred, default_mic, *all_loopbacks):
+        if mic is not None and all(
+            getattr(existing, "id", None) != getattr(mic, "id", None)
+            for existing in candidates
+        ):
+            candidates.append(mic)
 
-    # 2. Check default speaker loopback
-    def_mic = None
-    try:
-        spk = sc.default_speaker()
-        def_mic = sc.get_microphone(spk.id, include_loopback=True)
-    except Exception:
-        pass
-
-    # 3. Scan loopbacks for active playing audio
-    best_dev = None
+    best_device = None
     best_rms = -1.0
+    preferred_rms = -1.0
+    probe_frames = max(256, int(blocksize) * 2)
 
-    candidates = [def_mic] if def_mic else []
-    for m in all_loopbacks:
-        if m not in candidates:
-            candidates.append(m)
-
-    for dev in candidates:
-        if dev is None: continue
+    for device in candidates:
         try:
-            with dev.recorder(samplerate=samplerate, blocksize=blocksize, channels=1) as rec:
-                data = rec.record(numframes=blocksize * 2)
-                rms = float(np.sqrt(np.mean(data[:, 0] ** 2)))
-                if rms > best_rms:
-                    best_rms = rms
-                    best_dev = dev
-                if rms > 0.005:
-                    print(f"[AudioDetector] Live signal locked: {dev.name} (RMS={rms:.4f})")
-                    return dev
-        except Exception:
-            continue
+            with device.recorder(samplerate=samplerate, blocksize=blocksize, channels=1) as recorder:
+                data = np.asarray(recorder.record(numframes=probe_frames), dtype=np.float32)
+                if data.size == 0:
+                    continue
+                rms = float(np.sqrt(np.mean(np.square(data))))
+            if not np.isfinite(rms):
+                continue
+            print(f"[AudioDetector] Probe {device.name}: RMS={rms:.5f}")
+            if preferred is not None and getattr(device, "id", None) == getattr(preferred, "id", None):
+                preferred_rms = rms
+            if rms > best_rms:
+                best_rms, best_device = rms, device
+        except Exception as exc:
+            print(f"[AudioDetector] Could not probe {getattr(device, 'name', device)!r}: {exc}")
 
-    if best_dev is not None and best_rms > 0.0005:
-        print(f"[AudioDetector] Selected highest signal: {best_dev.name} (RMS={best_rms:.4f})")
-        return best_dev
+    # Keep the chosen device when it really carries signal; otherwise don't let
+    # a silent Voicemeeter/mixer input hide sound playing through speakers/headphones.
+    if preferred is not None and preferred_rms >= 0.0015:
+        print(f"[AudioDetector] Using selected live source: {preferred.name} (RMS={preferred_rms:.4f})")
+        return preferred
+    if best_device is not None and best_rms >= 0.0005:
+        print(f"[AudioDetector] Using strongest live loopback: {best_device.name} (RMS={best_rms:.4f})")
+        return best_device
 
-    fallback = def_mic or (all_loopbacks[0] if all_loopbacks else None)
-    if fallback:
-        print(f"[AudioDetector] Defaulting to stream: {fallback.name}")
+    fallback = preferred or default_mic or (all_loopbacks[0] if all_loopbacks else None)
+    if fallback is not None:
+        print(f"[AudioDetector] No live signal detected in probe; listening on fallback: {fallback.name}")
     return fallback
-
 
 class MusicReactive:
     """
