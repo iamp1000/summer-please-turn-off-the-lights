@@ -75,6 +75,7 @@ def make_50_zone_effect(
     master_brightness: int = 100,
     transition: int = 0,
     pre_corrected: bool = False,
+    init_states: list[list[int]] | None = None,
 ) -> LightEffect:
     """
     Build a 50-zone addressable LightEffect mapping 1:1 to the L930's 50 physical IC zones.
@@ -98,6 +99,8 @@ def make_50_zone_effect(
     while len(seq) < NUM_SEGMENTS:
         seq.append(list(last))
 
+    inits = init_states if init_states is not None else []
+
     return LightEffect(
         id=_STATIC_EFFECT_ID,
         name="DynamicZones",
@@ -110,7 +113,7 @@ def make_50_zone_effect(
         expansion_strategy=1,
         fadeoff=None,
         hue_range=None,
-        init_states=[],
+        init_states=inits,
         random_seed=None,
         repeat_times=0,
         saturation_range=None,
@@ -376,7 +379,17 @@ class L930Controller:
         else:
             return False
 
-        effect = make_50_zone_effect(segs, master_brightness=max(0, min(100, b)), transition=trans, pre_corrected=pre_corrected)
+        # Honor calibrated zero transition for instant flicker-free IC register writes
+        if hasattr(self, "default_transition_ms") and self.default_transition_ms == 0:
+            trans = 0
+
+        effect = make_50_zone_effect(
+            segs,
+            master_brightness=max(0, min(100, b)),
+            transition=trans,
+            pre_corrected=pre_corrected,
+            init_states=self.last_segments if self.last_segments else [],
+        )
 
         need_reauth = False
         async with self._lock:

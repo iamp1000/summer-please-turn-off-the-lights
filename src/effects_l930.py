@@ -227,7 +227,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness', 'palette', 'wave_width'],
     },
     'aurora': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Motion',
         'category': 'core',
         'desc': 'Broad, slow-moving green, teal, and violet curtains with continuously blended hues',
@@ -243,7 +243,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness'],
     },
     'raindrop': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Motion',
         'category': 'core',
         'desc': 'Dark background with slow multi-direction drops, soft heads, and long fading tails',
@@ -251,7 +251,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness', 'particle_density'],
     },
     'lightning': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Motion',
         'category': 'core',
         'desc': 'Mostly dark with sharp white-blue flashes, irregular pauses, and uneven decays',
@@ -259,7 +259,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness', 'flash_strength'],
     },
     'rainbow': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Seasonal & Novelty',
         'category': 'core',
         'desc': 'Continuous seamless circulating rainbow gradient without abrupt jumps',
@@ -359,7 +359,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
 
     # ── 3. Seasonal & Novelty Effects (3) ────────────────────────────────────
     'candy_cane': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Seasonal & Novelty',
         'subgroup': 'Seasonal',
         'category': 'seasonal',
@@ -368,7 +368,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness'],
     },
     'haunted_mansion': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Seasonal & Novelty',
         'subgroup': 'Seasonal / Spooky',
         'category': 'seasonal',
@@ -377,7 +377,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness'],
     },
     'police': {
-        'kind': 'streamed_slow',
+        'kind': 'firmware',
         'group': 'Seasonal & Novelty',
         'subgroup': 'Novelty',
         'category': 'novelty',
@@ -1241,6 +1241,138 @@ class L930EffectsEngine:
             trans = int(min(6000, 200 * sp_factor))
             return build_firmware_sequence_effect(
                 name="Police", sequence=seq, spread=25, direction=1, transition=trans, brightness=b
+            )
+
+        # ── Creative Original Designs (Firmware-Accelerated Payloads) ───────
+        elif name in ("oil_slick", "liquid_iridescence"):
+            seq = [
+                [160, 90, 40],   # Petrol green
+                [200, 85, 75],   # Sheen cyan
+                [285, 90, 80],   # Oily magenta/violet
+                [340, 80, 70],   # Slick crimson
+                [35, 95, 90],    # Golden amber highlight
+                [75, 80, 60],    # Acid yellow-green
+            ]
+            trans = int(min(6000, 2500 * sp_factor))
+            return build_firmware_sequence_effect(
+                name="OilSlick", sequence=seq, spread=12, direction=1, transition=trans, brightness=b
+            )
+
+        elif name == "silk_ribbons":
+            seq = [
+                [270, 50, 85],   # Lavender mist
+                [335, 45, 90],   # Rose quartz
+                [25, 45, 95],    # Champagne gold
+                [165, 40, 90],   # Seafoam silk
+                [210, 45, 85],   # Soft powder blue
+            ]
+            trans = int(min(6000, 2200 * sp_factor))
+            return build_firmware_sequence_effect(
+                name="SilkRibbons", sequence=seq, spread=10, direction=3, transition=trans, brightness=b
+            )
+
+        elif name == "nebula_bloom":
+            seq = [
+                [240, 95, 30],   # Deep space indigo
+                [275, 90, 75],   # Ultraviolet gas
+                [320, 95, 90],   # Magenta starburst
+                [190, 85, 70],   # Cyan stellar dust
+                [255, 90, 40],   # Violet abyss
+            ]
+            trans = int(min(6000, 2800 * sp_factor))
+            return build_firmware_sequence_effect(
+                name="NebulaBloom", sequence=seq, spread=14, direction=4, transition=trans, brightness=b
+            )
+
+        elif name in ("holographic_moire", "moire"):
+            seq = [
+                [185, 95, 95],   # Electric cyan
+                [275, 90, 85],   # Hologram violet
+                [140, 90, 85],   # Emerald fringe
+                [45, 90, 90],    # Golden flare
+            ]
+            trans = int(min(6000, 1200 * sp_factor))
+            return build_firmware_sequence_effect(
+                name="HoloMoire", sequence=seq, spread=5, direction=1, transition=trans, brightness=b
+            )
+
+        elif name in ("bioluminescent_tide", "pacifica"):
+            seq = [
+                [225, 90, 35],   # Abyssal deep ocean
+                [205, 85, 70],   # Cerulean wave
+                [175, 85, 95],   # Glowing turquoise crest
+                [160, 40, 100],  # Pale seafoam froth
+                [215, 90, 45],   # Oceanic undertow
+            ]
+            trans = int(min(6000, 2000 * sp_factor))
+            return build_firmware_sequence_effect(
+                name="BioTide", sequence=seq, spread=12, direction=3, transition=trans, brightness=b
+            )
+
+        elif name in ("ember_drift", "embers_drift"):
+            seq = [
+                [5, 100, 35],    # Deep mahogany red
+                [18, 95, 75],    # Glowing orange coal
+                [32, 90, 95],    # Radiant amber ember
+                [12, 100, 50],   # Smoldering briquette
+                [0, 100, 20],    # Dark ash base
+            ]
+            trans = int(min(6000, 2400 * sp_factor))
+            return build_firmware_sequence_effect(
+                name="EmberDrift", sequence=seq, spread=8, direction=1, transition=trans, brightness=b
+            )
+
+        elif name == "cyberpunk":
+            seq = [
+                [265, 90, 40],   # Deep night violet
+                [325, 95, 95],   # Hot electric magenta
+                [185, 95, 95],   # Acid cyan
+                [45, 95, 90],    # Cyber gold
+                [280, 85, 60],   # Neon indigo
+            ]
+            trans = int(min(6000, 900 * sp_factor))
+            return build_firmware_sequence_effect(
+                name="Cyberpunk", sequence=seq, spread=8, direction=1, transition=trans, brightness=b
+            )
+
+        # ── Advanced Effects (Firmware-Accelerated Payloads) ─────────────────
+        elif name == "meteor_shower":
+            tl = max(0.2, min(3.0, self._tail_length))
+            spread = max(2, min(25, int(round(6 * tl))))
+            seq = [
+                [210, 20, 100],  # White-cyan hot core
+                [225, 90, 85],   # Sapphire blue ion head
+                [245, 95, 60],   # Deep blue tail
+                [265, 90, 25],   # Fading violet plasma
+                [275, 80, 5],    # Lingering trail dust
+                [240, 90, 0],    # Black night sky
+            ]
+            trans = int(min(6000, 350 * sp_factor))
+            fx = build_firmware_sequence_effect(
+                name="MeteorShower", sequence=seq, spread=spread, direction=1, transition=trans, brightness=b
+            )
+            fx.id = make_effect_id(f"meteor_s{int(round(self._speed * 100))}_b{b}_tl{int(round(tl * 100))}")
+            return fx
+
+        elif name == "gravity_slosh":
+            seq = pal[:5] if len(pal) >= 5 else pal
+            trans = int(min(6000, 1400 * sp_factor))
+            return build_firmware_sequence_effect(
+                name="GravitySlosh", sequence=seq, spread=12, direction=4, transition=trans, brightness=b
+            )
+
+        elif name == "lissajous_orbit":
+            seq = pal[:4] if len(pal) >= 4 else pal
+            trans = int(min(6000, 1200 * sp_factor))
+            return build_firmware_sequence_effect(
+                name="LissajousOrbit", sequence=seq, spread=10, direction=3, transition=trans, brightness=b
+            )
+
+        elif name == "planar_wind":
+            seq = pal[:5] if len(pal) >= 5 else pal
+            trans = int(min(6000, 2200 * sp_factor))
+            return build_firmware_sequence_effect(
+                name="PlanarWind", sequence=seq, spread=16, direction=1, transition=trans, brightness=b
             )
 
         # 3. Firmware Random Effects

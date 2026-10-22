@@ -236,15 +236,17 @@ class TapoGUI:
     Golden Hour, and Deep Ocean.
     """
 
-    WIDTH  = 500
-    HEIGHT = 860
+    WIDTH = 540
+    HEIGHT = 760
 
     def __init__(self, hub, on_quit):
         self.hub = hub
         self.on_quit = on_quit
         
         self.dev_keys = list(hub.devices.keys())
-        self.current_dev_id = self.dev_keys[0] if self.dev_keys else "all"
+        # Default to L930 device if present, ensuring all 50-zone addressable effects are visible
+        l930_key = next((k for k, ctx in hub.devices.items() if getattr(ctx, "model", "") == "L930"), None)
+        self.current_dev_id = l930_key or (self.dev_keys[0] if self.dev_keys else "all")
         self.current_theme_key = "ambient_drift"
         self.theme = THEMES[self.current_theme_key]
 
@@ -1151,6 +1153,8 @@ class TapoGUI:
         is_l930 = False
         if self.current_dev_id in self.hub.devices:
             is_l930 = (self.hub.devices[self.current_dev_id].model == "L930")
+        elif self.current_dev_id == "all":
+            is_l930 = any(getattr(ctx, "model", "") == "L930" for ctx in self.hub.devices.values())
 
         t = self.theme
 
@@ -1851,7 +1855,9 @@ class TapoGUI:
                     self.strip_canvas.itemconfig(items["sp"], state="hidden")
                 return
 
-            self._last_rendered_segments = segments
+            if getattr(self, "_last_rendered_segments", None) == segments:
+                return
+            self._last_rendered_segments = [list(x) for x in segments]
             from src.pipeline import tapo_hsv_to_rgb
 
             for i in range(min(num_zones, len(segments), len(led_items))):
@@ -2175,12 +2181,14 @@ class TapoGUI:
         self.app.withdraw()
 
     def show_window(self):
-        sw, sh = self.app.winfo_screenwidth(), self.app.winfo_screenheight()
-        h = min(self.HEIGHT, sh - 80)
-        w = min(self.WIDTH, sw - 40)
-        x = sw - w - 24
-        y = max(24, (sh - h) // 2)
-        self.app.geometry(f"{w}x{h}+{x}+{y}")
+        if not getattr(self, "_has_positioned", False):
+            sw, sh = self.app.winfo_screenwidth(), self.app.winfo_screenheight()
+            w = min(self.WIDTH, max(460, sw - 60))
+            h = min(self.HEIGHT, max(560, sh - 80))
+            x = max(20, sw - w - 30)
+            y = max(30, (sh - h) // 2)
+            self.app.geometry(f"{w}x{h}+{x}+{y}")
+            self._has_positioned = True
         self.app.deiconify()
         self.app.lift()
         try:

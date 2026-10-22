@@ -478,9 +478,19 @@ class DynamicSongCalibrator:
 # Backwards compatibility shim for DynamicAudioCalibrator
 class DynamicAudioCalibrator:
     def __init__(self, sensitivity: float = 1.0):
-        self.sensitivity = sensitivity
+        self._sensitivity = float(sensitivity)
         self.noise_floor = 0.005
         self._calib = DynamicSongCalibrator(sensitivity=sensitivity)
+
+    @property
+    def sensitivity(self) -> float:
+        return self._sensitivity
+
+    @sensitivity.setter
+    def sensitivity(self, val: float):
+        self._sensitivity = float(val)
+        if hasattr(self, "_calib") and self._calib:
+            self._calib.sensitivity = float(val)
 
     def update(self, rms: float) -> float:
         energy, trend, drop, silent = self._calib.update(rms, rms, time.monotonic(), 0.025)
@@ -826,6 +836,11 @@ class MusicAnalyzer:
     def set_latency_lookahead(self, lookahead_ms: float):
         self.latency_lookahead_ms = max(0.0, min(250.0, float(lookahead_ms)))
 
+    def set_sensitivity(self, sensitivity: float):
+        self.sensitivity = max(0.1, min(4.0, float(sensitivity)))
+        if hasattr(self, "calibrator") and self.calibrator:
+            self.calibrator.sensitivity = self.sensitivity
+
     def set_source_preset(self, preset: SourcePreset | str):
         if isinstance(preset, str):
             preset = SourcePreset(preset.lower())
@@ -943,19 +958,20 @@ class MusicAnalyzer:
             norm_bass = 0.0
             norm_mid = 0.0
         else:
+            sens = max(0.1, min(4.0, float(self.sensitivity)))
             self._hat_peak = max(raw_hat, self._hat_peak * math.exp(-dt / 3.0))
             instant_hat = float(max(0.0, min(1.0, raw_hat / max(0.10, self._hat_peak))))
             # Hi-hats: snappy attack (10ms) and short, sparse sparkle decay (60ms)
             alpha_hat = 1.0 - math.exp(-dt / 0.010) if instant_hat > self._hat_env else 1.0 - math.exp(-dt / 0.060)
             self._hat_env += alpha_hat * (instant_hat - self._hat_env)
-            norm_hat = float(max(0.0, min(1.0, self._hat_env)))
+            norm_hat = float(max(0.0, min(1.0, self._hat_env * sens)))
 
             self._snare_peak = max(raw_snare, self._snare_peak * math.exp(-dt / 3.0))
             instant_snare = float(max(0.0, min(1.0, raw_snare / max(0.10, self._snare_peak))))
             # Snare/transient: sharp attack (12ms) with 110ms visible tail
             alpha_snare = 1.0 - math.exp(-dt / 0.012) if instant_snare > self._snare_env else 1.0 - math.exp(-dt / 0.110)
             self._snare_env += alpha_snare * (instant_snare - self._snare_env)
-            norm_snare = float(max(0.0, min(1.0, self._snare_env)))
+            norm_snare = float(max(0.0, min(1.0, self._snare_env * sens)))
 
             # Absolute sub-band energy for bass (20-180 Hz) and mid (180-1500 Hz) using raw FFT magnitudes
             bass_mask = (self.freqs_4096 >= 20) & (self.freqs_4096 < 180)
@@ -967,13 +983,13 @@ class MusicAnalyzer:
             instant_bass = float(max(0.0, min(1.0, raw_bass_abs / max(0.20, self._bass_peak))))
             alpha_bass = 1.0 - math.exp(-dt / 0.018) if instant_bass > self._bass_env else 1.0 - math.exp(-dt / 0.140)
             self._bass_env += alpha_bass * (instant_bass - self._bass_env)
-            norm_bass = float(max(0.0, min(1.0, self._bass_env * 0.7 + getattr(self.calibrator, "norm_kick", kick_e) * 0.3)))
+            norm_bass = float(max(0.0, min(1.0, (self._bass_env * 0.7 + getattr(self.calibrator, "norm_kick", kick_e) * 0.3) * sens)))
 
             self._mid_peak = max(raw_mid_abs, self._mid_peak * math.exp(-dt / 3.0))
             instant_mid = float(max(0.0, min(1.0, raw_mid_abs / max(0.20, self._mid_peak))))
             alpha_mid = 1.0 - math.exp(-dt / 0.025) if instant_mid > self._mid_env else 1.0 - math.exp(-dt / 0.200)
             self._mid_env += alpha_mid * (instant_mid - self._mid_env)
-            norm_mid = float(max(0.0, min(1.0, self._mid_env * (energy * 0.5 + 0.5))))
+            norm_mid = float(max(0.0, min(1.0, self._mid_env * (energy * 0.5 + 0.5) * sens)))
 
         norm_kick = float(getattr(self.calibrator, "norm_kick", kick_e))
 

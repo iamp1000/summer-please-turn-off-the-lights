@@ -202,9 +202,15 @@ class MusicReactive:
         return self._calibrator.sensitivity
 
     def set_sensitivity(self, val: float):
-        self._calibrator.sensitivity = max(0.1, min(4.0, float(val)))
-        if hasattr(self, "_analyzer"):
-            self._analyzer.sensitivity = self._calibrator.sensitivity
+        s = max(0.1, min(4.0, float(val)))
+        self._calibrator.sensitivity = s
+        if hasattr(self, "_analyzer") and self._analyzer:
+            if hasattr(self._analyzer, "set_sensitivity"):
+                self._analyzer.set_sensitivity(s)
+            else:
+                self._analyzer.sensitivity = s
+            if hasattr(self._analyzer, "calibrator") and self._analyzer.calibrator:
+                self._analyzer.calibrator.sensitivity = s
 
     @property
     def latency_lookahead_ms(self) -> float:
