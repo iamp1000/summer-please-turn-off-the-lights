@@ -379,10 +379,10 @@ class MusicReactiveL930:
         print(f"[MusicReactiveL930] Active audio stream: {mic.name}")
 
         silent_chunks = 0
-        while self._running:
+        while self._running and generation == self._run_generation:
             try:
                 with mic.recorder(samplerate=self._sr, blocksize=self._bs, channels=1) as rec:
-                    while self._running:
+                    while self._running and generation == self._run_generation:
                         data = rec.record(numframes=self._bs)
                         samples = data[:, 0]
                         rms = float(np.sqrt(np.mean(samples ** 2)))
