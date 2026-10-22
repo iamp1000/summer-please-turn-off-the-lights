@@ -18,8 +18,8 @@ def responsive_window_geometry(
     available_h = max(300, sh - 2 * margin_y)
     min_w = min(560, available_w)
     min_h = min(600, available_h)
-    width = min(available_w, max(min_w, int(sw * 0.74)))
-    height = min(available_h, max(min_h, int(sh * 0.84)))
+    width = min(available_w, max(min_w, int(sw * 0.86)))
+    height = min(available_h, max(min_h, int(sh * 0.88)))
     x = max(0, (sw - width) // 2)
     y = max(0, (sh - height) // 2)
     return width, height, x, y, min_w, min_h

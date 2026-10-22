@@ -1,5 +1,6 @@
 from __future__ import annotations
 import colorsys
+import math
 import socket
 import time
 import customtkinter as ctk
@@ -116,6 +117,20 @@ THEMES = {
         "text_muted": "#5e829e",
     },
 }
+
+# Keep the surfaces neutral and restrained across themes. Themes now change the
+# accent family, not every background panel, which improves hierarchy and contrast.
+for _palette in THEMES.values():
+    _palette.update({
+        "bg": "#0d1017",
+        "surface": "#151923",
+        "surface_raised": "#1c2230",
+        "surface_high": "#252c3b",
+        "border": "#30394a",
+        "text_primary": "#f2f4f8",
+        "text_secondary": "#b1bacb",
+        "text_muted": "#7f8aa0",
+    })
 
 def get_theme_for_label(label: str) -> str:
     lbl = (label or "").lower()
@@ -394,777 +409,891 @@ class TapoGUI:
                 width = max(1, grid.winfo_width())
                 columns = 1 if width < 470 else (2 if width < 820 else 3)
                 for col in range(3):
-                    grid.columnconfigure(col, weight=1 if col < columns else 0, minsize=0, uniform=f"responsive_{id(grid)}" if col < columns else "")
-                children = [child for child in grid.winfo_children()
-                            if str(child.winfo_manager()) == "grid"]
+                    grid.columnconfigure(
+                        col, weight=1 if col < columns else 0, minsize=0,
+                        uniform=f"responsive_{id(grid)}" if col < columns else ""
+                    )
+                children = [child for child in grid.winfo_children() if str(child.winfo_manager()) == "grid"]
                 for index, child in enumerate(children):
                     child.grid_configure(row=index // columns, column=index % columns, sticky="nsew")
             except Exception:
                 continue
 
+        # Collapse the rail to icon-only navigation on narrower windows.
+        try:
+            compact = self.app.winfo_width() < 980
+            if compact != getattr(self, "_nav_compact", False):
+                self._nav_compact = compact
+                self.nav_rail.configure(width=68 if compact else 194)
+                self.nav_eyebrow.configure(text="GO" if compact else "WORKSPACE", anchor="center" if compact else "w")
+                self.nav_device_note.configure(
+                    text=f"{len(self.hub.devices)}" if compact else f"{len(self.hub.devices)} device(s) configured\nLAN controls active",
+                    anchor="center" if compact else "w", wraplength=42 if compact else 156
+                )
+                for page, button in self.nav_buttons.items():
+                    glyph, label = self._nav_items[page]
+                    button.configure(text=glyph if compact else f"{glyph}   {label}", anchor="center" if compact else "w")
+        except Exception:
+            pass
+
     def _build_ui(self):
+        """Build the redesigned desktop workspace with clear, separate pages."""
         t = self.theme
-        self.root_frame = ctk.CTkFrame(
-            self.app, fg_color=t["bg"], corner_radius=14,
-            border_width=1, border_color=t["border"]
-        )
+        sw, sh = self.app.winfo_screenwidth(), self.app.winfo_screenheight()
+        width, height, x, y, min_w, min_h = responsive_window_geometry(sw, sh)
+        self.app.minsize(min_w, min_h)
+        self.app.geometry(f"{width}x{height}+{x}+{y}")
+        self._has_positioned = True
+        self.app.configure(fg_color=t["bg"])
+
+        self.buttons = {}
+        self.tab_buttons = {}
+        self.vstyle_buttons = {}
+        self.accent_buttons = {}
+        self.quick_level_buttons = {}
+        self.card_frames = []
+        self._responsive_grids = []
+        self._resize_job = None
+
+        self.root_frame = ctk.CTkFrame(self.app, fg_color=t["bg"], corner_radius=0)
         self.root_frame.pack(fill="both", expand=True)
 
-        # ── 1. HEADER (Top Bar) ──────────────────────────────────────────────
-        self.header = ctk.CTkFrame(self.root_frame, fg_color="transparent")
-        self.header.pack(fill="x", padx=20, pady=(16, 10))
-        self.header.columnconfigure(1, weight=1)
+        # Top bar: one restrained brand block and the two global actions.
+        self.header = ctk.CTkFrame(self.root_frame, fg_color=t["bg"], corner_radius=0, height=78)
+        self.header.pack(fill="x", padx=22, pady=(14, 10))
+        self.header.grid_columnconfigure(1, weight=1)
 
-        # Left Icon badge (⚡)
-        icon_badge = ctk.CTkFrame(self.header, width=38, height=38, corner_radius=10, fg_color=t["surface_raised"])
-        icon_badge.grid(row=0, column=0, rowspan=2, padx=(0, 12), sticky="w")
-        icon_badge.pack_propagate(False)
-        self.header_icon_lbl = ctk.CTkLabel(icon_badge, text="⚡", font=ctk.CTkFont(size=18), text_color="#f59e0b")
+        logo = ctk.CTkFrame(
+            self.header, width=44, height=44, corner_radius=10,
+            fg_color=t["surface_raised"], border_width=1, border_color=t["border"]
+        )
+        logo.grid(row=0, column=0, rowspan=2, padx=(0, 12), sticky="w")
+        logo.grid_propagate(False)
+        self.header_icon_lbl = ctk.CTkLabel(
+            logo, text="✦", font=ctk.CTkFont(size=22, weight="bold"),
+            text_color=t["accent_glow"]
+        )
         self.header_icon_lbl.place(relx=0.5, rely=0.5, anchor="center")
 
-        # Titles
         self.header_title = ctk.CTkLabel(
-            self.header, text="Tapo Light Hub",
-            font=ctk.CTkFont(size=18, weight="bold"),
-            text_color=t["text_primary"]
+            self.header, text="Summer  /  Light Control",
+            font=ctk.CTkFont(size=20, weight="bold"), text_color=t["text_primary"]
         )
         self.header_title.grid(row=0, column=1, sticky="w")
-
-        sub_row = ctk.CTkFrame(self.header, fg_color="transparent")
-        sub_row.grid(row=1, column=1, sticky="w")
-        self.header_status_dot = ctk.CTkLabel(sub_row, text="●", font=ctk.CTkFont(size=9), text_color="#10b981")
-        self.header_status_dot.pack(side="left", padx=(0, 5))
-        self.header_status_lbl = ctk.CTkLabel(sub_row, text="Live Connected", font=ctk.CTkFont(size=10, weight="bold"), text_color=t["text_secondary"])
+        status_line = ctk.CTkFrame(self.header, fg_color="transparent")
+        status_line.grid(row=1, column=1, sticky="w", pady=(2, 0))
+        self.header_status_dot = ctk.CTkLabel(
+            status_line, text="●", font=ctk.CTkFont(size=10), text_color="#35d399"
+        )
+        self.header_status_dot.pack(side="left", padx=(0, 6))
+        self.header_status_lbl = ctk.CTkLabel(
+            status_line, text="Local control  ·  Ready",
+            font=ctk.CTkFont(size=12), text_color=t["text_secondary"]
+        )
         self.header_status_lbl.pack(side="left")
 
-        # Native window decorations handle move, resize, minimize and maximize.
-        # Right buttons: Circular glowing power button & Close
-        btn_box = ctk.CTkFrame(self.header, fg_color="transparent")
-        btn_box.grid(row=0, column=2, rowspan=2, sticky="e")
-
+        actions = ctk.CTkFrame(self.header, fg_color="transparent")
+        actions.grid(row=0, column=2, rowspan=2, sticky="e")
         self.btn_top_power = ctk.CTkButton(
-            btn_box, text="⏻", width=38, height=38, corner_radius=19,
+            actions, text="⏻  Power", width=94, height=38, corner_radius=8,
             fg_color=t["accent_soft"], hover_color=t["accent"],
-            border_width=2, border_color=t["power_glow"],
-            font=ctk.CTkFont(size=16, weight="bold"),
-            text_color=t["text_primary"],
-            command=self._handle_power_click
+            border_width=1, border_color=t["accent"], text_color=t["text_primary"],
+            font=ctk.CTkFont(size=12, weight="bold"), command=self._handle_power_click
         )
         self.btn_top_power.pack(side="left", padx=(0, 8))
-
-        btn_close = ctk.CTkButton(
-            btn_box, text="Tray", width=52, height=34, corner_radius=10,
+        self.btn_hide = ctk.CTkButton(
+            actions, text="Hide to tray", width=104, height=38, corner_radius=8,
             fg_color=t["surface_raised"], hover_color=t["surface_high"],
-            text_color=t["text_secondary"], font=ctk.CTkFont(size=10, weight="bold"),
-            command=self.hide_window
+            border_width=1, border_color=t["border"], text_color=t["text_secondary"],
+            font=ctk.CTkFont(size=12, weight="bold"), command=self.hide_window
         )
-        btn_close.pack(side="left")
+        self.btn_hide.pack(side="left")
 
-        # ── 2. SCROLLABLE BODY (Guarantees zero hidden buttons) ───────────────
-        self.scroll_body = ctk.CTkScrollableFrame(
-            self.root_frame, fg_color="transparent",
-            scrollbar_button_color=t["surface_high"],
-            scrollbar_button_hover_color=t["accent"]
+        # Workspace is split into a stable navigation rail and a page viewport.
+        self.workspace = ctk.CTkFrame(self.root_frame, fg_color="transparent")
+        self.workspace.pack(fill="both", expand=True, padx=16, pady=(0, 10))
+
+        self.nav_rail = ctk.CTkFrame(
+            self.workspace, width=194, fg_color=t["surface"],
+            corner_radius=10, border_width=1, border_color=t["border"]
         )
-        self.scroll_body.pack(fill="both", expand=True, padx=16, pady=(0, 6))
+        self.nav_rail.pack(side="left", fill="y", padx=(0, 12))
+        self.nav_rail.pack_propagate(False)
+        self.nav_eyebrow = ctk.CTkLabel(
+            self.nav_rail, text="WORKSPACE", anchor="w",
+            font=ctk.CTkFont(size=11, weight="bold"), text_color=t["text_muted"]
+        )
+        self.nav_eyebrow.pack(fill="x", padx=16, pady=(20, 12))
 
-        # ── 3. DEVICE SWITCHER PILLS ─────────────────────────────────────────
-        self.tabs_bar = ctk.CTkFrame(self.scroll_body, fg_color=t["surface"], corner_radius=16)
-        self.tabs_bar.pack(fill="x", pady=(4, 12))
-        self.card_frames.append(self.tabs_bar)
+        self.nav_buttons = {}
+        self._nav_items = {
+            "overview": ("⌂", "Overview"),
+            "music": ("♫", "Music reactive"),
+            "effects": ("✦", "Effects"),
+            "diagnostics": ("⌁", "Diagnostics"),
+        }
+        for page_key, (glyph, label) in self._nav_items.items():
+            button = ctk.CTkButton(
+                self.nav_rail, text=f"{glyph}   {label}", height=42,
+                fg_color=t["accent_soft"] if page_key == "overview" else "transparent",
+                hover_color=t["surface_high"], text_color=t["text_primary"] if page_key == "overview" else t["text_secondary"],
+                border_width=1 if page_key == "overview" else 0,
+                border_color=t["accent"] if page_key == "overview" else t["border"],
+                corner_radius=8, anchor="w", font=ctk.CTkFont(size=13, weight="bold"),
+                command=lambda p=page_key: self._switch_page(p)
+            )
+            button.pack(fill="x", padx=8, pady=3)
+            self.nav_buttons[page_key] = button
 
+        spacer = ctk.CTkFrame(self.nav_rail, fg_color="transparent", height=12)
+        spacer.pack(fill="x", expand=True)
+        ctk.CTkFrame(self.nav_rail, height=1, fg_color=t["border"]).pack(fill="x", padx=14, pady=(4, 12))
+        ctk.CTkLabel(
+            self.nav_rail, text="LOCAL FIRST", anchor="w",
+            font=ctk.CTkFont(size=10, weight="bold"), text_color=t["accent_glow"]
+        ).pack(fill="x", padx=16, pady=(0, 4))
+        self.nav_device_note = ctk.CTkLabel(
+            self.nav_rail,
+            text=f"{len(self.hub.devices)} device(s) configured\nLAN controls active",
+            justify="left", anchor="w", wraplength=156,
+            font=ctk.CTkFont(size=11), text_color=t["text_muted"]
+        )
+        self.nav_device_note.pack(fill="x", padx=16, pady=(0, 18))
+
+        self.main_column = ctk.CTkFrame(self.workspace, fg_color="transparent")
+        self.main_column.pack(side="left", fill="both", expand=True)
+
+        # The device selector stays visible while navigating between pages.
+        self.tabs_bar = ctk.CTkFrame(
+            self.main_column, fg_color=t["surface"], corner_radius=8,
+            border_width=1, border_color=t["border"]
+        )
+        self.tabs_bar.pack(fill="x", pady=(0, 10))
         tabs_inner = ctk.CTkFrame(self.tabs_bar, fg_color="transparent")
-        tabs_inner.pack(fill="x", padx=5, pady=5)
-
-        tab_items = []
+        tabs_inner.pack(fill="x", padx=10, pady=8)
+        ctk.CTkLabel(
+            tabs_inner, text="CONTROL TARGET", font=ctk.CTkFont(size=10, weight="bold"),
+            text_color=t["text_muted"]
+        ).pack(side="left", padx=(4, 12))
+        target_buttons = ctk.CTkFrame(tabs_inner, fg_color="transparent")
+        target_buttons.pack(side="left", fill="x", expand=True)
+        target_items = []
         for dev_id, ctx in self.hub.devices.items():
-            model = ctx.model
-            label = f"{ctx.name} ({model})" if model else ctx.name
-            tab_items.append((dev_id, label))
-        tab_items.append(("all", "Both Strips (SYNC ALL)"))
-
-        for dev_id, title_text in tab_items:
-            is_cur = (dev_id == self.current_dev_id)
-            tbtn = ctk.CTkButton(
-                tabs_inner, text=title_text, height=34,
-                fg_color=t["surface_raised"] if is_cur else "transparent",
+            model = getattr(ctx, "model", "")
+            label = f"{ctx.name}  ·  {model}" if model else ctx.name
+            target_items.append((dev_id, label))
+        target_items.append(("all", "Both strips"))
+        for dev_id, title_text in target_items:
+            selected = dev_id == self.current_dev_id
+            btn = ctk.CTkButton(
+                target_buttons, text=title_text, height=34,
+                fg_color=t["accent_soft"] if selected else "transparent",
                 hover_color=t["surface_high"],
-                text_color=t["text_primary"] if is_cur else t["text_secondary"],
-                border_width=1 if is_cur else 0,
-                border_color=t["accent"] if is_cur else t["border"],
-                font=ctk.CTkFont(size=11, weight="bold"),
-                corner_radius=12,
+                text_color=t["text_primary"] if selected else t["text_secondary"],
+                border_width=1 if selected else 0,
+                border_color=t["accent"] if selected else t["border"],
+                font=ctk.CTkFont(size=12, weight="bold"), corner_radius=7,
                 command=lambda d=dev_id: self._select_device_tab(d)
             )
-            tbtn.pack(side="left", expand=True, fill="x", padx=3)
-            self.tab_buttons[dev_id] = tbtn
+            btn.pack(side="left", fill="x", expand=True, padx=3)
+            self.tab_buttons[dev_id] = btn
 
-        # ── 4. HERO ACTIVE DEVICE / SCENE CARD ───────────────────────────────
-        self.hero_card = ctk.CTkFrame(
-            self.scroll_body, fg_color=t["hero_tint"],
-            corner_radius=18, border_width=1, border_color=t["hero_border"]
+        self.content_area = ctk.CTkFrame(self.main_column, fg_color="transparent")
+        self.content_area.pack(fill="both", expand=True)
+        scroll_kwargs = {
+            "fg_color": "transparent",
+            "scrollbar_button_color": t["surface_high"],
+            "scrollbar_button_hover_color": t["accent"],
+            "corner_radius": 0,
+        }
+        self.page_views = {
+            key: ctk.CTkScrollableFrame(self.content_area, **scroll_kwargs)
+            for key in ("overview", "music", "effects", "diagnostics")
+        }
+
+        def page_heading(page, eyebrow, title, description):
+            heading = ctk.CTkFrame(page, fg_color="transparent")
+            heading.pack(fill="x", padx=4, pady=(12, 16))
+            ctk.CTkLabel(
+                heading, text=eyebrow.upper(), anchor="w",
+                font=ctk.CTkFont(size=10, weight="bold"), text_color=t["accent_glow"]
+            ).pack(fill="x", pady=(0, 5))
+            ctk.CTkLabel(
+                heading, text=title, anchor="w",
+                font=ctk.CTkFont(size=25, weight="bold"), text_color=t["text_primary"]
+            ).pack(fill="x")
+            ctk.CTkLabel(
+                heading, text=description, anchor="w", wraplength=1000,
+                font=ctk.CTkFont(size=13), text_color=t["text_secondary"]
+            ).pack(fill="x", pady=(4, 0))
+
+        def make_card(parent, background=None, hero=False):
+            frame = ctk.CTkFrame(
+                parent, fg_color=background or t["surface"], corner_radius=9,
+                border_width=1, border_color=t["hero_border"] if hero else t["border"]
+            )
+            frame.pack(fill="x", padx=2, pady=(0, 12))
+            self.card_frames.append(frame)
+            return frame
+
+        def card_heading(parent, title, subtitle=None):
+            top = ctk.CTkFrame(parent, fg_color="transparent")
+            top.pack(fill="x", padx=18, pady=(16, 12))
+            ctk.CTkLabel(
+                top, text=title, anchor="w",
+                font=ctk.CTkFont(size=15, weight="bold"), text_color=t["text_primary"]
+            ).pack(fill="x")
+            if subtitle:
+                ctk.CTkLabel(
+                    top, text=subtitle, anchor="w", wraplength=1000,
+                    font=ctk.CTkFont(size=12), text_color=t["text_muted"]
+                ).pack(fill="x", pady=(3, 0))
+            return top
+
+        # ── OVERVIEW ────────────────────────────────────────────────────────
+        overview = self.page_views["overview"]
+        page_heading(
+            overview, "At a glance", "Your lights, under control",
+            "Choose a strip, set the room brightness, or jump into a saved scene."
         )
-        self.hero_card.pack(fill="x", pady=(0, 12))
-        self.card_frames.append(self.hero_card)
 
-        hero_inner = ctk.CTkFrame(self.hero_card, fg_color="transparent")
-        hero_inner.pack(fill="x", padx=16, pady=16)
-        hero_inner.columnconfigure(0, weight=1)
-
-        # Top tag
+        self.hero_card = make_card(overview, background=t["hero_tint"], hero=True)
+        hero_top = ctk.CTkFrame(self.hero_card, fg_color="transparent")
+        hero_top.pack(fill="x", padx=20, pady=(18, 15))
+        hero_top.grid_columnconfigure(0, weight=1)
+        tag_row = ctk.CTkFrame(hero_top, fg_color="transparent")
+        tag_row.grid(row=0, column=0, sticky="w", pady=(0, 7))
         self.hero_tag = ctk.CTkLabel(
-            hero_inner, text="L900", font=ctk.CTkFont(size=9, weight="bold"),
-            fg_color=t["surface_raised"], corner_radius=6,
-            text_color=t["accent_glow"], width=46, height=18
+            tag_row, text="L930", fg_color=t["surface_raised"], corner_radius=5,
+            padx=9, pady=4, font=ctk.CTkFont(size=10, weight="bold"),
+            text_color=t["accent_glow"]
         )
-        self.hero_tag.grid(row=0, column=0, sticky="w", pady=(0, 4))
-
-        # Main device title
+        self.hero_tag.pack(side="left")
         self.hero_title = ctk.CTkLabel(
-            hero_inner, text="Desk Strip (L900-5)",
-            font=ctk.CTkFont(size=17, weight="bold"),
-            text_color=t["text_primary"]
+            hero_top, text="Light strip", anchor="w",
+            font=ctk.CTkFont(size=24, weight="bold"), text_color=t["text_primary"]
         )
         self.hero_title.grid(row=1, column=0, sticky="w")
-
-        # Status indicator
-        status_sub = ctk.CTkFrame(hero_inner, fg_color="transparent")
-        status_sub.grid(row=2, column=0, sticky="w", pady=(4, 0))
-        self.hero_status_dot = ctk.CTkLabel(status_sub, text="●", font=ctk.CTkFont(size=8), text_color="#10b981")
-        self.hero_status_dot.pack(side="left", padx=(0, 4))
+        status_row = ctk.CTkFrame(hero_top, fg_color="transparent")
+        status_row.grid(row=2, column=0, sticky="w", pady=(5, 0))
+        self.hero_status_dot = ctk.CTkLabel(
+            status_row, text="●", font=ctk.CTkFont(size=11), text_color="#35d399"
+        )
+        self.hero_status_dot.pack(side="left", padx=(0, 6))
         self.hero_status_lbl = ctk.CTkLabel(
-            status_sub, text="Active", font=ctk.CTkFont(size=11, weight="bold"),
+            status_row, text="Active", font=ctk.CTkFont(size=12, weight="bold"),
             text_color=t["text_secondary"]
         )
         self.hero_status_lbl.pack(side="left")
-
-        # Large Circular Power Button on right
         self.btn_hero_power = ctk.CTkButton(
-            hero_inner, text="⏻", width=50, height=50, corner_radius=25,
+            hero_top, text="⏻", width=52, height=52, corner_radius=9,
             fg_color=t["accent_soft"], hover_color=t["accent"],
-            border_width=2, border_color=t["power_glow"],
-            font=ctk.CTkFont(size=22, weight="bold"),
-            text_color=t["text_primary"],
+            border_width=1, border_color=t["accent"],
+            font=ctk.CTkFont(size=23, weight="bold"), text_color=t["text_primary"],
             command=self._handle_power_click
         )
-        self.btn_hero_power.grid(row=0, column=1, rowspan=3, sticky="e", padx=(12, 0))
+        self.btn_hero_power.grid(row=0, column=1, rowspan=3, sticky="e", padx=(16, 0))
 
-        # ── 50-Segment Rounded LED Strip with Ambient Bloom ──────────────────
-        strip_box = ctk.CTkFrame(self.hero_card, fg_color=t["surface_raised"], corner_radius=12)
-        strip_box.pack(fill="x", padx=16, pady=(0, 14))
-
-        strip_hdr = ctk.CTkFrame(strip_box, fg_color="transparent")
-        strip_hdr.pack(fill="x", padx=10, pady=(6, 2))
+        strip_box = ctk.CTkFrame(
+            self.hero_card, fg_color="#10141d", corner_radius=7,
+            border_width=1, border_color=t["border"]
+        )
+        strip_box.pack(fill="x", padx=18, pady=(0, 18))
+        strip_header = ctk.CTkFrame(strip_box, fg_color="transparent")
+        strip_header.pack(fill="x", padx=12, pady=(10, 6))
         self.lbl_strip_tag = ctk.CTkLabel(
-            strip_hdr, text="50-ZONE ADDRESSABLE CANVAS",
-            font=ctk.CTkFont(size=9, weight="bold"), text_color=t["text_muted"]
+            strip_header, text="LIVE STRIP PREVIEW", anchor="w",
+            font=ctk.CTkFont(size=10, weight="bold"), text_color=t["text_muted"]
         )
         self.lbl_strip_tag.pack(side="left")
-
         self.lbl_strip_stats = ctk.CTkLabel(
-            strip_hdr, text="IC 0 ··· IC 49",
-            font=ctk.CTkFont(family="Consolas", size=9), text_color=t["accent_glow"]
+            strip_header, text="ZONE 01 — 50", anchor="e",
+            font=ctk.CTkFont(size=10), text_color=t["accent_glow"]
         )
         self.lbl_strip_stats.pack(side="right")
-
         import tkinter as tk
         self.strip_canvas = tk.Canvas(
-            strip_box,
-            height=28,
-            bg="#07090e",
-            highlightthickness=0,
-            bd=0
+            strip_box, height=38, bg="#090b10", highlightthickness=0, bd=0
         )
-        self.strip_canvas.pack(fill="x", padx=8, pady=(0, 8))
+        self.strip_canvas.pack(fill="x", padx=12, pady=(0, 12))
         self.strip_canvas.bind("<Motion>", self._on_strip_canvas_hover)
         self.strip_canvas.bind("<Leave>", self._on_strip_canvas_leave)
         self._last_rendered_segments = None
 
-        # ── 5. BRIGHTNESS CARD ───────────────────────────────────────────────
-        self.bright_card = ctk.CTkFrame(
-            self.scroll_body, fg_color=t["surface"],
-            corner_radius=16, border_width=1, border_color=t["border"]
-        )
-        self.bright_card.pack(fill="x", pady=(0, 12))
-        self.card_frames.append(self.bright_card)
-
-        bright_inner = ctk.CTkFrame(self.bright_card, fg_color="transparent")
-        bright_inner.pack(fill="x", padx=16, pady=14)
-
-        b_hdr = ctk.CTkFrame(bright_inner, fg_color="transparent")
-        b_hdr.pack(fill="x", pady=(0, 8))
-        self.lbl_bright_tag = ctk.CTkLabel(
-            b_hdr, text="BRIGHTNESS",
-            font=ctk.CTkFont(size=9, weight="bold"), text_color=t["text_muted"]
-        )
-        self.lbl_bright_tag.pack(side="left")
-
+        self.bright_card = make_card(overview)
+        brightness_header = ctk.CTkFrame(self.bright_card, fg_color="transparent")
+        brightness_header.pack(fill="x", padx=18, pady=(16, 6))
+        ctk.CTkLabel(
+            brightness_header, text="Brightness", anchor="w",
+            font=ctk.CTkFont(size=15, weight="bold"), text_color=t["text_primary"]
+        ).pack(side="left")
         self.bright_val_label = ctk.CTkLabel(
-            b_hdr, text="50%",
-            font=ctk.CTkFont(family="Consolas", size=15, weight="bold"),
+            brightness_header, text="50%", font=ctk.CTkFont(size=16, weight="bold"),
             text_color=t["accent_glow"]
         )
         self.bright_val_label.pack(side="right")
-
-        # Slider with sun icons
-        slider_row = ctk.CTkFrame(bright_inner, fg_color="transparent")
-        slider_row.pack(fill="x", pady=(0, 10))
-
-        self.lbl_sun_dim = ctk.CTkLabel(slider_row, text="☼", font=ctk.CTkFont(size=14), text_color=t["text_muted"])
-        self.lbl_sun_dim.pack(side="left", padx=(0, 8))
-
+        brightness_slider_row = ctk.CTkFrame(self.bright_card, fg_color="transparent")
+        brightness_slider_row.pack(fill="x", padx=18, pady=(0, 12))
+        self.lbl_sun_dim = ctk.CTkLabel(
+            brightness_slider_row, text="DIM", font=ctk.CTkFont(size=10, weight="bold"),
+            text_color=t["text_muted"]
+        )
+        self.lbl_sun_dim.pack(side="left", padx=(0, 10))
         self.bright_slider = ctk.CTkSlider(
-            slider_row, from_=1, to=100,
-            command=self._on_brightness_slide,
-            progress_color=t["accent"],
-            button_color=t["accent_glow"],
-            button_hover_color=t["accent"],
-            height=16
+            brightness_slider_row, from_=1, to=100, height=18,
+            progress_color=t["accent"], button_color=t["accent_glow"],
+            button_hover_color=t["accent"], fg_color=t["surface_high"],
+            command=self._on_brightness_slide
         )
         self.bright_slider.set(50)
         self.bright_slider.pack(side="left", fill="x", expand=True)
-
-        self.lbl_sun_bright = ctk.CTkLabel(slider_row, text="☀", font=ctk.CTkFont(size=16), text_color=t["accent_glow"])
-        self.lbl_sun_bright.pack(side="right", padx=(8, 0))
-
-        # Quick level pills: 15%, 40%, 70%, 100%
-        levels_row = ctk.CTkFrame(bright_inner, fg_color="transparent")
-        levels_row.pack(fill="x")
-        levels_row.columnconfigure((0, 1, 2, 3), weight=1, uniform="lvl")
-
-        for idx, lvl in enumerate([15, 40, 70, 100]):
-            qbtn = ctk.CTkButton(
-                levels_row, text=f"{lvl}%", height=28,
+        self.lbl_sun_bright = ctk.CTkLabel(
+            brightness_slider_row, text="BRIGHT", font=ctk.CTkFont(size=10, weight="bold"),
+            text_color=t["text_muted"]
+        )
+        self.lbl_sun_bright.pack(side="left", padx=(10, 0))
+        levels_row = ctk.CTkFrame(self.bright_card, fg_color="transparent")
+        levels_row.pack(fill="x", padx=18, pady=(0, 16))
+        for idx, level in enumerate((15, 40, 70, 100)):
+            button = ctk.CTkButton(
+                levels_row, text=f"{level}%", height=32, corner_radius=7,
                 fg_color=t["surface_raised"], hover_color=t["surface_high"],
-                text_color=t["text_secondary"], font=ctk.CTkFont(size=10, weight="bold"),
-                corner_radius=8,
-                command=lambda l=lvl: self._set_quick_brightness(l)
+                text_color=t["text_secondary"], border_width=1, border_color=t["border"],
+                font=ctk.CTkFont(size=12, weight="bold"),
+                command=lambda v=level: self._set_quick_brightness(v)
             )
-            qbtn.grid(row=0, column=idx, padx=3, sticky="ew")
-            self.quick_level_buttons[lvl] = qbtn
+            button.pack(side="left", fill="x", expand=True, padx=(0 if idx == 0 else 6, 0))
+            self.quick_level_buttons[level] = button
 
-        # ── 6. LIVE SYNC & REACTIVE CARD ─────────────────────────────────────
-        self.sync_card = ctk.CTkFrame(
-            self.scroll_body, fg_color=t["surface"],
-            corner_radius=16, border_width=1, border_color=t["border"]
-        )
-        self.sync_card.pack(fill="x", pady=(0, 12))
-        self.card_frames.append(self.sync_card)
+        self.preset_card = make_card(overview)
+        card_heading(self.preset_card, "Saved scenes", "One click applies a static scene to the selected strip.")
+        presets_grid = ctk.CTkFrame(self.preset_card, fg_color="transparent")
+        presets_grid.pack(fill="x", padx=14, pady=(0, 16))
+        self._register_responsive_grid(presets_grid)
+        for col in range(3):
+            presets_grid.columnconfigure(col, weight=1, uniform="scenes")
+        modes_list = list(self.hub.config.get("modes", {}).keys()) or [
+            "work", "deep_focus", "coding_night", "reading", "sunset", "dinner", "movie", "sleep"
+        ]
+        for idx, name in enumerate(modes_list):
+            row, col = divmod(idx, 3)
+            label = name.replace("_", " ").title()
+            button = self._make_item_button(
+                presets_grid, label, MODE_COLORS.get(name, t["accent"]),
+                lambda n=name: self._apply_mode(n)
+            )
+            button.grid(row=row, column=col, padx=4, pady=4, sticky="nsew")
+            self.buttons[f"mode_{name}"] = button
 
-        sync_inner = ctk.CTkFrame(self.sync_card, fg_color="transparent")
-        sync_inner.pack(fill="x", padx=16, pady=14)
-
-        self.lbl_sync_tag = ctk.CTkLabel(
-            sync_inner, text="LIVE SYNC & REACTIVE",
-            font=ctk.CTkFont(size=9, weight="bold"), text_color=t["text_muted"]
-        )
-        self.lbl_sync_tag.pack(anchor="w", pady=(0, 10))
-
-        # Audio Sync & Screen Sync side-by-side cards
-        sync_cards_row = ctk.CTkFrame(sync_inner, fg_color="transparent")
-        sync_cards_row.pack(fill="x", pady=(0, 10))
-        sync_cards_row.columnconfigure((0, 1), weight=1, uniform="sc")
-
-        # Card 1: Audio Reactive
-        self.btn_music = ctk.CTkButton(
-            sync_cards_row, text="🎵  Audio Reactive\nBass pulse & color cycle",
+        self.btn_picker = ctk.CTkButton(
+            overview, text="＋   Open colour studio", height=44, corner_radius=8,
             fg_color=t["surface_raised"], hover_color=t["surface_high"],
-            text_color=t["text_primary"],
-            font=ctk.CTkFont(size=11, weight="bold"),
-            border_width=1, border_color=t["border"],
-            corner_radius=12, height=54,
+            border_width=1, border_color=t["border"], text_color=t["text_primary"],
+            font=ctk.CTkFont(size=13, weight="bold"), command=self._show_picker
+        )
+        self.btn_picker.pack(fill="x", padx=2, pady=(0, 16))
+
+        # ── MUSIC REACTIVE ──────────────────────────────────────────────────
+        music = self.page_views["music"]
+        page_heading(
+            music, "Live performance", "Make the lights listen",
+            "Audio and screen analysis, reactive looks, sensitivity and timing controls."
+        )
+
+        self.sync_card = make_card(music)
+        card_heading(self.sync_card, "Live inputs", "Choose one reactive source at a time, or switch between them as needed.")
+        sync_body = ctk.CTkFrame(self.sync_card, fg_color="transparent")
+        sync_body.pack(fill="x", padx=16, pady=(0, 16))
+        sync_body.grid_columnconfigure((0, 1), weight=1, uniform="sync")
+        self.btn_music = ctk.CTkButton(
+            sync_body, text="♫  AUDIO REACTIVE\nFollow bass, mids, highs and rhythm",
+            height=64, corner_radius=8, fg_color=t["surface_raised"],
+            hover_color=t["surface_high"], border_width=1, border_color=t["border"],
+            text_color=t["text_primary"], font=ctk.CTkFont(size=13, weight="bold"),
             command=self._handle_music_toggle
         )
-        self.btn_music.grid(row=0, column=0, padx=(0, 5), sticky="nsew")
-
-        # Card 2: Screen Sync
+        self.btn_music.grid(row=0, column=0, sticky="ew", padx=(0, 6), pady=(0, 12))
         self.btn_scr = ctk.CTkButton(
-            sync_cards_row, text="📺  Screen Sync\nAmbiLight display tracking",
-            fg_color=t["surface_raised"], hover_color=t["surface_high"],
-            text_color=t["text_primary"],
-            font=ctk.CTkFont(size=11, weight="bold"),
-            border_width=1, border_color=t["border"],
-            corner_radius=12, height=54,
+            sync_body, text="▣  SCREEN SYNC\nTrack the dominant colours on screen",
+            height=64, corner_radius=8, fg_color=t["surface_raised"],
+            hover_color=t["surface_high"], border_width=1, border_color=t["border"],
+            text_color=t["text_primary"], font=ctk.CTkFont(size=13, weight="bold"),
             command=self._handle_screen_toggle
         )
-        self.btn_scr.grid(row=0, column=1, padx=(5, 0), sticky="nsew")
+        self.btn_scr.grid(row=0, column=1, sticky="ew", padx=(6, 0), pady=(0, 12))
 
-        # Audio Input Source Dropdown
-        audio_src_row = ctk.CTkFrame(sync_inner, fg_color="transparent")
-        audio_src_row.pack(fill="x", pady=(0, 8))
-
+        source_row = ctk.CTkFrame(sync_body, fg_color="transparent")
+        source_row.grid(row=1, column=0, columnspan=2, sticky="ew")
+        source_row.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(
-            audio_src_row, text="🎧 Audio Source:",
-            font=ctk.CTkFont(size=10, weight="bold"), text_color=t["text_muted"]
-        ).pack(side="left", padx=(0, 8))
-
-        devs = self.hub.get_audio_devices()
-        dev_names = [d["name"] for d in devs] or ["Auto-Detect Active Audio"]
-        cur_audio = self.hub.audio_device
-
+            source_row, text="Audio input", anchor="w",
+            font=ctk.CTkFont(size=12, weight="bold"), text_color=t["text_secondary"]
+        ).grid(row=0, column=0, padx=(0, 14), sticky="w")
+        audio_devices = self.hub.get_audio_devices()
+        audio_names = [d["name"] for d in audio_devices] or ["Auto-Detect Active Audio"]
+        current_audio = self.hub.audio_device
         self.audio_opt = ctk.CTkOptionMenu(
-            audio_src_row, values=dev_names,
-            command=self._on_audio_device_selected,
-            fg_color=t["surface_raised"],
-            button_color=t["surface_high"],
-            dropdown_fg_color=t["surface_raised"],
-            text_color=t["text_primary"],
-            height=28, corner_radius=8
+            source_row, values=audio_names, command=self._on_audio_device_selected,
+            fg_color=t["surface_raised"], button_color=t["surface_high"],
+            dropdown_fg_color=t["surface_raised"], text_color=t["text_primary"],
+            height=34, corner_radius=7, font=ctk.CTkFont(size=12)
         )
-        if cur_audio in dev_names:
-            self.audio_opt.set(cur_audio)
-        self.audio_opt.pack(side="right", fill="x", expand=True)
+        if current_audio in audio_names:
+            self.audio_opt.set(current_audio)
+        self.audio_opt.grid(row=0, column=1, sticky="ew")
 
-        # Two-Axis Visual Styles & Telemetry Grid (Always present, zero clipping)
-        self.vstyles_frame = ctk.CTkFrame(sync_inner, fg_color=t["surface_raised"], corner_radius=12)
-        self.vstyles_frame.pack(fill="x", pady=(4, 0))
-
-        vst_inner = ctk.CTkFrame(self.vstyles_frame, fg_color="transparent")
-        vst_inner.pack(fill="x", padx=12, pady=10)
-
-        vst_hdr = ctk.CTkFrame(vst_inner, fg_color="transparent")
-        vst_hdr.pack(fill="x", pady=(0, 6))
-
-        self.gui_section_badge = ctk.CTkLabel(
-            vst_hdr, text="VERSE", font=ctk.CTkFont(size=9, weight="bold"),
-            fg_color="#10b981", text_color="#ffffff", corner_radius=5, width=48, height=18
+        self.vstyles_frame = ctk.CTkFrame(
+            music, fg_color=t["surface"], corner_radius=9,
+            border_width=1, border_color=t["border"]
         )
-        self.gui_section_badge.pack(side="left")
-
-        self.gui_key_pill = ctk.CTkLabel(
-            vst_hdr, text="🎼 215° MIN", font=ctk.CTkFont(size=9, weight="bold"),
-            text_color=t["accent_glow"]
-        )
-        self.gui_key_pill.pack(side="left", padx=8)
-
-        self.gui_bpm_lbl = ctk.CTkLabel(
-            vst_hdr, text="⚡ 120 BPM",
-            font=ctk.CTkFont(family="Consolas", size=10, weight="bold"),
-            text_color="#10b981"
-        )
-        self.gui_bpm_lbl.pack(side="right")
-
-        # ── LIVE AUDIO MONITOR (Spectrum Visualizer + Onset / Kick / Snare / Hat Meters) ──
-        self.audio_monitor_frame = ctk.CTkFrame(vst_inner, fg_color=t["surface_high"], corner_radius=10)
-        self.audio_monitor_frame.pack(fill="x", pady=(0, 8))
-        mon_inner = ctk.CTkFrame(self.audio_monitor_frame, fg_color="transparent")
-        mon_inner.pack(fill="x", padx=10, pady=8)
-
-        # Header with Diagnostic Metrics (BPM + Conf, Noise Floor, Outgoing Tx FPS)
-        mon_hdr = ctk.CTkFrame(mon_inner, fg_color="transparent")
-        mon_hdr.pack(fill="x", pady=(0, 4))
+        self.vstyles_frame.pack(fill="x", padx=2, pady=(0, 12))
+        vstyles_inner = ctk.CTkFrame(self.vstyles_frame, fg_color="transparent")
+        vstyles_inner.pack(fill="x", padx=16, pady=16)
+        vstyles_header = ctk.CTkFrame(vstyles_inner, fg_color="transparent")
+        vstyles_header.pack(fill="x", pady=(0, 12))
+        header_left = ctk.CTkFrame(vstyles_header, fg_color="transparent")
+        header_left.pack(side="left", fill="x", expand=True)
         ctk.CTkLabel(
-            mon_hdr, text="LIVE AUDIO MONITOR",
-            font=ctk.CTkFont(size=8, weight="bold"), text_color=t["text_muted"]
-        ).pack(side="left")
+            header_left, text="Visual style", anchor="w",
+            font=ctk.CTkFont(size=16, weight="bold"), text_color=t["text_primary"]
+        ).pack(fill="x")
+        ctk.CTkLabel(
+            header_left, text="Pick the way the strip responds to the track.",
+            anchor="w", font=ctk.CTkFont(size=12), text_color=t["text_muted"]
+        ).pack(fill="x", pady=(3, 0))
+        self.gui_section_badge = ctk.CTkLabel(
+            vstyles_header, text="WAITING", corner_radius=6,
+            fg_color=t["surface_high"], text_color=t["accent_glow"],
+            padx=9, pady=5, font=ctk.CTkFont(size=11, weight="bold")
+        )
+        self.gui_section_badge.pack(side="right", padx=(10, 0))
+        self.gui_key_pill = ctk.CTkLabel(
+            vstyles_header, text="Key —", corner_radius=6,
+            fg_color=t["surface_high"], text_color=t["text_secondary"],
+            padx=9, pady=5, font=ctk.CTkFont(size=11, weight="bold")
+        )
+        self.gui_key_pill.pack(side="right", padx=(0, 8))
+        self.gui_bpm_lbl = ctk.CTkLabel(
+            vstyles_inner, text="Inactive", anchor="w",
+            font=ctk.CTkFont(size=12, weight="bold"), text_color=t["text_muted"]
+        )
+        self.gui_bpm_lbl.pack(fill="x", pady=(0, 8))
 
+        self.audio_monitor_frame = ctk.CTkFrame(
+            vstyles_inner, fg_color=t["surface_raised"], corner_radius=7,
+            border_width=1, border_color=t["border"]
+        )
+        self.audio_monitor_frame.pack(fill="x", pady=(0, 14))
+        monitor_inner = ctk.CTkFrame(self.audio_monitor_frame, fg_color="transparent")
+        monitor_inner.pack(fill="x", padx=12, pady=12)
+        monitor_header = ctk.CTkFrame(monitor_inner, fg_color="transparent")
+        monitor_header.pack(fill="x", pady=(0, 8))
+        ctk.CTkLabel(
+            monitor_header, text="LIVE SIGNAL", font=ctk.CTkFont(size=10, weight="bold"),
+            text_color=t["text_muted"]
+        ).pack(side="left")
         self.lbl_mon_meta = ctk.CTkLabel(
-            mon_hdr,
-            text="BPM: 120 (0%) · Floor: -52dB · Tx: 0 FPS",
-            font=ctk.CTkFont(family="Consolas", size=8, weight="bold"),
-            text_color=t["accent_glow"]
+            monitor_header, text="BPM: —  ·  Floor: —  ·  Tx: 0 FPS",
+            font=ctk.CTkFont(size=10), text_color=t["text_secondary"]
         )
         self.lbl_mon_meta.pack(side="right")
-
-        # Live 16-band Spectrum Mini Bar Chart Canvas
-        import tkinter as tk
         self.spectrum_canvas = tk.Canvas(
-            mon_inner, height=32, bg="#06080d", highlightthickness=0, bd=0
+            monitor_inner, height=104, bg="#0c1119", highlightthickness=0, bd=0
         )
-        self.spectrum_canvas.pack(fill="x", pady=(2, 6))
+        self.spectrum_canvas.pack(fill="x", pady=(0, 10))
 
-        # Transient Meters Grid: Onset, Kick, Snare, Hat
-        meters_row = ctk.CTkFrame(mon_inner, fg_color="transparent")
+        meters_row = ctk.CTkFrame(monitor_inner, fg_color="transparent")
         meters_row.pack(fill="x")
-        meters_row.columnconfigure((0, 1, 2, 3), weight=1, uniform="m")
+        meters_row.grid_columnconfigure((0, 1, 2, 3), weight=1, uniform="meters")
+        for index, (key, label, color) in enumerate((
+            ("onset", "ONSET", "#60a5fa"),
+            ("kick", "KICK", "#a78bfa"),
+            ("snare", "SNARE", "#fb7185"),
+            ("hat", "HI-HAT", "#34d399"),
+        )):
+            cell = ctk.CTkFrame(meters_row, fg_color="transparent")
+            cell.grid(row=0, column=index, sticky="ew", padx=(0 if index == 0 else 10, 0))
+            top = ctk.CTkFrame(cell, fg_color="transparent")
+            top.pack(fill="x", pady=(0, 5))
+            ctk.CTkLabel(
+                top, text=label, font=ctk.CTkFont(size=10, weight="bold"),
+                text_color=t["text_muted"]
+            ).pack(side="left")
+            value_label = ctk.CTkLabel(
+                top, text="0.00", font=ctk.CTkFont(size=11, weight="bold"),
+                text_color=t["text_primary"]
+            )
+            value_label.pack(side="right")
+            meter = ctk.CTkProgressBar(
+                cell, height=8, corner_radius=4, fg_color=t["surface_high"], progress_color=color
+            )
+            meter.set(0)
+            meter.pack(fill="x")
+            setattr(self, f"lbl_meter_{key}", value_label)
+            setattr(self, f"bar_meter_{key}", meter)
 
-        # 1. Onset
-        m_on = ctk.CTkFrame(meters_row, fg_color="transparent")
-        m_on.grid(row=0, column=0, padx=2, sticky="ew")
-        m_on_hdr = ctk.CTkFrame(m_on, fg_color="transparent")
-        m_on_hdr.pack(fill="x")
-        ctk.CTkLabel(m_on_hdr, text="ONSET", font=ctk.CTkFont(size=7, weight="bold"), text_color=t["text_muted"]).pack(side="left")
-        self.lbl_meter_onset = ctk.CTkLabel(m_on_hdr, text="0.0", font=ctk.CTkFont(family="Consolas", size=7), text_color="#38bdf8")
-        self.lbl_meter_onset.pack(side="right")
-        self.bar_meter_onset = ctk.CTkProgressBar(m_on, height=6, progress_color="#38bdf8", fg_color=t["surface_raised"])
-        self.bar_meter_onset.set(0.0)
-        self.bar_meter_onset.pack(fill="x", pady=(1, 0))
-
-        # 2. Kick
-        m_k = ctk.CTkFrame(meters_row, fg_color="transparent")
-        m_k.grid(row=0, column=1, padx=2, sticky="ew")
-        m_k_hdr = ctk.CTkFrame(m_k, fg_color="transparent")
-        m_k_hdr.pack(fill="x")
-        ctk.CTkLabel(m_k_hdr, text="KICK", font=ctk.CTkFont(size=7, weight="bold"), text_color=t["text_muted"]).pack(side="left")
-        self.lbl_meter_kick = ctk.CTkLabel(m_k_hdr, text="0.0", font=ctk.CTkFont(family="Consolas", size=7), text_color="#f43f5e")
-        self.lbl_meter_kick.pack(side="right")
-        self.bar_meter_kick = ctk.CTkProgressBar(m_k, height=6, progress_color="#f43f5e", fg_color=t["surface_raised"])
-        self.bar_meter_kick.set(0.0)
-        self.bar_meter_kick.pack(fill="x", pady=(1, 0))
-
-        # 3. Snare
-        m_s = ctk.CTkFrame(meters_row, fg_color="transparent")
-        m_s.grid(row=0, column=2, padx=2, sticky="ew")
-        m_s_hdr = ctk.CTkFrame(m_s, fg_color="transparent")
-        m_s_hdr.pack(fill="x")
-        ctk.CTkLabel(m_s_hdr, text="SNARE", font=ctk.CTkFont(size=7, weight="bold"), text_color=t["text_muted"]).pack(side="left")
-        self.lbl_meter_snare = ctk.CTkLabel(m_s_hdr, text="0.0", font=ctk.CTkFont(family="Consolas", size=7), text_color="#fbbf24")
-        self.lbl_meter_snare.pack(side="right")
-        self.bar_meter_snare = ctk.CTkProgressBar(m_s, height=6, progress_color="#fbbf24", fg_color=t["surface_raised"])
-        self.bar_meter_snare.set(0.0)
-        self.bar_meter_snare.pack(fill="x", pady=(1, 0))
-
-        # 4. Hat
-        m_h = ctk.CTkFrame(meters_row, fg_color="transparent")
-        m_h.grid(row=0, column=3, padx=2, sticky="ew")
-        m_h_hdr = ctk.CTkFrame(m_h, fg_color="transparent")
-        m_h_hdr.pack(fill="x")
-        ctk.CTkLabel(m_h_hdr, text="HAT", font=ctk.CTkFont(size=7, weight="bold"), text_color=t["text_muted"]).pack(side="left")
-        self.lbl_meter_hat = ctk.CTkLabel(m_h_hdr, text="0.0", font=ctk.CTkFont(family="Consolas", size=7), text_color="#10b981")
-        self.lbl_meter_hat.pack(side="right")
-        self.bar_meter_hat = ctk.CTkProgressBar(m_h, height=6, progress_color="#10b981", fg_color=t["surface_raised"])
-        self.bar_meter_hat.set(0.0)
-        self.bar_meter_hat.pack(fill="x", pady=(1, 0))
-
-        # ── AUTO (DIRECTOR) FEATURED CARD ──
         self.btn_auto_mode = ctk.CTkButton(
-            vst_inner, text="✨  Auto (Director)  ·  Autonomous Intelligence",
-            fg_color=t["accent"], hover_color=t["accent_soft"],
-            text_color="#ffffff", font=ctk.CTkFont(size=10, weight="bold"),
-            height=30, corner_radius=8,
+            vstyles_inner, text="✦   Auto Director   ·   Let the music choose",
+            height=44, corner_radius=8, fg_color=t["accent"],
+            hover_color=t["accent_soft"], text_color="#ffffff",
+            font=ctk.CTkFont(size=13, weight="bold"),
             command=lambda: self._set_visual_style("auto")
         )
-        self.btn_auto_mode.pack(fill="x", pady=(0, 8))
+        self.btn_auto_mode.pack(fill="x", pady=(0, 10))
         self.vstyle_buttons["auto"] = self.btn_auto_mode
 
-        # ── Visualizer Modes Grid (Party, Chill, EDM, Movie, Pulse, Spectrum, Flow) ──
-        styles_grid = ctk.CTkFrame(vst_inner, fg_color="transparent")
-        styles_grid.pack(fill="x", pady=(0, 8))
+        styles_grid = ctk.CTkFrame(vstyles_inner, fg_color="transparent")
+        styles_grid.pack(fill="x", pady=(0, 12))
         self._register_responsive_grid(styles_grid)
-        styles_grid.columnconfigure((0, 1), weight=1, uniform="vst")
-
-        base_modes_list = [
-            ("party",        "🎉 Party",    "High-energy club strobe & bursts"),
-            ("chill",        "☕ Chill",    "Velvety warm breathing ambers"),
-            ("edm",          "💥 EDM",      "Bass-triggered white flash strikes"),
-            ("movie",        "🎬 Movie",    "Ambilight + Room Fill flare"),
-            ("pulse",        "⚡ Pulse",    "Gaussian kick ripples & bar rotation"),
-            ("spectrum",     "📊 Spectrum", "50-band mirror EQ & peak hold"),
-            ("flow",         "🌊 Flow",     "2-octave harmonic noise curtains"),
-            ("bass_bounce",  "🏀 Bounce",   "Inward sub-bass edge fills"),
-            ("center_burst", "💫 Burst",    "Outward ripple shockwaves"),
-            ("twinkle",      "✨ Twinkle",  "Treble sparkles & ambient velvet"),
+        for col in range(3):
+            styles_grid.columnconfigure(col, weight=1, uniform="visual-styles")
+        style_items = [
+            ("party", "✹  Party", "High energy"),
+            ("chill", "◌  Chill", "Slow, soft movement"),
+            ("edm", "ϟ  EDM", "Bass-led impact"),
+            ("movie", "▣  Movie", "Cinematic ambience"),
+            ("pulse", "ϟ  Pulse", "Kick ripples"),
+            ("spectrum", "▥  Spectrum", "Frequency display"),
+            ("flow", "≈  Flow", "Organic colour motion"),
+            ("bass_bounce", "↔  Bounce", "Sub-bass movement"),
+            ("center_burst", "✺  Burst", "Outward waves"),
+            ("twinkle", "✧  Twinkle", "Subtle high-end sparkle"),
         ]
-
-        for idx, (sid, slabel, sdesc) in enumerate(base_modes_list):
-            r, c = divmod(idx, 2)
-            card = ctk.CTkFrame(styles_grid, fg_color=t["surface_high"], corner_radius=10, cursor="hand2")
-            card.grid(row=r, column=c, padx=3, pady=3, sticky="nsew")
-
-            card_inner = ctk.CTkFrame(card, fg_color="transparent")
-            card_inner.pack(fill="both", expand=True, padx=8, pady=6)
-
-            title_lbl = ctk.CTkLabel(
-                card_inner, text=slabel, font=ctk.CTkFont(size=10, weight="bold"),
-                text_color=t["text_primary"], anchor="w"
+        for index, (style_id, title, description) in enumerate(style_items):
+            row, col = divmod(index, 3)
+            style_button = ctk.CTkButton(
+                styles_grid, text=f"{title}\n{description}", anchor="w",
+                height=62, corner_radius=7, fg_color=t["surface_high"],
+                hover_color=t["accent_soft"], border_width=1, border_color=t["border"],
+                text_color=t["text_secondary"], font=ctk.CTkFont(size=12, weight="bold"),
+                command=lambda name=style_id: self._set_visual_style(name)
             )
-            title_lbl.pack(fill="x")
+            style_button.grid(row=row, column=col, sticky="nsew", padx=4, pady=4)
+            self.vstyle_buttons[style_id] = style_button
 
-            desc_lbl = ctk.CTkLabel(
-                card_inner, text=sdesc, font=ctk.CTkFont(size=8),
-                text_color=t["text_muted"], anchor="w"
-            )
-            desc_lbl.pack(fill="x")
-
-            # Mini live preview bar for visual style card
-            prev_canvas = ctk.CTkFrame(card_inner, height=4, fg_color=t["surface_raised"], corner_radius=2)
-            prev_canvas.pack(fill="x", pady=(4, 0))
-
-            def _make_click(s=sid):
-                return lambda e: self._set_visual_style(s)
-            for w in [card, card_inner, title_lbl, desc_lbl, prev_canvas]:
-                w.bind("<Button-1>", _make_click())
-
-            self.vstyle_buttons[sid] = card
-
-        # Equalizer Layout (Mirrored 50-Band vs Segmented Staccato VU)
-        eq_row = ctk.CTkFrame(vst_inner, fg_color="transparent")
-        eq_row.pack(fill="x", pady=(2, 6))
-        ctk.CTkLabel(eq_row, text="Equalizer Layout:", font=ctk.CTkFont(size=9, weight="bold"), text_color=t["text_muted"]).pack(side="left")
+        eq_row = ctk.CTkFrame(vstyles_inner, fg_color="transparent")
+        eq_row.pack(fill="x", pady=(0, 12))
+        ctk.CTkLabel(
+            eq_row, text="Spectrum layout", font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=t["text_secondary"]
+        ).pack(side="left")
         self.opt_eq_layout = ctk.CTkSegmentedButton(
             eq_row, values=["Mirrored 50-Band", "Segmented Staccato VU"],
-            command=self._on_eq_layout_change,
-            height=22, font=ctk.CTkFont(size=9, weight="bold"),
+            command=self._on_eq_layout_change, height=32,
+            font=ctk.CTkFont(size=11, weight="bold"),
             selected_color=t["accent"], selected_hover_color=t["accent_soft"]
         )
         self.opt_eq_layout.set("Mirrored 50-Band")
         self.opt_eq_layout.pack(side="right")
 
-        # ── CONTROLS: Sensitivity, Brightness Cap, Palette (Auto/Fixed) ──
-        tuning_frame = ctk.CTkFrame(vst_inner, fg_color="transparent")
-        tuning_frame.pack(fill="x", pady=(2, 4))
-        tuning_frame.columnconfigure((0, 1), weight=1)
-
-        # Sensitivity Slider
-        sens_box = ctk.CTkFrame(tuning_frame, fg_color="transparent")
-        sens_box.grid(row=0, column=0, sticky="ew", padx=(0, 4), pady=(0, 3))
-        s_hdr = ctk.CTkFrame(sens_box, fg_color="transparent")
-        s_hdr.pack(fill="x")
-        ctk.CTkLabel(s_hdr, text="🎚 Sensitivity:", font=ctk.CTkFont(size=9, weight="bold"), text_color=t["text_muted"]).pack(side="left")
-        self.lbl_sens_val = ctk.CTkLabel(s_hdr, text="1.0x", font=ctk.CTkFont(family="Consolas", size=9, weight="bold"), text_color=t["accent_glow"])
+        tuning_card = make_card(music)
+        card_heading(tuning_card, "Response tuning", "Adjust how strongly the signal moves the lights and how bright effects can get.")
+        tuning_inner = ctk.CTkFrame(tuning_card, fg_color="transparent")
+        tuning_inner.pack(fill="x", padx=18, pady=(0, 16))
+        tuning_inner.grid_columnconfigure((0, 1), weight=1, uniform="tuning")
+        sensitivity_box = ctk.CTkFrame(tuning_inner, fg_color="transparent")
+        sensitivity_box.grid(row=0, column=0, sticky="ew", padx=(0, 12), pady=(0, 12))
+        sensitivity_header = ctk.CTkFrame(sensitivity_box, fg_color="transparent")
+        sensitivity_header.pack(fill="x", pady=(0, 4))
+        ctk.CTkLabel(
+            sensitivity_header, text="Sensitivity", font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=t["text_secondary"]
+        ).pack(side="left")
+        self.lbl_sens_val = ctk.CTkLabel(
+            sensitivity_header, text="1.0×", font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=t["accent_glow"]
+        )
         self.lbl_sens_val.pack(side="right")
         self.gui_sens_slider = ctk.CTkSlider(
-            sens_box, from_=0.2, to=3.0, number_of_steps=28,
-            command=self._on_audio_sensitivity_change,
-            fg_color=t["surface_high"], progress_color=t["accent"],
-            button_color=t["accent_glow"], height=12
+            sensitivity_box, from_=0.2, to=3.0, number_of_steps=28, height=16,
+            command=self._on_audio_sensitivity_change, fg_color=t["surface_high"],
+            progress_color=t["accent"], button_color=t["accent_glow"], button_hover_color=t["accent"]
         )
         self.gui_sens_slider.set(1.0)
-        self.gui_sens_slider.pack(fill="x", pady=(1, 0))
+        self.gui_sens_slider.pack(fill="x", pady=(0, 4))
+        ctk.CTkLabel(
+            sensitivity_box, text="Lower = subtle  ·  Higher = more reactive",
+            font=ctk.CTkFont(size=11), text_color=t["text_muted"]
+        ).pack(anchor="w")
 
-        # Brightness Cap Slider
-        cap_box = ctk.CTkFrame(tuning_frame, fg_color="transparent")
-        cap_box.grid(row=0, column=1, sticky="ew", padx=(4, 0), pady=(0, 3))
-        cap_hdr = ctk.CTkFrame(cap_box, fg_color="transparent")
-        cap_hdr.pack(fill="x")
-        ctk.CTkLabel(cap_hdr, text="🔆 Brightness Cap:", font=ctk.CTkFont(size=9, weight="bold"), text_color=t["text_muted"]).pack(side="left")
-        self.lbl_bright_cap_val = ctk.CTkLabel(cap_hdr, text="100%", font=ctk.CTkFont(family="Consolas", size=9, weight="bold"), text_color=t["accent_glow"])
+        cap_box = ctk.CTkFrame(tuning_inner, fg_color="transparent")
+        cap_box.grid(row=0, column=1, sticky="ew", padx=(12, 0), pady=(0, 12))
+        cap_header = ctk.CTkFrame(cap_box, fg_color="transparent")
+        cap_header.pack(fill="x", pady=(0, 4))
+        ctk.CTkLabel(
+            cap_header, text="Brightness cap", font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=t["text_secondary"]
+        ).pack(side="left")
+        self.lbl_bright_cap_val = ctk.CTkLabel(
+            cap_header, text="100%", font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=t["accent_glow"]
+        )
         self.lbl_bright_cap_val.pack(side="right")
         self.slider_bright_cap = ctk.CTkSlider(
-            cap_box, from_=30, to=100, number_of_steps=70,
-            command=self._on_bright_cap_slide,
-            fg_color=t["surface_high"], progress_color=t["accent"],
-            button_color=t["accent_glow"], height=12
+            cap_box, from_=30, to=100, number_of_steps=70, height=16,
+            command=self._on_bright_cap_slide, fg_color=t["surface_high"],
+            progress_color=t["accent"], button_color=t["accent_glow"], button_hover_color=t["accent"]
         )
         self.slider_bright_cap.set(100)
-        self.slider_bright_cap.pack(fill="x", pady=(1, 0))
+        self.slider_bright_cap.pack(fill="x", pady=(0, 4))
+        ctk.CTkLabel(
+            cap_box, text="A ceiling for audio-reactive brightness",
+            font=ctk.CTkFont(size=11), text_color=t["text_muted"]
+        ).pack(anchor="w")
 
-        # Palette: Auto / Fixed
-        pal_box = ctk.CTkFrame(tuning_frame, fg_color="transparent")
-        pal_box.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(3, 0))
-        pal_hdr = ctk.CTkFrame(pal_box, fg_color="transparent")
-        pal_hdr.pack(fill="x")
-        ctk.CTkLabel(pal_hdr, text="🎨 Palette:", font=ctk.CTkFont(size=9, weight="bold"), text_color=t["text_muted"]).pack(side="left")
+        palette_row = ctk.CTkFrame(tuning_inner, fg_color="transparent")
+        palette_row.grid(row=1, column=0, columnspan=2, sticky="ew")
+        ctk.CTkLabel(
+            palette_row, text="Palette source", font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=t["text_secondary"]
+        ).pack(side="left")
         self.palette_mode_opt = ctk.CTkOptionMenu(
-            pal_hdr, values=["Auto (Key/Chroma)", "Album Art (Windows Media)", "Fixed (Current)"],
-            command=self._on_palette_mode_selected,
-            fg_color=t["surface_high"],
-            button_color=t["surface_raised"],
-            text_color=t["text_primary"],
-            height=20, corner_radius=6, font=ctk.CTkFont(size=9)
+            palette_row, values=["Auto (Key/Chroma)", "Album Art (Windows Media)", "Fixed (Current)"],
+            command=self._on_palette_mode_selected, fg_color=t["surface_raised"],
+            button_color=t["surface_high"], text_color=t["text_primary"],
+            height=34, corner_radius=7, font=ctk.CTkFont(size=12)
         )
         self.palette_mode_opt.set("Auto (Key/Chroma)")
         self.palette_mode_opt.pack(side="right")
 
-        # ── CLICK-TEST VISUAL CALIBRATION & LOOKAHEAD ──
-        calib_row = ctk.CTkFrame(vst_inner, fg_color="transparent")
-        calib_row.pack(fill="x", pady=(4, 0))
-
-        l_hdr = ctk.CTkFrame(calib_row, fg_color="transparent")
-        l_hdr.pack(fill="x")
-        ctk.CTkLabel(l_hdr, text="⏱ Latency Lookahead:", font=ctk.CTkFont(size=9, weight="bold"), text_color=t["text_muted"]).pack(side="left")
-        self.lbl_lookahead_val = ctk.CTkLabel(l_hdr, text="0ms", font=ctk.CTkFont(family="Consolas", size=9, weight="bold"), text_color="#10b981")
-        self.lbl_lookahead_val.pack(side="left", padx=4)
-
-        self.lbl_transition_val = ctk.CTkLabel(l_hdr, text="Transition: 0ms (Punchy)", font=ctk.CTkFont(size=8, weight="bold"), text_color=t["text_secondary"])
-        self.lbl_transition_val.pack(side="left", padx=6)
-
+        latency_card = make_card(music)
+        card_heading(latency_card, "Timing & calibration", "A little lookahead can compensate for output delay.")
+        latency_inner = ctk.CTkFrame(latency_card, fg_color="transparent")
+        latency_inner.pack(fill="x", padx=18, pady=(0, 16))
+        latency_header = ctk.CTkFrame(latency_inner, fg_color="transparent")
+        latency_header.pack(fill="x", pady=(0, 6))
+        ctk.CTkLabel(
+            latency_header, text="Latency lookahead", font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=t["text_secondary"]
+        ).pack(side="left")
+        self.lbl_lookahead_val = ctk.CTkLabel(
+            latency_header, text="0 ms", font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#34d399"
+        )
+        self.lbl_lookahead_val.pack(side="left", padx=(8, 0))
+        self.lbl_transition_val = ctk.CTkLabel(
+            latency_header, text="Transition: 0 ms", font=ctk.CTkFont(size=11),
+            text_color=t["text_muted"]
+        )
+        self.lbl_transition_val.pack(side="left", padx=(12, 0))
         self.btn_click_test = ctk.CTkButton(
-            l_hdr, text="🎯 Click-Test Flash", width=95, height=20,
-            fg_color=t["surface_high"], hover_color=t["accent"],
-            text_color="#10b981", font=ctk.CTkFont(size=8, weight="bold"),
-            corner_radius=4, command=self._toggle_click_test
+            latency_header, text="Run click test", width=120, height=32,
+            fg_color=t["surface_raised"], hover_color=t["surface_high"],
+            text_color=t["text_primary"], font=ctk.CTkFont(size=11, weight="bold"),
+            border_width=1, border_color=t["border"], corner_radius=7,
+            command=self._toggle_click_test
         )
         self.btn_click_test.pack(side="right")
-
-        # Measured light delay recommendation display
         self.lbl_measured_delay = ctk.CTkLabel(
-            calib_row,
-            text="Measured light delay: -- ms (Set Voicemeeter A1 delay: ~-- ms)",
-            font=ctk.CTkFont(size=8, weight="bold"),
-            text_color="#38bdf8",
-            anchor="w"
+            latency_inner, text="Measured light delay: — ms",
+            font=ctk.CTkFont(size=11), text_color=t["text_muted"], anchor="w"
         )
-        self.lbl_measured_delay.pack(fill="x", pady=(2, 2))
-
+        self.lbl_measured_delay.pack(fill="x", pady=(0, 8))
         self.gui_lookahead_slider = ctk.CTkSlider(
-            calib_row, from_=0, to=250, number_of_steps=50,
-            command=self._on_lookahead_slide,
-            fg_color=t["surface_high"], progress_color="#10b981",
-            button_color="#34d399", height=12
+            latency_inner, from_=0, to=250, number_of_steps=50, height=16,
+            command=self._on_lookahead_slide, fg_color=t["surface_high"],
+            progress_color="#34d399", button_color="#6ee7b7"
         )
         self.gui_lookahead_slider.set(0)
-        self.gui_lookahead_slider.pack(fill="x", pady=(1, 0))
-
-        # ── 7. DYNAMIC EFFECTS CARD ──────────────────────────────────────────
-        self.fx_card = ctk.CTkFrame(
-            self.scroll_body, fg_color=t["surface"],
-            corner_radius=16, border_width=1, border_color=t["border"]
+        self.gui_lookahead_slider.pack(fill="x")
+        self.btn_tap_sync = ctk.CTkButton(
+            latency_inner, text="Tap 4 beats to calibrate", height=34, corner_radius=7,
+            fg_color=t["surface_raised"], hover_color=t["surface_high"],
+            border_width=1, border_color=t["border"], text_color=t["text_secondary"],
+            font=ctk.CTkFont(size=11, weight="bold"), command=self._handle_tap_sync
         )
-        self.fx_card.pack(fill="x", pady=(0, 12))
-        self.card_frames.append(self.fx_card)
+        self.btn_tap_sync.pack(anchor="e", pady=(10, 0))
 
-        fx_inner = ctk.CTkFrame(self.fx_card, fg_color="transparent")
-        fx_inner.pack(fill="x", padx=16, pady=14)
+        accents_row = ctk.CTkFrame(latency_inner, fg_color="transparent")
+        accents_row.pack(fill="x", pady=(14, 0))
+        accent_names = [
+            ("beat_flash", "Beat accents"),
+            ("hat_sparkle", "Hi-hat sparkle"),
+            ("build_tension", "Build tension"),
+            ("drop_bloom", "Drop bloom"),
+        ]
+        self.accent_states = getattr(self, "accent_states", {
+            "beat_flash": True, "hat_sparkle": True, "build_tension": True, "drop_bloom": True
+        })
+        for index, (accent_id, label) in enumerate(accent_names):
+            accent_button = ctk.CTkButton(
+                accents_row, text=label, height=32, corner_radius=7,
+                fg_color=t["accent_soft"], hover_color=t["surface_high"],
+                border_width=1, border_color=t["border"], text_color=t["text_primary"],
+                font=ctk.CTkFont(size=11, weight="bold"),
+                command=lambda name=accent_id: self._toggle_accent(name)
+            )
+            accent_button.pack(side="left", fill="x", expand=True, padx=(0 if index == 0 else 6, 0))
+            self.accent_buttons[accent_id] = accent_button
 
+        # ── EFFECTS ─────────────────────────────────────────────────────────
+        effects = self.page_views["effects"]
+        page_heading(
+            effects, "Atmosphere library", "Give the room a different texture",
+            "Original animated fields for the L930 and gentle ambient looks for the L900."
+        )
+        self.fx_card = make_card(effects)
         self.fx_header_label = ctk.CTkLabel(
-            fx_inner, text="DYNAMIC EFFECTS",
-            font=ctk.CTkFont(size=9, weight="bold"), text_color=t["text_muted"]
+            self.fx_card, text="EFFECTS", anchor="w",
+            font=ctk.CTkFont(size=14, weight="bold"), text_color=t["text_primary"]
         )
-        self.fx_header_label.pack(anchor="w", pady=(0, 10))
-
-        self.fx_grid_frame = ctk.CTkFrame(fx_inner, fg_color="transparent")
-        self.fx_grid_frame.pack(fill="x")
-        self.fx_grid_frame.columnconfigure((0, 1), weight=1, uniform="fx")
-
+        self.fx_header_label.pack(fill="x", padx=18, pady=(16, 4))
+        self.fx_grid_frame = ctk.CTkFrame(self.fx_card, fg_color="transparent")
+        self.fx_grid_frame.pack(fill="x", padx=12, pady=(8, 16))
         self._render_effects_list()
 
-        # ── 8. PRESETS CARD ──────────────────────────────────────────────────
-        self.preset_card = ctk.CTkFrame(
-            self.scroll_body, fg_color=t["surface"],
-            corner_radius=16, border_width=1, border_color=t["border"]
+        # ── DIAGNOSTICS ─────────────────────────────────────────────────────
+        diagnostics = self.page_views["diagnostics"]
+        page_heading(
+            diagnostics, "System health", "Performance & connection",
+            "Watch network timing and frame delivery without crowding the lighting controls."
         )
-        self.preset_card.pack(fill="x", pady=(0, 12))
-        self.card_frames.append(self.preset_card)
-
-        preset_inner = ctk.CTkFrame(self.preset_card, fg_color="transparent")
-        preset_inner.pack(fill="x", padx=16, pady=14)
-
-        self.lbl_presets_tag = ctk.CTkLabel(
-            preset_inner, text="PRESETS",
-            font=ctk.CTkFont(size=9, weight="bold"), text_color=t["text_muted"]
-        )
-        self.lbl_presets_tag.pack(anchor="w", pady=(0, 10))
-
-        presets_grid = ctk.CTkFrame(preset_inner, fg_color="transparent")
-        presets_grid.pack(fill="x")
-        self._register_responsive_grid(presets_grid)
-        presets_grid.columnconfigure((0, 1), weight=1, uniform="pr")
-
-        modes_list = list(self.hub.config.get("modes", {}).keys()) or [
-            "work", "deep_focus", "coding_night", "reading", "sunset", "dinner", "movie", "sleep"
-        ]
-        for idx, name in enumerate(modes_list):
-            r, c = divmod(idx, 2)
-            dot_col = MODE_COLORS.get(name, t["text_muted"])
-            display = name.replace("_", " ").title()
-            btn = self._make_item_button(presets_grid, display, dot_col, lambda n=name: self._apply_mode(n))
-            btn.grid(row=r, column=c, padx=3, pady=3, sticky="nsew")
-            self.buttons[f"mode_{name}"] = btn
-
-        # ── 9. ADVANCED COLOR WHEEL PICKER BUTTON ────────────────────────────
-        self.btn_picker = ctk.CTkButton(
-            self.scroll_body, text="🎨  Advanced Color Wheel Picker",
-            fg_color=t["surface_raised"], hover_color=t["accent_soft"],
-            text_color=t["text_primary"],
-            border_width=1, border_color=t["border_glow"],
-            font=ctk.CTkFont(size=12, weight="bold"),
-            command=self._show_picker,
-            corner_radius=14, height=42
-        )
-        self.btn_picker.pack(fill="x", pady=(0, 12))
-
-        # ── 10. TELEMETRY & DIAGNOSTICS CARD ─────────────────────────────────
-        self.diag_card = ctk.CTkFrame(
-            self.scroll_body, fg_color=t["surface"],
-            corner_radius=14, border_width=1, border_color=t["border"]
-        )
-        self.diag_card.pack(fill="x", pady=(0, 12))
-        self.card_frames.append(self.diag_card)
-
-        diag_inner = ctk.CTkFrame(self.diag_card, fg_color="transparent")
-        diag_inner.pack(fill="x", padx=14, pady=10)
-
-        diag_hdr = ctk.CTkFrame(diag_inner, fg_color="transparent")
-        diag_hdr.pack(fill="x", pady=(0, 6))
-        self.lbl_diag_tag = ctk.CTkLabel(
-            diag_hdr, text="SYSTEM TELEMETRY (1s LIVE)",
-            font=ctk.CTkFont(size=8, weight="bold"), text_color=t["text_muted"]
-        )
-        self.lbl_diag_tag.pack(side="left")
-
+        self.diag_card = make_card(diagnostics)
+        diag_top = ctk.CTkFrame(self.diag_card, fg_color="transparent")
+        diag_top.pack(fill="x", padx=18, pady=(18, 12))
+        ctk.CTkLabel(
+            diag_top, text="Transport telemetry", font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=t["text_primary"]
+        ).pack(side="left")
         self.gui_diag_status = ctk.CTkLabel(
-            diag_hdr, text="● Connected", font=ctk.CTkFont(size=8, weight="bold"), text_color="#10b981"
+            diag_top, text="● Connecting", font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#fbbf24"
         )
         self.gui_diag_status.pack(side="right")
 
-        metrics_row = ctk.CTkFrame(diag_inner, fg_color="transparent")
-        metrics_row.pack(fill="x")
-        metrics_row.columnconfigure((0, 1, 2), weight=1, uniform="m")
+        metrics_row = ctk.CTkFrame(self.diag_card, fg_color="transparent")
+        metrics_row.pack(fill="x", padx=14, pady=(0, 16))
+        metrics_row.grid_columnconfigure((0, 1, 2), weight=1, uniform="metrics")
+        metric_specs = [
+            ("send", "SEND RATE", "--", "#34d399"),
+            ("rtt", "ROUND-TRIP", "-- ms", t["accent_glow"]),
+            ("drop", "FRAME DROPS", "--%", "#fbbf24"),
+        ]
+        for index, (key, label, initial, color) in enumerate(metric_specs):
+            metric = ctk.CTkFrame(
+                metrics_row, fg_color=t["surface_raised"], corner_radius=8,
+                border_width=1, border_color=t["border"]
+            )
+            metric.grid(row=0, column=index, sticky="nsew", padx=4)
+            ctk.CTkLabel(
+                metric, text=label, font=ctk.CTkFont(size=10, weight="bold"),
+                text_color=t["text_muted"]
+            ).pack(anchor="w", padx=14, pady=(14, 5))
+            value = ctk.CTkLabel(
+                metric, text=initial, font=ctk.CTkFont(size=24, weight="bold"),
+                text_color=color
+            )
+            value.pack(anchor="w", padx=14)
+            if key == "send":
+                self.gui_fps_val = value
+                self.gui_render_val = ctk.CTkLabel(
+                    metric, text="Render: — calc", font=ctk.CTkFont(size=11),
+                    text_color=t["text_secondary"]
+                )
+                self.gui_render_val.pack(anchor="w", padx=14, pady=(4, 14))
+            elif key == "rtt":
+                self.gui_rtt_val = value
+                self.gui_pacing_val = ctk.CTkLabel(
+                    metric, text="Total: — ms", font=ctk.CTkFont(size=11),
+                    text_color=t["text_secondary"]
+                )
+                self.gui_pacing_val.pack(anchor="w", padx=14, pady=(4, 14))
+            else:
+                self.gui_drop_val = value
+                ctk.CTkLabel(
+                    metric, text="Lower is better", font=ctk.CTkFont(size=11),
+                    text_color=t["text_secondary"]
+                ).pack(anchor="w", padx=14, pady=(4, 14))
 
-        # Metric 1: FPS
-        m1 = ctk.CTkFrame(metrics_row, fg_color=t["surface_raised"], corner_radius=6)
-        m1.grid(row=0, column=0, padx=2, sticky="nsew")
-        ctk.CTkLabel(m1, text="SEND FPS", font=ctk.CTkFont(size=7, weight="bold"), text_color=t["text_muted"]).pack(pady=(4, 0))
-        self.gui_fps_val = ctk.CTkLabel(m1, text="--", font=ctk.CTkFont(family="Consolas", size=12, weight="bold"), text_color="#10b981")
-        self.gui_fps_val.pack()
-        self.gui_render_val = ctk.CTkLabel(m1, text="30 calc", font=ctk.CTkFont(size=7), text_color=t["text_secondary"])
-        self.gui_render_val.pack(pady=(0, 3))
+        details = make_card(diagnostics)
+        card_heading(details, "Connection notes")
+        info = ctk.CTkFrame(details, fg_color="transparent")
+        info.pack(fill="x", padx=18, pady=(0, 18))
+        for label, value in (
+            ("Control path", "Local network  ·  no per-frame cloud round trip"),
+            ("Web dashboard", f"http://{self.local_ip}:{self.hub.config.get('web', {}).get('port', 8765)}"),
+            ("Configured devices", ", ".join(getattr(ctx, "name", key) for key, ctx in self.hub.devices.items()) or "None"),
+        ):
+            row = ctk.CTkFrame(info, fg_color="transparent")
+            row.pack(fill="x", pady=5)
+            ctk.CTkLabel(
+                row, text=label, width=150, anchor="w",
+                font=ctk.CTkFont(size=12, weight="bold"), text_color=t["text_muted"]
+            ).pack(side="left")
+            ctk.CTkLabel(
+                row, text=value, anchor="w", wraplength=760,
+                font=ctk.CTkFont(size=12), text_color=t["text_secondary"]
+            ).pack(side="left", fill="x", expand=True)
 
-        # Metric 2: RTT Latency
-        m2 = ctk.CTkFrame(metrics_row, fg_color=t["surface_raised"], corner_radius=6)
-        m2.grid(row=0, column=1, padx=2, sticky="nsew")
-        ctk.CTkLabel(m2, text="RTT LATENCY", font=ctk.CTkFont(size=7, weight="bold"), text_color=t["text_muted"]).pack(pady=(4, 0))
-        self.gui_rtt_val = ctk.CTkLabel(m2, text="-- ms", font=ctk.CTkFont(family="Consolas", size=12, weight="bold"), text_color=t["accent_glow"])
-        self.gui_rtt_val.pack()
-        self.gui_pacing_val = ctk.CTkLabel(m2, text="auto pace", font=ctk.CTkFont(size=7), text_color=t["text_secondary"])
-        self.gui_pacing_val.pack(pady=(0, 3))
-
-        # Metric 3: Drops
-        m3 = ctk.CTkFrame(metrics_row, fg_color=t["surface_raised"], corner_radius=6)
-        m3.grid(row=0, column=2, padx=2, sticky="nsew")
-        ctk.CTkLabel(m3, text="DROP RATE", font=ctk.CTkFont(size=7, weight="bold"), text_color=t["text_muted"]).pack(pady=(4, 0))
-        self.gui_drop_val = ctk.CTkLabel(m3, text="--%", font=ctk.CTkFont(family="Consolas", size=12, weight="bold"), text_color="#f59e0b")
-        self.gui_drop_val.pack()
-        ctk.CTkLabel(m3, text="zero lag", font=ctk.CTkFont(size=7), text_color=t["text_secondary"]).pack(pady=(0, 3))
-
-        # ── 11. BOTTOM STATUS BAR ────────────────────────────────────────────
-        self.status_bar = ctk.CTkFrame(self.root_frame, height=28, fg_color=t["surface"], corner_radius=0)
+        # Persistent status bar along the bottom edge.
+        self.status_bar = ctk.CTkFrame(self.root_frame, height=32, fg_color=t["surface"], corner_radius=0)
         self.status_bar.pack(fill="x", side="bottom")
-
         port = self.hub.config.get("web", {}).get("port", 8765)
         web_url = f"http://{self.local_ip}:{port}"
-
         self._bar_dev = ctk.CTkLabel(
-            self.status_bar,
-            text=f"  ⚡ Dual-Light Hub Ready  ·  📱 Phone Web App: {web_url}",
-            font=ctk.CTkFont(family="Consolas", size=9),
-            text_color=t["accent_glow"]
+            self.status_bar, text=f"  Summer Light Hub  ·  Phone dashboard: {web_url}",
+            font=ctk.CTkFont(size=10), text_color=t["text_muted"], anchor="w"
         )
-        self._bar_dev.pack(side="left", padx=8)
-
+        self._bar_dev.pack(side="left", padx=10)
         self._bar_diag = ctk.CTkLabel(
-            self.status_bar, text="[Tx: -- FPS · --ms · --% drop]  ",
-            font=ctk.CTkFont(family="Consolas", size=9, weight="bold"),
-            text_color="#10b981"
+            self.status_bar, text="TX  — FPS  ·  — ms  ·  —% drop",
+            font=ctk.CTkFont(size=10, weight="bold"), text_color="#34d399", anchor="e"
         )
-        self._bar_diag.pack(side="right", padx=8)
+        self._bar_diag.pack(side="right", padx=10)
 
-        # Bind mousewheel recursively so scrolling works anywhere over buttons/labels
-        self._bind_mousewheel_recursive(self.scroll_body)
-
+        self._switch_page("overview")
         self._sync_view_to_device()
-        self.app.after(1000, self._periodic_telemetry_tick)
-        self.app.after(100, self._periodic_strip_preview_tick)
+        self._bind_mousewheel_recursive(self.scroll_body)
+        self.app.after(900, self._periodic_telemetry_tick)
+        self.app.after(120, self._periodic_strip_preview_tick)
+
+    def _switch_page(self, page_name: str):
+        """Switch the visible workspace page without rebuilding its controls."""
+        if page_name not in getattr(self, "page_views", {}):
+            return
+        for page in self.page_views.values():
+            try:
+                page.pack_forget()
+            except Exception:
+                pass
+        self.scroll_body = self.page_views[page_name]
+        self.scroll_body.pack(fill="both", expand=True)
+        self.active_page = page_name
+        for key, button in getattr(self, "nav_buttons", {}).items():
+            selected = key == page_name
+            try:
+                button.configure(
+                    fg_color=self.theme["accent_soft"] if selected else "transparent",
+                    text_color=self.theme["text_primary"] if selected else self.theme["text_secondary"],
+                    border_width=1 if selected else 0,
+                    border_color=self.theme["accent"] if selected else self.theme["border"]
+                )
+            except Exception:
+                pass
+        self._bind_mousewheel_recursive(self.scroll_body)
+        try:
+            self.app.after(100, self._reflow_responsive_grids)
+        except Exception:
+            pass
 
     def _make_item_button(self, parent, label: str, dot_color: str, cmd):
         t = self.theme
         frame = ctk.CTkFrame(
             parent, fg_color=t["surface_raised"],
             border_width=1, border_color=t["border"],
-            corner_radius=10, cursor="hand2"
+            corner_radius=8, cursor="hand2"
         )
         frame.bind("<Button-1>", lambda e: cmd())
 
         inner = ctk.CTkFrame(frame, fg_color="transparent")
-        inner.pack(expand=True, fill="both", padx=10, pady=7)
+        inner.pack(expand=True, fill="both", padx=12, pady=10)
         inner.bind("<Button-1>", lambda e: cmd())
 
-        dot = ctk.CTkLabel(inner, text="●", font=ctk.CTkFont(size=8), text_color=dot_color)
+        dot = ctk.CTkLabel(inner, text="●", font=ctk.CTkFont(size=10), text_color=dot_color)
         dot.pack(side="left", padx=(0, 6))
         dot.bind("<Button-1>", lambda e: cmd())
 
-        lbl = ctk.CTkLabel(inner, text=label, font=ctk.CTkFont(size=10, weight="bold"), text_color=t["text_primary"])
+        lbl = ctk.CTkLabel(inner, text=label, font=ctk.CTkFont(size=13, weight="bold"), text_color=t["text_primary"])
         lbl.pack(side="left")
         lbl.bind("<Button-1>", lambda e: cmd())
 
@@ -1212,14 +1341,14 @@ class TapoGUI:
         sp_box.grid(row=0, column=0, sticky="ew", padx=(0, 4))
         sp_hdr = ctk.CTkFrame(sp_box, fg_color="transparent")
         sp_hdr.pack(fill="x")
-        ctk.CTkLabel(sp_hdr, text="⚡ Speed:", font=ctk.CTkFont(size=9, weight="bold"), text_color=t["text_muted"]).pack(side="left")
+        ctk.CTkLabel(sp_hdr, text="⚡ Speed:", font=ctk.CTkFont(size=12, weight="bold"), text_color=t["text_muted"]).pack(side="left")
         self.lbl_fx_speed = ctk.CTkLabel(sp_hdr, text="1.0x", font=ctk.CTkFont(family="Consolas", size=9, weight="bold"), text_color=t["accent_glow"])
         self.lbl_fx_speed.pack(side="right")
         self.slider_fx_speed = ctk.CTkSlider(
             sp_box, from_=0.2, to=3.0, number_of_steps=28,
             command=self._on_fx_speed_slide,
             fg_color=t["surface_high"], progress_color=t["accent"],
-            button_color=t["accent_glow"], height=12
+            button_color=t["accent_glow"], height=14
         )
         self.slider_fx_speed.set(1.0)
         self.slider_fx_speed.pack(fill="x", pady=(1, 0))
@@ -1229,13 +1358,13 @@ class TapoGUI:
         pal_box.grid(row=0, column=1, sticky="ew", padx=(4, 0))
         pal_hdr = ctk.CTkFrame(pal_box, fg_color="transparent")
         pal_hdr.pack(fill="x")
-        ctk.CTkLabel(pal_hdr, text="🎨 Palette:", font=ctk.CTkFont(size=9, weight="bold"), text_color=t["text_muted"]).pack(side="left")
+        ctk.CTkLabel(pal_hdr, text="🎨 Palette:", font=ctk.CTkFont(size=12, weight="bold"), text_color=t["text_muted"]).pack(side="left")
         pal_names = ["sunset", "forest", "fire", "pastel", "tide", "dusk", "ember", "warm_mono"]
         self.opt_fx_pal = ctk.CTkOptionMenu(
             pal_box, values=pal_names,
             command=self._on_fx_palette_selected,
             fg_color=t["surface_high"], button_color=t["surface_raised"],
-            text_color=t["text_primary"], height=20, corner_radius=6,
+            text_color=t["text_primary"], height=30, corner_radius=6,
             font=ctk.CTkFont(size=9)
         )
         self.opt_fx_pal.set("sunset")
@@ -1250,14 +1379,14 @@ class TapoGUI:
         self.box_fx_tail = ctk.CTkFrame(self.fx_specific_frame, fg_color="transparent")
         tail_hdr = ctk.CTkFrame(self.box_fx_tail, fg_color="transparent")
         tail_hdr.pack(fill="x")
-        ctk.CTkLabel(tail_hdr, text="☄ Tail Length:", font=ctk.CTkFont(size=9, weight="bold"), text_color=t["text_muted"]).pack(side="left")
+        ctk.CTkLabel(tail_hdr, text="☄ Tail Length:", font=ctk.CTkFont(size=12, weight="bold"), text_color=t["text_muted"]).pack(side="left")
         self.lbl_fx_tail = ctk.CTkLabel(tail_hdr, text="1.0x", font=ctk.CTkFont(family="Consolas", size=9, weight="bold"), text_color=t["accent_glow"])
         self.lbl_fx_tail.pack(side="right")
         self.slider_fx_tail = ctk.CTkSlider(
             self.box_fx_tail, from_=0.3, to=3.0, number_of_steps=27,
             command=self._on_fx_tail_slide,
             fg_color=t["surface_high"], progress_color=t["accent"],
-            button_color=t["accent_glow"], height=12
+            button_color=t["accent_glow"], height=14
         )
         self.slider_fx_tail.set(1.0)
         self.slider_fx_tail.pack(fill="x", pady=(1, 0))
@@ -1266,14 +1395,14 @@ class TapoGUI:
         self.box_fx_density = ctk.CTkFrame(self.fx_specific_frame, fg_color="transparent")
         dens_hdr = ctk.CTkFrame(self.box_fx_density, fg_color="transparent")
         dens_hdr.pack(fill="x")
-        ctk.CTkLabel(dens_hdr, text="✨ Density:", font=ctk.CTkFont(size=9, weight="bold"), text_color=t["text_muted"]).pack(side="left")
+        ctk.CTkLabel(dens_hdr, text="✨ Density:", font=ctk.CTkFont(size=12, weight="bold"), text_color=t["text_muted"]).pack(side="left")
         self.lbl_fx_density = ctk.CTkLabel(dens_hdr, text="1.0x", font=ctk.CTkFont(family="Consolas", size=9, weight="bold"), text_color=t["accent_glow"])
         self.lbl_fx_density.pack(side="right")
         self.slider_fx_density = ctk.CTkSlider(
             self.box_fx_density, from_=0.2, to=3.0, number_of_steps=28,
             command=self._on_fx_density_slide,
             fg_color=t["surface_high"], progress_color=t["accent"],
-            button_color=t["accent_glow"], height=12
+            button_color=t["accent_glow"], height=14
         )
         self.slider_fx_density.set(1.0)
         self.slider_fx_density.pack(fill="x", pady=(1, 0))
@@ -1282,14 +1411,14 @@ class TapoGUI:
         self.box_fx_width = ctk.CTkFrame(self.fx_specific_frame, fg_color="transparent")
         width_hdr = ctk.CTkFrame(self.box_fx_width, fg_color="transparent")
         width_hdr.pack(fill="x")
-        ctk.CTkLabel(width_hdr, text="🌊 Wave Width:", font=ctk.CTkFont(size=9, weight="bold"), text_color=t["text_muted"]).pack(side="left")
+        ctk.CTkLabel(width_hdr, text="🌊 Wave Width:", font=ctk.CTkFont(size=12, weight="bold"), text_color=t["text_muted"]).pack(side="left")
         self.lbl_fx_width = ctk.CTkLabel(width_hdr, text="1.0x", font=ctk.CTkFont(family="Consolas", size=9, weight="bold"), text_color=t["accent_glow"])
         self.lbl_fx_width.pack(side="right")
         self.slider_fx_width = ctk.CTkSlider(
             self.box_fx_width, from_=0.3, to=3.0, number_of_steps=27,
             command=self._on_fx_width_slide,
             fg_color=t["surface_high"], progress_color=t["accent"],
-            button_color=t["accent_glow"], height=12
+            button_color=t["accent_glow"], height=14
         )
         self.slider_fx_width.set(1.0)
         self.slider_fx_width.pack(fill="x", pady=(1, 0))
@@ -1298,14 +1427,14 @@ class TapoGUI:
         self.box_fx_flash = ctk.CTkFrame(self.fx_specific_frame, fg_color="transparent")
         flash_hdr = ctk.CTkFrame(self.box_fx_flash, fg_color="transparent")
         flash_hdr.pack(fill="x")
-        ctk.CTkLabel(flash_hdr, text="⚡ Flash Pwr:", font=ctk.CTkFont(size=9, weight="bold"), text_color=t["text_muted"]).pack(side="left")
+        ctk.CTkLabel(flash_hdr, text="⚡ Flash Pwr:", font=ctk.CTkFont(size=12, weight="bold"), text_color=t["text_muted"]).pack(side="left")
         self.lbl_fx_flash = ctk.CTkLabel(flash_hdr, text="1.0x", font=ctk.CTkFont(family="Consolas", size=9, weight="bold"), text_color=t["accent_glow"])
         self.lbl_fx_flash.pack(side="right")
         self.slider_fx_flash = ctk.CTkSlider(
             self.box_fx_flash, from_=0.2, to=2.5, number_of_steps=23,
             command=self._on_fx_flash_slide,
             fg_color=t["surface_high"], progress_color=t["accent"],
-            button_color=t["accent_glow"], height=12
+            button_color=t["accent_glow"], height=14
         )
         self.slider_fx_flash.set(1.0)
         self.slider_fx_flash.pack(fill="x", pady=(1, 0))
@@ -1361,7 +1490,7 @@ class TapoGUI:
                 hdr_text = f"▼  {grp_name.upper()} ({len(eff_names)})" if not is_occasional else f"▶  {grp_name.upper()} ({len(eff_names)}) (COLLAPSED)"
                 grp_lbl = ctk.CTkLabel(
                     grp_hdr_frame, text=hdr_text,
-                    font=ctk.CTkFont(size=8, weight="bold"),
+                    font=ctk.CTkFont(size=11, weight="bold"),
                     text_color=t["text_muted"], anchor="w"
                 )
                 grp_lbl.pack(side="left")
@@ -1547,34 +1676,98 @@ class TapoGUI:
         self._sync_view_to_device()
 
     def _apply_theme(self, theme_key: str):
+        """Update accent colours without repainting the entire UI as one glow."""
         if theme_key not in THEMES or theme_key == self.current_theme_key:
             return
         self.current_theme_key = theme_key
-        t = THEMES[theme_key]
-        self.theme = t
+        self.theme = THEMES[theme_key]
+        t = self.theme
 
-        # Root & Main components
-        self.app.configure(fg_color=t["bg"])
-        self.root_frame.configure(fg_color=t["bg"], border_color=t["border"])
-        self.tabs_bar.configure(fg_color=t["surface"])
-        self.hero_card.configure(fg_color=t["hero_tint"], border_color=t["hero_border"])
-        self.bright_card.configure(fg_color=t["surface"], border_color=t["border"])
-        self.sync_card.configure(fg_color=t["surface"], border_color=t["border"])
-        self.vstyles_frame.configure(fg_color=t["surface_raised"])
-        self.fx_card.configure(fg_color=t["surface"], border_color=t["border"])
-        self.preset_card.configure(fg_color=t["surface"], border_color=t["border"])
-        self.btn_picker.configure(fg_color=t["surface_raised"], border_color=t["border_glow"])
-        self.diag_card.configure(fg_color=t["surface"], border_color=t["border"])
-        self.status_bar.configure(fg_color=t["surface"])
-
-        # Accent glows & buttons
-        self.btn_top_power.configure(fg_color=t["accent_soft"], border_color=t["power_glow"])
-        self.btn_hero_power.configure(fg_color=t["accent_soft"], border_color=t["power_glow"])
-        self.bright_slider.configure(progress_color=t["accent"], button_color=t["accent_glow"], button_hover_color=t["accent"])
-        self.bright_val_label.configure(text_color=t["accent_glow"])
-        self.hero_tag.configure(text_color=t["accent_glow"])
-        self.hero_title.configure(text_color=t["text_primary"])
-        self._bar_dev.configure(text_color=t["accent_glow"])
+        for name in ("app",):
+            widget = getattr(self, name, None)
+            if widget:
+                try:
+                    widget.configure(fg_color=t["bg"])
+                except Exception:
+                    pass
+        for name in ("root_frame", "header"):
+            widget = getattr(self, name, None)
+            if widget:
+                try:
+                    widget.configure(fg_color=t["bg"])
+                except Exception:
+                    pass
+        for name in ("nav_rail", "tabs_bar", "bright_card", "sync_card", "fx_card", "preset_card", "diag_card", "status_bar", "vstyles_frame"):
+            widget = getattr(self, name, None)
+            if widget:
+                try:
+                    widget.configure(fg_color=t["surface"], border_color=t["border"])
+                except Exception:
+                    try:
+                        widget.configure(fg_color=t["surface"])
+                    except Exception:
+                        pass
+        for name in ("hero_card",):
+            widget = getattr(self, name, None)
+            if widget:
+                try:
+                    widget.configure(fg_color=t["hero_tint"], border_color=t["hero_border"])
+                except Exception:
+                    pass
+        for name in ("btn_top_power", "btn_hero_power"):
+            widget = getattr(self, name, None)
+            if widget:
+                try:
+                    widget.configure(fg_color=t["accent_soft"], border_color=t["accent"])
+                except Exception:
+                    pass
+        for name in ("bright_slider", "gui_sens_slider", "slider_bright_cap", "gui_lookahead_slider"):
+            widget = getattr(self, name, None)
+            if widget:
+                try:
+                    widget.configure(
+                        fg_color=t["surface_high"], progress_color=t["accent"],
+                        button_color=t["accent_glow"], button_hover_color=t["accent"]
+                    )
+                except Exception:
+                    pass
+        for name in ("bright_val_label", "hero_tag", "gui_key_pill", "lbl_sens_val", "lbl_bright_cap_val"):
+            widget = getattr(self, name, None)
+            if widget:
+                try:
+                    widget.configure(text_color=t["accent_glow"])
+                except Exception:
+                    pass
+        for key, button in getattr(self, "nav_buttons", {}).items():
+            try:
+                selected = key == getattr(self, "active_page", "overview")
+                button.configure(
+                    fg_color=t["accent_soft"] if selected else "transparent",
+                    text_color=t["text_primary"] if selected else t["text_secondary"],
+                    border_width=1 if selected else 0,
+                    border_color=t["accent"] if selected else t["border"]
+                )
+            except Exception:
+                pass
+        for key, button in getattr(self, "tab_buttons", {}).items():
+            try:
+                selected = key == self.current_dev_id
+                button.configure(
+                    fg_color=t["accent_soft"] if selected else "transparent",
+                    text_color=t["text_primary"] if selected else t["text_secondary"],
+                    border_width=1 if selected else 0,
+                    border_color=t["accent"] if selected else t["border"]
+                )
+            except Exception:
+                pass
+        for widget in getattr(self, "card_frames", []):
+            try:
+                if widget is self.hero_card:
+                    widget.configure(fg_color=t["hero_tint"], border_color=t["hero_border"])
+                else:
+                    widget.configure(border_color=t["border"])
+            except Exception:
+                pass
 
     def _sync_view_to_device(self):
         if self.current_dev_id == "all":
@@ -1606,12 +1799,12 @@ class TapoGUI:
         if any_on:
             self.hero_status_dot.configure(text_color="#10b981")
             self.hero_status_lbl.configure(text="Active", text_color=self.theme["text_primary"])
-            self.btn_top_power.configure(fg_color=self.theme["accent_soft"], border_color=self.theme["power_glow"], text="⏻")
+            self.btn_top_power.configure(fg_color=self.theme["accent_soft"], border_color=self.theme["power_glow"], text="⏻  Power")
             self.btn_hero_power.configure(fg_color=self.theme["accent_soft"], border_color=self.theme["power_glow"])
         else:
             self.hero_status_dot.configure(text_color=self.theme["text_muted"])
             self.hero_status_lbl.configure(text="Idle / Off", text_color=self.theme["text_muted"])
-            self.btn_top_power.configure(fg_color="#3a1111", border_color="#f43f5e", text="⏻")
+            self.btn_top_power.configure(fg_color="#3a1111", border_color="#f43f5e", text="⏻  Power")
             self.btn_hero_power.configure(fg_color="#3a1111", border_color="#f43f5e")
 
         # Quick level button highlights
@@ -2201,14 +2394,16 @@ class TapoGUI:
         self.btn_tap_sync.configure(text="🎯 Tap", text_color="#10b981")
 
     def _show_picker(self):
-        if self.active_picker: return
-        self.scroll_body.pack_forget()
+        if self.active_picker:
+            return
+        try:
+            self.content_area.pack_forget()
+        except Exception:
+            pass
         self.active_picker = ModernColorPicker(
-            self.root_frame,
-            on_apply=self._handle_picker_apply,
-            on_cancel=self._hide_picker
+            self.main_column, on_apply=self._handle_picker_apply, on_cancel=self._hide_picker
         )
-        self.active_picker.pack(fill="both", expand=True, padx=16, pady=16)
+        self.active_picker.pack(fill="both", expand=True, padx=2, pady=(0, 2))
 
     def _handle_picker_apply(self, h, s, v):
         self.hub.apply_custom_color(self.current_dev_id, h, s, v)
@@ -2219,7 +2414,10 @@ class TapoGUI:
             self.active_picker.pack_forget()
             self.active_picker.destroy()
             self.active_picker = None
-        self.scroll_body.pack(fill="both", expand=True, padx=16, pady=(0, 6))
+        try:
+            self.content_area.pack(fill="both", expand=True)
+        except Exception:
+            pass
 
     def hide_window(self):
         """Hide the desktop window without stopping the tray-resident app."""
