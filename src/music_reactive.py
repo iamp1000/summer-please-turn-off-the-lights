@@ -207,6 +207,14 @@ class MusicReactive:
         if hasattr(self, "_analyzer"):
             self._analyzer.set_latency_lookahead(self._latency_lookahead_ms)
 
+    def _submit_frame(self, frame):
+        """Route render frames through FrameBus when the hub is active."""
+        if self._frame_bus is not None:
+            return self._frame_bus.publish_frame_dict(self._dev_id, OutputProducer.AUDIO, frame)
+        if hasattr(self._controller, "submit_frame"):
+            return self._controller.submit_frame(frame)
+        return False
+
     def is_running(self):
         return self._running
 
@@ -304,7 +312,7 @@ class MusicReactive:
                     brightness=0,
                 ))
             if hasattr(self._controller, "submit_frame"):
-                self._controller.submit_frame({"h": 0, "s": 0, "b": 0, "_pre_corrected": True})
+                self._submit_frame({"h": 0, "s": 0, "b": 0, "_pre_corrected": True})
             return
 
         style_key = self.style_name
@@ -362,7 +370,7 @@ class MusicReactive:
             ))
 
         if hasattr(self._controller, "submit_frame"):
-            self._controller.submit_frame(frame_dict)
+            self._submit_frame(frame_dict)
 
     def stop(self):
         self._running = False
@@ -372,7 +380,7 @@ class MusicReactive:
         if hasattr(self._controller, "clear_frames"):
             self._controller.clear_frames()
         if hasattr(self._controller, "submit_frame"):
-            self._controller.submit_frame({"h": 0, "s": 0, "b": 0})
+            self._submit_frame({"h": 0, "s": 0, "b": 0})
 
     def _should_send(self, b, h, s):
         if self._last_sent_state is None:
@@ -430,7 +438,7 @@ class MusicReactive:
                 self.latest_spectrum = [0.0] * 50
                 if hasattr(self._controller, "submit_frame"):
                     b_out = int(self._smoothed_brightness)
-                    self._controller.submit_frame({"h": int(self._smoothed_hue) if b_out > 0 else 0, "s": 100 if b_out > 0 else 0, "b": b_out, "_pre_corrected": True})
+                    self._submit_frame({"h": int(self._smoothed_hue) if b_out > 0 else 0, "s": 100 if b_out > 0 else 0, "b": b_out, "_pre_corrected": True})
 
             # True black: on sustained silence (> 3 s) turn the strip off
             if self._silence_duration >= 3.0 and not self._powered_down_for_silence:
@@ -565,7 +573,7 @@ class MusicReactive:
                     metadata={"music_state": self.latest_music_state},
                 ))
             if hasattr(self._controller, "submit_frame"):
-                self._controller.submit_frame({"h": hc, "s": sc, "b": vc, "_pre_corrected": True})
+                self._submit_frame({"h": hc, "s": sc, "b": vc, "_pre_corrected": True})
             return
 
         # ── 1. Single Color Beat Pulse ────────────────────────────────────────
@@ -672,4 +680,4 @@ class MusicReactive:
                 self._last_sent_time = now
                 if hasattr(self._controller, "submit_frame"):
                     hc, sc, vc = self._pipeline.correct_hsv_tuple(h_val, s_val, b_val, master_ceiling=master_ceiling)
-                    self._controller.submit_frame({"h": hc, "s": sc, "b": vc, "_pre_corrected": True})
+                    self._submit_frame({"h": hc, "s": sc, "b": vc, "_pre_corrected": True})
