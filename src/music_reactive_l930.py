@@ -264,13 +264,6 @@ class MusicReactiveL930:
                 self._white_punch = 0.0
                 self._beat_punch = 0.0
                 self.latest_spectrum = [0.0] * NUM_SEGMENTS
-                if self._frame_bus:
-                    self._frame_bus.publish(FramePacket(
-                        dev_id=self._dev_id,
-                        producer=OutputProducer.AUDIO,
-                        segments=dark,
-                        brightness=0,
-                    ))
                 if hasattr(self._ctrl, "submit_frame"):
                     self._submit_frame({"segments": dark, "brightness": 0, "transition": 0, "_pre_corrected": True})
 
@@ -372,15 +365,6 @@ class MusicReactiveL930:
             frame_dict["t_analysis_done"] = timing.get("t_analysis_done", t_rendered)
             frame_dict["t_frame_rendered"] = t_rendered
 
-        if self._frame_bus:
-            self._frame_bus.publish(FramePacket(
-                dev_id=self._dev_id,
-                producer=OutputProducer.AUDIO,
-                segments=corrected_segs,
-                brightness=brightness_val,
-                transition=trans_ms,
-                metadata={"music_state": st},
-            ))
 
         if hasattr(self._ctrl, "submit_frame"):
             self._submit_frame(frame_dict)
@@ -607,15 +591,6 @@ class MusicReactiveL930:
                     trans = def_music_trans
 
 
-                if self._frame_bus:
-                    self._frame_bus.publish(FramePacket(
-                        dev_id=self._dev_id,
-                        producer=OutputProducer.AUDIO,
-                        segments=corrected,
-                        brightness=100,
-                        transition=trans,
-                        metadata={"music_state": self.latest_music_state},
-                    ))
 
                 self._submit_frame({"segments": corrected, "brightness": 100, "transition": trans, "_pre_corrected": True})
             return
