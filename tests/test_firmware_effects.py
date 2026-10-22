@@ -545,7 +545,7 @@ def test_firmware_deployment_failure_is_returned_to_caller():
 
 
 def test_effect_catalog_curation_structure():
-    """Verify curated breakdown: 22 Core, 10 Advanced, 2 Seasonal, 1 Novelty, 7 Creative, 10 Aliases, 1 Reactive."""
+    """Keep the user-facing shelf limited to five original designs and five spatial experiments."""
     from src.effects_l930 import (
         CORE_EFFECTS, ADVANCED_EFFECTS, SEASONAL_EFFECTS, NOVELTY_EFFECTS,
         OCCASIONAL_EFFECTS, CREATIVE_EFFECTS, ACTIVE_EFFECTS, EFFECT_CATALOG
