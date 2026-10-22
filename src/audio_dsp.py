@@ -1260,6 +1260,7 @@ class AudioCaptureCoordinator:
                 self.status = "active"
 
             silent_chunks = 0
+            next_source_probe = time.monotonic() + 2.0
             while self._running and not stop_event.is_set():
                 with mic.recorder(samplerate=self.samplerate, blocksize=self.blocksize, channels=1) as rec:
                     while self._running and not stop_event.is_set():
@@ -1270,16 +1271,25 @@ class AudioCaptureCoordinator:
                         rms = float(np.sqrt(np.mean(samples ** 2)))
                         if rms < 0.0005:
                             silent_chunks += 1
-                            if silent_chunks > 180:
-                                new_mic = get_audio_input_source(
-                                    self.samplerate, self.blocksize, self.preferred_device
-                                )
-                                if new_mic and new_mic.id != mic.id:
+                            now_mono = time.monotonic()
+                            if silent_chunks > 180 and now_mono >= next_source_probe:
+                                next_source_probe = now_mono + 2.0
+                                try:
+                                    new_mic = get_audio_input_source(
+                                        self.samplerate, self.blocksize, self.preferred_device
+                                    )
+                                except Exception as exc:
+                                    new_mic = None
+                                    print(f"[AudioCapture] Input rescan failed: {exc}")
+                                if new_mic and getattr(new_mic, "id", None) != getattr(mic, "id", None):
                                     mic = new_mic
                                     self.active_device_name = getattr(mic, "name", None)
                                     print(f"[AudioCapture] Switched to live source: {self.active_device_name}")
                                     silent_chunks = 0
                                     break
+                                # Reset the initial threshold so unchanged silence is not
+                                # probed on every 512-sample chunk.
+                                silent_chunks = 0
                         else:
                             silent_chunks = 0
 

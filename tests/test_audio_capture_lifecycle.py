@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.audio_dsp import AudioCaptureCoordinator, MusicState
+from src.audio_dsp import AudioCaptureCoordinator, MusicAnalyzer, MusicState
 from src.music_reactive import MusicReactive
 from src.music_reactive_l930 import MusicReactiveL930
 
@@ -236,3 +236,47 @@ def test_audio_coordinator_can_retry_after_discovery_failure(monkeypatch):
     assert second is not None and second is not first
     assert coordinator.status == "error"
     assert coordinator.is_running() is False
+
+
+@pytest.mark.parametrize(
+    ("engine_cls", "label"),
+    [
+        (MusicReactive, "Audio Reactive"),
+        (MusicReactiveL930, "Audio Spectrum (IC)"),
+    ],
+)
+def test_music_worker_reports_renderer_exception_and_does_not_stay_active(engine_cls, label):
+    state = {"brightness": 50, "active_label": label}
+    controller = FakeController()
+    coordinator = FakeCoordinator(status="active")
+    engine = engine_cls(controller=controller, loop_runner=None, app_state=state)
+    engine.set_coordinator(coordinator)
+
+    def fail_renderer(*args, **kwargs):
+        raise RuntimeError("synthetic style render failure")
+
+    engine._render_from_music_state = fail_renderer
+    engine.start()
+    thread = engine._thread
+    assert thread is not None
+    thread.join(timeout=1.5)
+    assert not thread.is_alive()
+
+    assert engine.is_running() is False
+    assert state["active_label"] == "Audio Error"
+    assert "synthetic style render failure" in state["last_error"]
+
+
+@pytest.mark.parametrize("engine_cls", [MusicReactive, MusicReactiveL930])
+def test_music_sensitivity_updates_the_shared_capture_analyzer(engine_cls):
+    state = {"brightness": 50, "active_label": "Audio Reactive"}
+    coordinator = FakeCoordinator(status="active")
+    coordinator.analyzer = MusicAnalyzer(samplerate=8000, blocksize=128, sensitivity=1.0)
+    engine = engine_cls(controller=FakeController(), loop_runner=None, app_state=state)
+    engine.set_coordinator(coordinator)
+
+    engine.set_sensitivity(2.4)
+
+    assert engine.sensitivity == pytest.approx(2.4)
+    assert engine._analyzer.sensitivity == pytest.approx(2.4)
+    assert coordinator.analyzer.sensitivity == pytest.approx(2.4)

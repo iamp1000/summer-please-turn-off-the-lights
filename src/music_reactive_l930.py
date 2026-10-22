@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
 import random
 import threading
@@ -15,6 +16,8 @@ from src.frame_bus import FramePacket, OutputProducer
 from src.music_dynamics import MusicBrightnessFloor, music_is_genuinely_active, fade_segments, silence_fade_duration, effective_send_rate
 
 NUM_SEGMENTS = 50
+
+logger = logging.getLogger(__name__)
 
 # Logarithmic frequency boundaries for 50 zones (20 Hz to 16,000 Hz)
 FREQS_50 = np.logspace(np.log10(20), np.log10(16000), NUM_SEGMENTS + 1)
@@ -144,13 +147,25 @@ class MusicReactiveL930:
     def set_sensitivity(self, val: float):
         s = max(0.1, min(4.0, float(val)))
         self._calibrator.sensitivity = s
-        if hasattr(self, "_analyzer") and self._analyzer:
-            if hasattr(self._analyzer, "set_sensitivity"):
-                self._analyzer.set_sensitivity(s)
+        # The desktop app uses AudioCaptureCoordinator.analyzer for live PCM.
+        # Updating only this engine's standalone analyzer made the slider appear
+        # to work without changing the actual shared-capture signal.
+        analyzers = (
+            getattr(self, "_analyzer", None),
+            getattr(getattr(self, "_coordinator", None), "analyzer", None),
+        )
+        seen = set()
+        for analyzer in analyzers:
+            if analyzer is None or id(analyzer) in seen:
+                continue
+            seen.add(id(analyzer))
+            if hasattr(analyzer, "set_sensitivity"):
+                analyzer.set_sensitivity(s)
             else:
-                self._analyzer.sensitivity = s
-            if hasattr(self._analyzer, "calibrator") and self._analyzer.calibrator:
-                self._analyzer.calibrator.sensitivity = s
+                analyzer.sensitivity = s
+            calibrator = getattr(analyzer, "calibrator", None)
+            if calibrator is not None:
+                calibrator.sensitivity = s
 
     @property
     def latency_lookahead_ms(self) -> float:
@@ -158,11 +173,16 @@ class MusicReactiveL930:
 
     def set_latency_lookahead(self, lookahead_ms: float):
         self._latency_lookahead_ms = max(0.0, min(250.0, float(lookahead_ms)))
-        if hasattr(self, "_analyzer"):
-            self._analyzer.set_latency_lookahead(self._latency_lookahead_ms)
+        for analyzer in (
+            getattr(self, "_analyzer", None),
+            getattr(getattr(self, "_coordinator", None), "analyzer", None),
+        ):
+            if analyzer is not None and hasattr(analyzer, "set_latency_lookahead"):
+                analyzer.set_latency_lookahead(self._latency_lookahead_ms)
 
     def is_running(self) -> bool:
-        return self._running
+        thread = self._thread
+        return bool(self._running and (thread is None or thread.is_alive()))
 
     def set_mode(self, mode: str):
         m = (mode or "auto").strip().lower()
@@ -261,7 +281,12 @@ class MusicReactiveL930:
 
     def start(self):
         if self._running:
-            return
+            if self._thread is None or self._thread.is_alive():
+                return
+            # A renderer can exit unexpectedly without resetting this flag.
+            self._running = False
+            if not self._last_error:
+                self._last_error = "Music render worker stopped unexpectedly; restarting."
         old_thread = self._thread
         if old_thread and old_thread.is_alive():
             self.stop()
@@ -370,7 +395,13 @@ class MusicReactiveL930:
                 timing = {"t_audio_recv": t0, "t_analysis_done": t0}
 
             self.latest_music_state = st
-            self._render_from_music_state(st, dt, timing=timing)
+            try:
+                self._render_from_music_state(st, dt, timing=timing)
+            except Exception as exc:
+                message = f"Music renderer failed: {type(exc).__name__}: {exc}"
+                logger.exception("[%s] %s", self._dev_id, message)
+                self._report_audio_error(message)
+                break
 
             elapsed = time.perf_counter() - t0
             sleep_time = max(0.001, target_dt - elapsed)

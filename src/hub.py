@@ -593,6 +593,38 @@ class LightHub:
         # toggle_music starts fresh AUDIO ownership sessions rather than switching them off.
         self.toggle_music(dev_id)
 
+    def _ensure_music_targets_on(self, targets: List[DeviceContext]) -> List[DeviceContext]:
+        """Power on physical controllers before audio workers begin submitting frames."""
+        ready = []
+        for ctx in targets:
+            controller = ctx.controller
+            if getattr(controller, "_is_on", True):
+                ready.append(ctx)
+                continue
+
+            try:
+                future = self.loop_runner.run(controller.turn_on(priority=0))
+                future.result(timeout=5.0)
+            except Exception as exc:
+                ctx.state["power"] = False
+                ctx.state["active_label"] = "Audio Error"
+                ctx.state["last_error"] = (
+                    f"Could not power on {ctx.name} before Music Reactive: {exc}"
+                )
+                continue
+
+            if getattr(controller, "_is_on", True):
+                ctx.state["power"] = True
+                ctx.state["last_error"] = None
+                ready.append(ctx)
+            else:
+                ctx.state["power"] = False
+                ctx.state["active_label"] = "Audio Error"
+                ctx.state["last_error"] = (
+                    f"{ctx.name} did not confirm power-on; audio frames would be discarded."
+                )
+        return ready
+
     def toggle_music(self, dev_id: str):
         targets = self._resolve_targets(dev_id)
         l900_mode = self.config.get("audio", {}).get("l900_mode", "style")
@@ -627,6 +659,12 @@ class LightHub:
                 if hasattr(self, "audio_coordinator") and self.audio_coordinator:
                     self.audio_coordinator.stop()
         else:
+            # submit_frame() discards frames when the controller's real _is_on
+            # flag is false, even if the UI state says power=True.
+            targets = self._ensure_music_targets_on(targets)
+            if not targets:
+                self.notify_change()
+                return
             if hasattr(self, "audio_coordinator") and self.audio_coordinator:
                 self.audio_coordinator.start()
             if l930_ctx and l930_ctx in targets:
