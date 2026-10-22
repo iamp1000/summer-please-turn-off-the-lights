@@ -112,6 +112,7 @@ class LightController:
         # Telemetry & Frame Sender
         self.diagnostics = DeviceDiagnostics(dev_id=self.dev_id)
         self.frame_sender: Optional[LatestFrameSender] = None
+        self._frame_authorizer: Optional[Callable[[Any], bool]] = None
         if self._loop:
             self._init_sender(self._loop)
 
@@ -132,6 +133,19 @@ class LightController:
                 min_zone_delta=min_delta,
             )
             self.frame_sender.start()
+
+    def set_frame_authorizer(self, authorizer: Optional[Callable[[Any], bool]]):
+        """Install FrameBus ownership validation at the final hardware boundary."""
+        self._frame_authorizer = authorizer
+
+    def _frame_is_authorized(self, frame: Any) -> bool:
+        authorizer = self._frame_authorizer
+        if authorizer is None:
+            return True
+        try:
+            return bool(authorizer(frame))
+        except Exception:
+            return False
 
     def submit_frame(self, frame: Any):
         """Submit frame to decoupled sender. Latest frame overwrites pending."""
@@ -305,7 +319,7 @@ class LightController:
           - tuple (h, s, b)
           - dict with 'h', 's', 'b' keys and optional '_pre_corrected'
         """
-        if not self._is_on:
+        if not self._is_on or not self._frame_is_authorized(frame):
             return False
 
         pre_corrected = False
@@ -330,6 +344,8 @@ class LightController:
         async with self._lock:
             try:
                 await self._ensure_connected()
+                if not self._frame_is_authorized(frame):
+                    return False
                 await self._send_combined_hsb(hc, sc, gamma_b)
                 self.last_h = hc
                 self.last_s = sc
@@ -352,6 +368,8 @@ class LightController:
                 # Retry frame once with identical computed values
                 async with self._lock:
                     try:
+                        if not self._frame_is_authorized(frame):
+                            return False
                         await self._send_combined_hsb(hc, sc, gamma_b)
                         self.last_h = hc
                         self.last_s = sc
