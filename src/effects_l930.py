@@ -1338,7 +1338,7 @@ class L930EffectsEngine:
         gen = self._effect_generation
         self._thread = threading.Thread(
             target=self._stream_run,
-            args=(stop_event, gen),
+            args=(stop_event, gen, self._output_token),
             daemon=True,
             name=f"L930Stream-{self._active_effect_name}"
         )
@@ -1355,13 +1355,13 @@ class L930EffectsEngine:
         self._thread = None
         self._stop_event = None
 
-    def _stream_run(self, stop_event: threading.Event, generation: int):
+    def _stream_run(self, stop_event: threading.Event, effect_generation: int, output_token=None):
         """
         Slow streamed loop (<= 2 updates/s).
         Transition_ms matches update interval so the device hardware does the smooth crossfading.
         Firmware-run effects are strictly kept on firmware path; only procedural streamed effects run here.
         """
-        while not stop_event.is_set() and generation == self._effect_generation:
+        while not stop_event.is_set() and effect_generation == self._effect_generation:
             try:
                 eff = self._active_effect_name
                 if not eff or self._active_kind != "streamed_slow":
@@ -1444,7 +1444,7 @@ class L930EffectsEngine:
                 trans_ms = max(500, int(round(interval * 1000)))
 
                 # Early stale frame guard before CPU color correction
-                if generation != self._effect_generation or stop_event.is_set():
+                if effect_generation != self._effect_generation or stop_event.is_set():
                     break
 
                 # Master brightness and gamma correction
@@ -1463,11 +1463,11 @@ class L930EffectsEngine:
                     "_pre_corrected": True,
                 }
                 if self._frame_bus:
-                    if self._output_token is None:
+                    if output_token is None:
                         if stop_event.wait(0.1):
                             break
                         continue
-                    token_generation, token_id = self._output_token
+                    token_generation, token_id = output_token
                     published = self._frame_bus.publish_frame(
                         self._dev_id, OutputProducer.EFFECT, frame_data,
                         generation=token_generation, producer_id=token_id,
