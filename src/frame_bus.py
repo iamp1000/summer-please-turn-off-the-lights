@@ -157,6 +157,24 @@ class FrameBus:
         if controller and hasattr(controller, "clear_frames"):
             controller.clear_frames()
 
+    def publish_frame_dict(self, dev_id: str, producer: str, frame: dict) -> bool:
+        """Compatibility adapter: translate legacy frame dictionaries into the single bus route."""
+        packet = FramePacket(
+            dev_id=dev_id,
+            producer=producer,
+            segments=frame.get("segments"),
+            hsv=(frame.get("h", 0), frame.get("s", 0), frame.get("b", 0))
+                if all(k in frame for k in ("h", "s", "b")) else None,
+            brightness=int(frame.get("brightness", frame.get("b", 100))),
+            transition=int(frame.get("transition", 0)),
+            pre_corrected=bool(frame.get("_pre_corrected", False)),
+            metadata={k: v for k, v in frame.items() if k not in {
+                "segments", "h", "s", "b", "brightness", "transition", "_pre_corrected",
+                "_producer", "_generation"
+            }},
+        )
+        return self.publish(packet)
+
     def publish(self, packet: FramePacket) -> bool:
         with self._lock:
             arbiter = self._arbiter
