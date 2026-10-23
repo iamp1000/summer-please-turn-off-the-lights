@@ -457,6 +457,11 @@ class MusicReactiveL930:
                     if hasattr(self._ctrl, "turn_off"):
                         if self._loop_runner and getattr(self._loop_runner, "loop", None):
                             asyncio.run_coroutine_threadsafe(self._ctrl.turn_off(), self._loop_runner.loop)
+                        else:
+                            try:
+                                asyncio.get_running_loop().create_task(self._ctrl.turn_off())
+                            except RuntimeError:
+                                pass
             return
 
         self._silence_count = 0
@@ -466,6 +471,11 @@ class MusicReactiveL930:
             if hasattr(self._ctrl, "turn_on"):
                 if self._loop_runner and getattr(self._loop_runner, "loop", None):
                     asyncio.run_coroutine_threadsafe(self._ctrl.turn_on(), self._loop_runner.loop)
+                else:
+                    try:
+                        asyncio.get_running_loop().create_task(self._ctrl.turn_on())
+                    except RuntimeError:
+                        pass
 
         style_key = self.style_name
         # Check direct match in style registry first so dedicated vibe styles are never clobbered
