@@ -10,7 +10,7 @@ let state = {
 
 let currentDevId = "strip1";
 let currentEffectCategory = "creative";
-let currentExperienceTab = "ambient";
+let currentExperienceTab = "motion";
 let ws = null;
 let reconnectTimer = null;
 
