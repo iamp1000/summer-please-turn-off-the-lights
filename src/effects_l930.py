@@ -770,9 +770,20 @@ class L930EffectsEngine:
         if kind == "firmware":
             if isinstance(self._app_state, dict):
                 self._app_state["effect_status"] = "sent"
-            # Run the per-IC reveal first, then deploy the autonomous firmware effect.
-            # The worker marks the effect accepted only after the device acknowledges it.
-            self._start_stream_worker()
+            if self._frame_bus:
+                # Run the per-IC reveal first, then deploy the autonomous firmware effect.
+                # The worker marks the effect accepted only after the device acknowledges it.
+                self._start_stream_worker()
+            else:
+                # Preserve immediate deployment for standalone/legacy controller use.
+                if not self._deploy_firmware_effect(key, force=True):
+                    if isinstance(self._app_state, dict):
+                        self._app_state["effect_status"] = "failed"
+                        self._app_state["last_error"] = self._last_error
+                    return False
+                if isinstance(self._app_state, dict):
+                    self._app_state["effect_status"] = "accepted"
+                    self._app_state["last_error"] = None
         elif kind == "streamed_slow":
             if isinstance(self._app_state, dict):
                 self._app_state["effect_status"] = "sent"
