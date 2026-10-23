@@ -3042,32 +3042,24 @@ class L930EffectsEngine:
     # ── Creative Original Designs (Cadence-Aware Procedural Fields) ──────────
 
     def _render_oil_slick(self, t: float) -> List[List[int]]:
-        """
-        Oil Slick / Liquid Iridescence:
-        Multiple thin-film interference fields drifting at irrational phase rates,
-        producing petrol-like shifts: Cyan -> Indigo -> Violet -> Rose -> Amber -> Cyan.
-        Overlapping waves continuously modulate local hue and brightness with zero jumps.
-        """
+        """Thin-film interference: liquid chrome colors, dark troughs and razor-bright sheens."""
         from src.visual_styles import sample_palette_oklab
         sp = max(0.2, self._speed)
-        oil_palette = [
-            (185, 95, 90),  # Electric Cyan
-            (235, 90, 85),  # Deep Indigo
-            (280, 90, 95),  # Fluorescent Violet
-            (335, 90, 90),  # Neon Rose
-            (35, 95, 95),   # Golden Amber
-        ]
+        pal = [(184, 96, 92), (222, 94, 86), (270, 94, 96), (326, 91, 92), (42, 98, 96), (160, 88, 82)]
         segs = []
         for i in range(NUM_SEGMENTS):
             x = i / float(NUM_SEGMENTS - 1)
-            f1 = math.sin(x * 3.4 * math.pi + t * 0.22 * sp)
-            f2 = math.cos(x * 5.1 * math.pi - t * 0.17 * sp + 1.4)
-            f3 = math.sin(x * 2.1 * math.pi + t * 0.31 * sp + 2.7)
-            phase = (0.5 + 0.28 * f1 + 0.22 * f2 + 0.18 * f3) % 1.0
-            h, s, _ = sample_palette_oklab(oil_palette, phase, cyclic=True)
-            intensity = 0.5 + 0.3 * f1 + 0.2 * f3
-            val = int(max(15, min(95, 25 + intensity * 68)))
-            segs.append([h, s, val])
+            # Two drifting interference films create broad color pools; a narrow
+            # specular ridge gives the surface a liquid-metal glint.
+            a = math.sin(x * 5.2 * math.pi - t * 0.31 * sp + 0.7 * math.sin(t * 0.08))
+            b = math.sin(x * 8.1 * math.pi + t * 0.23 * sp + 1.4)
+            film = 0.5 + 0.5 * (0.62 * a + 0.38 * b)
+            ridge = max(0.0, math.cos(x * 10.4 * math.pi - t * 0.19 * sp + a)) ** 10
+            trough = max(0.0, 0.28 - film) / 0.28
+            phase = (0.58 * film + 0.24 * (0.5 + 0.5 * b) + 0.18 * x) % 1.0
+            h, sat, _ = sample_palette_oklab(pal, phase, cyclic=True)
+            value = int(max(3, min(100, 5 + 61 * film ** 1.4 + 36 * ridge - 8 * trough)))
+            segs.append([h, sat, value])
         return segs
 
     def _render_silk_ribbons(self, t: float) -> List[List[int]]:
@@ -3104,34 +3096,30 @@ class L930EffectsEngine:
         return segs
 
     def _render_nebula_bloom(self, t: float) -> List[List[int]]:
-        """
-        Nebula Bloom:
-        Atmospheric clouds of violet, indigo, cyan, and fuchsia expanding and drifting
-        over deep space navy, preserving rich negative space with zero strip-wide flashes.
-        """
+        """Three slow, expanding gas clouds with bright ionized rims and deep negative space."""
         from src.visual_styles import sample_palette_oklab
         sp = max(0.2, self._speed)
-        nebula_palette = [
-            (240, 95, 30),  # Deep Space Navy
-            (265, 90, 65),  # Royal Indigo
-            (295, 85, 80),  # Celestial Violet
-            (330, 90, 85),  # Cosmic Fuchsia
-            (195, 90, 75),  # Starlight Cyan
+        pal = [(239, 90, 34), (264, 91, 65), (292, 94, 94), (326, 90, 94), (194, 88, 80)]
+        centers = [
+            (0.19 + 0.12 * math.sin(t * 0.12 * sp), 0.13 + 0.035 * math.sin(t * 0.19)),
+            (0.56 + 0.17 * math.sin(t * 0.085 * sp + 2.0), 0.19 + 0.04 * math.cos(t * 0.14)),
+            (0.83 + 0.09 * math.cos(t * 0.10 * sp + 1.0), 0.11 + 0.03 * math.sin(t * 0.16)),
         ]
         segs = []
         for i in range(NUM_SEGMENTS):
             x = i / float(NUM_SEGMENTS - 1)
-            n1 = math.sin(x * 2.8 * math.pi + t * 0.12 * sp)
-            n2 = 0.5 * math.cos(x * 6.2 * math.pi - t * 0.18 * sp + 1.1)
-            n3 = 0.25 * math.sin(x * 11.5 * math.pi + t * 0.25 * sp + 2.3)
-            density = (n1 + n2 + n3 + 1.75) / 3.5
-
-            contrast = max(0.0, density - 0.35) / 0.65
-            cloud_p = contrast ** 1.6
-
-            h, s, _ = sample_palette_oklab(nebula_palette, cloud_p, cyclic=False)
-            val = int(max(2, min(90, 3 + cloud_p * 85)))
-            segs.append([h, s, val])
+            cloud = 0.0
+            rim = 0.0
+            for j, (center, width) in enumerate(zip(centers, (0.17, 0.23, 0.14))):
+                d = abs(x - center[0])
+                core = math.exp(-0.5 * (d / width) ** 2)
+                shell = math.exp(-0.5 * ((d - width * 0.72) / (width * 0.22)) ** 2)
+                cloud = max(cloud, core * (0.82 + 0.18 * math.sin(t * (0.27 + j * 0.03) + j)))
+                rim = max(rim, shell * (0.5 + 0.5 * math.sin(t * 0.31 + j * 1.8)))
+            density = min(1.0, cloud * 0.92 + rim * 0.24)
+            h, sat, _ = sample_palette_oklab(pal, min(1.0, cloud * 0.74 + rim * 0.26), cyclic=False)
+            value = int(max(2, min(94, 2 + 63 * density ** 1.7 + 27 * rim)))
+            segs.append([h, sat, value])
         return segs
 
     def _render_holographic_moire(self, t: float) -> List[List[int]]:
@@ -3187,56 +3175,54 @@ class L930EffectsEngine:
         return segs
 
     def _render_ember_drift(self, t: float) -> List[List[int]]:
-        """
-        Ember Drift:
-        Simulated 1D thermal convection bed. Warm copper and deep ruby coals drift slowly,
-        punctuated by gentle glowing heat pockets that swell and cool organically.
-        """
+        """Sparse thermal islands: dark coal bed, moving ember pockets and occasional hot cores."""
         from src.visual_styles import sample_palette_oklab
         sp = max(0.2, self._speed)
-        ember_palette = [
-            (0, 100, 25),    # Dark Charred Ruby
-            (12, 100, 60),   # Glowing Copper
-            (28, 95, 85),    # Warm Flame Amber
-            (42, 90, 100),   # Radiant Golden Glow
+        pal = [(0, 100, 22), (8, 100, 48), (18, 98, 76), (31, 96, 96), (46, 88, 100)]
+        # Each ember drifts on its own slow trajectory. Gaussian heat keeps
+        # neighboring ICs connected without turning the whole strip into a wave.
+        centers = [
+            (0.10 + 0.08 * math.sin(t * 0.19 * sp), 0.055, 0.8),
+            (0.34 + 0.12 * math.sin(t * 0.13 * sp + 2.0), 0.075, 0.65),
+            (0.62 + 0.10 * math.cos(t * 0.17 * sp + 1.0), 0.050, 1.0),
+            (0.88 + 0.07 * math.sin(t * 0.11 * sp + 3.0), 0.065, 0.72),
         ]
         segs = []
         for i in range(NUM_SEGMENTS):
             x = i / float(NUM_SEGMENTS - 1)
-            heat1 = 0.5 + 0.5 * math.sin(x * 3.2 * math.pi + t * 0.14 * sp)
-            heat2 = 0.5 + 0.5 * math.cos(x * 6.0 * math.pi - t * 0.21 * sp + 1.8)
-            pulse = 0.5 + 0.5 * math.sin(t * 0.35 * sp + i * 2.7)
-            temp = heat1 * 0.55 + heat2 * 0.30 + pulse * 0.15
-
-            h, s, _ = sample_palette_oklab(ember_palette, temp, cyclic=False)
-            val = int(max(5, min(95, 12 + temp * 80)))
-            segs.append([h, s, val])
+            heat = 0.025 + 0.025 * (0.5 + 0.5 * math.sin(x * 12.0 + t * 0.31))
+            core = 0.0
+            for j, (center, width, amp) in enumerate(centers):
+                d = abs(x - center)
+                envelope = math.exp(-0.5 * (d / width) ** 2)
+                pulse = 0.62 + 0.38 * (0.5 + 0.5 * math.sin(t * (0.55 + j * 0.07) + j * 2.4))
+                heat += envelope * amp * pulse
+                core = max(core, math.exp(-0.5 * (d / (width * 0.30)) ** 2) * pulse)
+            heat = min(1.0, heat)
+            h, sat, _ = sample_palette_oklab(pal, min(1.0, heat * 0.82 + core * 0.18), cyclic=False)
+            value = int(max(2, min(100, 3 + heat * 66 + core ** 2 * 31)))
+            segs.append([h, sat, value])
         return segs
 
     def _render_cyberpunk(self, t: float) -> List[List[int]]:
-        """
-        Cyberpunk:
-        Rich synthwave dual-layer composition. Electric cyan carrier waves sliding over
-        neon magenta and deep ultraviolet baselines with golden apex highlights.
-        """
+        """Neon circuitry: dark negative space, offset rails, fast moving shards and hot nodes."""
         from src.visual_styles import sample_palette_oklab
         sp = max(0.2, self._speed)
-        cyber_palette = [
-            (280, 95, 40),  # Dark Ultraviolet
-            (325, 95, 90),  # Neon Magenta
-            (185, 95, 95),  # Electric Cyan
-            (45, 90, 100),  # Neon Gold
-        ]
+        pal = [(274, 95, 48), (314, 98, 96), (188, 98, 100), (224, 94, 82), (48, 95, 100)]
         segs = []
         for i in range(NUM_SEGMENTS):
             x = i / float(NUM_SEGMENTS - 1)
-            w1 = math.sin(x * 3.5 * math.pi + t * 0.28 * sp)
-            w2 = math.cos(x * 2.2 * math.pi - t * 0.19 * sp + 1.5)
-            comp = (w1 + w2) * 0.5
-            pos = (0.5 + 0.5 * comp + x * 0.2) % 1.0
-            h, s, _ = sample_palette_oklab(cyber_palette, pos, cyclic=True)
-            val = int(max(15, min(95, 25 + (0.5 + 0.5 * w1) * 68)))
-            segs.append([h, s, val])
+            rail_a = abs(math.sin(x * 5.0 * math.pi - t * 0.30 * sp))
+            rail_b = abs(math.sin(x * 7.2 * math.pi + t * 0.22 * sp + 1.6))
+            # Thin rails and isolated nodes contrast with near-black gaps.
+            line_a = math.exp(-((rail_a - 0.10) / 0.075) ** 2)
+            line_b = math.exp(-((rail_b - 0.14) / 0.09) ** 2)
+            node = max(0.0, math.cos(x * 13.0 * math.pi - t * 0.72 * sp)) ** 18
+            field = min(1.0, line_a * 0.55 + line_b * 0.36 + node * 0.75)
+            phase = (0.12 + 0.42 * line_a + 0.28 * line_b + 0.18 * node + t * 0.035 * sp) % 1.0
+            h, sat, _ = sample_palette_oklab(pal, phase, cyclic=True)
+            value = int(max(2, min(100, 3 + field * 65 + node * 32)))
+            segs.append([h, sat, value])
         return segs
 
     def _render_prism_tunnel(self, t: float) -> List[List[int]]:
