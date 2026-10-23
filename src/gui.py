@@ -469,7 +469,7 @@ class TapoGUI:
 
         # Workspace is split into a stable navigation rail and a page viewport.
         self.workspace = ctk.CTkFrame(self.root_frame, fg_color="transparent")
-        self.workspace.pack(fill="both", expand=True, padx=16, pady=(0, 10))
+        self.workspace.pack(fill="both", expand=True, padx=8, pady=(0, 6))
 
         self.nav_rail = ctk.CTkFrame(
             self.workspace, width=194, fg_color=t["surface"],
@@ -616,7 +616,7 @@ class TapoGUI:
 
         def card_heading(parent, title, subtitle=None):
             top = ctk.CTkFrame(parent, fg_color="transparent")
-            top.pack(fill="x", padx=18, pady=(16, 12))
+            top.pack(fill="x", padx=12, pady=(10, 8))
             ctk.CTkLabel(
                 top, text=title, anchor="w",
                 font=ctk.CTkFont(size=15, weight="bold"), text_color=t["text_primary"]
