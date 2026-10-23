@@ -12,7 +12,7 @@ def engine():
 def test_creative_effects_registered_and_configured(engine):
     """The visible shelf is curated around distinct WLED-inspired motion models."""
     assert len(CREATIVE_EFFECTS) == 10
-    expected = {"juggle", "radial_ripple", "meteor_shower", "bioluminescent_tide", "fireflies", "prism_sparks", "aurora", "raindrop", "lightning", "radar_sweep"}
+    expected = {"juggle", "radial_ripple", "meteor_shower", "bioluminescent_tide", "spiral_vortex", "gravity_slosh", "radar_sweep", "vaporwave_neon", "neon_heartbeat", "lantern_sweep"}
     assert set(CREATIVE_EFFECTS) == expected
 
     for eff in CREATIVE_EFFECTS:
@@ -25,7 +25,7 @@ def test_creative_effects_registered_and_configured(engine):
 
 def test_visible_effect_shelf_uses_procedural_renderers(engine):
     """Visible designs use their 50-zone renderer rather than a firmware colour sequence."""
-    assert set(ACTIVE_EFFECTS) == set(CREATIVE_EFFECTS + SPATIAL_EXPERIMENTS)
+    assert set(ACTIVE_EFFECTS) == set(CREATIVE_EFFECTS)
     assert len(ACTIVE_EFFECTS) == 10
     for name in ACTIVE_EFFECTS:
         assert EFFECT_CATALOG[name]["kind"] == "streamed_slow", name
