@@ -1833,103 +1833,14 @@ class L930EffectsEngine:
                 now = time.monotonic()
                 t = now - self._start_time
 
-                # Start at 5 Hz; controller RTT/AIMD protection may slow this down.
+                # Use the same effect implementation for preview and real streamed output.
+                # All selected shelf entries are software-rendered 50-zone frames.
                 interval = 0.20
-
-                # ── Core Streamed Effects ────────────────────────────────────
-                if eff == "lava_lamp":
-                    segs = self._render_lava_lamp(t)
-                elif eff == "golden_hour":
-                    segs = self._render_standing_wave_golden_hour(t)
-                elif eff == "comet":
-                    segs = self._render_multi_pod_comet(t)
-                elif eff == "sinelon":
-                    segs = self._render_sinelon_sweep(t)
-                elif eff == "cyber_chase":
-                    segs = self._render_collider_chase(t)
-                elif eff == "radial_ripple":
-                    segs = self._render_radial_ripple(t)
-                elif eff == "aurora":
-                    segs = self._render_aurora(t)
-                elif eff == "raindrop":
-                    segs = self._render_raindrop(t)
-                elif eff == "lightning":
-                    segs = self._render_lightning(t)
-                elif eff == "fireflies":
-                    segs = self._render_fireflies(t)
-                elif eff == "prism_sparks":
-                    segs = self._render_prism_sparks(t)
-                elif eff == "rainbow":
-                    segs = self._render_rainbow(t)
-
-                # ── Advanced Streamed Effects ────────────────────────────────
-                elif eff == "meteor_shower":
-                    segs = self._render_meteor_shower(t)
-                elif eff == "juggle":
-                    segs = self._render_harmonic_juggle(t)
-                elif eff == "colortwinkles":
-                    segs = self._render_wled_color_twinkles(t)
-                elif eff == "fireworks_1d":
-                    segs = self._render_wled_fireworks_1d(t)
-                elif eff == "dancing_shadows":
-                    segs = self._render_wled_dancing_shadows(t)
-                elif eff == "dissolve_random":
-                    segs = self._render_wled_dissolve_random(t)
-                elif eff == "bouncing_balls":
-                    segs = self._render_wled_bouncing_balls(t)
-                elif eff == "fire_2012":
-                    segs = self._render_wled_fire_2012(t)
-                elif eff == "spiral_vortex":
-                    segs = self._render_spiral_vortex(t)
-                elif eff == "gravity_slosh":
-                    segs = self._render_gravity_slosh(t)
-                elif eff == "lissajous_orbit":
-                    segs = self._render_lissajous_orbit(t)
-                elif eff == "planar_wind":
-                    segs = self._render_planar_wind(t)
-                elif eff == "radar_sweep":
-                    segs = self._render_radar_sweep(t)
-                elif eff == "vaporwave_neon":
-                    segs = self._render_vaporwave_neon(t)
-                elif eff == "neon_heartbeat":
-                    segs = self._render_anatomical_heartbeat(t)
-                elif eff == "lantern_sweep":
-                    segs = self._render_lantern_sweep(t)
-
-                # ── Seasonal & Novelty Group Dispatching ─────────────────────
-                elif eff == "candy_cane":
-                    segs = self._render_candy_cane(t)
-                elif eff == "haunted_mansion":
-                    segs = self._render_haunted_mansion(t)
-                elif eff == "police":
-                    segs = self._render_police(t)
-
-                # ── Creative Original Designs ────────────────────────────────
-                elif eff in ("oil_slick", "liquid_iridescence"):
-                    segs = self._render_oil_slick(t)
-                elif eff == "silk_ribbons":
-                    segs = self._render_silk_ribbons(t)
-                elif eff == "nebula_bloom":
-                    segs = self._render_nebula_bloom(t)
-                elif eff in ("holographic_moire", "moire"):
-                    segs = self._render_holographic_moire(t)
-                elif eff in ("bioluminescent_tide", "pacifica"):
-                    segs = self._render_bioluminescent_tide(t)
-                elif eff in ("ember_drift", "embers_drift"):
-                    segs = self._render_ember_drift(t)
-                elif eff == "cyberpunk":
-                    segs = self._render_cyberpunk(t)
-                elif eff == "prism_tunnel":
-                    segs = self._render_prism_tunnel(t)
-                elif eff == "chromatic_undertow":
-                    segs = self._render_chromatic_undertow(t)
-                elif eff == "velvet_aurora":
-                    segs = self._render_velvet_aurora(t)
-                else:
-                    # Every catalogued streamed effect must have a real renderer;
-                    # surface an error rather than silently showing a flat color.
-                    logger.error("[L930EffectsEngine] Missing streamed renderer for %s", eff)
-                    self._last_error = f"Missing streamed renderer for {eff}"
+                try:
+                    segs = self._compute_raw(eff, t)
+                except Exception as exc:
+                    logger.exception("[L930EffectsEngine] Renderer failed for %s", eff)
+                    self._last_error = f"Renderer failed for {eff}: {type(exc).__name__}: {exc}"
                     self._running = False
                     if isinstance(self._app_state, dict):
                         self._app_state["effect_status"] = "failed"
@@ -2693,6 +2604,248 @@ class L930EffectsEngine:
             sat = int(max(48, min(100, sat - max(0.0, heat - 0.72) * 95)))
             frame.append([int(hue), sat, brightness])
         return frame
+
+    def _render_wled_2d(self, effect: str, t: float) -> List[List[int]]:
+        """Render a WLED-inspired matrix/particle effect through the 50-zone XY topology."""
+        from src.visual_styles import sample_palette_oklab
+
+        sp = max(0.2, self._speed)
+        density = max(0.2, min(3.0, self._particle_density))
+        width = max(0.3, min(3.0, self._wave_width))
+        palette_name = self._palette_name if self._palette_name in PALETTES else "tide"
+        if effect in ("ps_fire", "ps_volcano"):
+            palette_name = self._palette_name if self._palette_name in PALETTES else "fire"
+        pal = get_palette_hsv(palette_name)
+        coords = get_l930_topology().coords
+        out: List[List[int]] = []
+
+        # XY coordinates are normalized to the installed strip's configured topology.
+        def xy_attractor(k: int, time_value: float) -> Tuple[float, float]:
+            orbit = 0.18 + 0.13 * (k % 3)
+            phase = time_value * (0.42 + 0.11 * k) * sp + k * 2.399963
+            return (
+                0.62 * math.cos(phase) + orbit * math.cos(phase * 1.7),
+                0.48 * math.sin(phase * 1.13) + orbit * math.sin(phase * 1.9),
+            )
+
+        # Keep particle randomness stable for each event. The animation changes because
+        # particles move/fade, not because every LED gets a new random color each frame.
+        event_period = 0.72 / max(0.45, sp)
+        active_event = max(0, int(t / event_period))
+
+        for zone, (x, y) in enumerate(coords):
+            xn = (x + 1.0) * 0.5
+            yn = max(0.0, min(1.0, (y + 1.0) / 1.8))
+            radius = min(1.0, math.sqrt(x * x + y * y) / 1.35)
+            angle = math.atan2(y, x)
+            brightness = 2.0
+            hue_pos = (zone / max(1, NUM_SEGMENTS) + t * 0.035 * sp) % 1.0
+
+            if effect == "black_hole":
+                cx, cy = 0.10 * math.sin(t * 0.35 * sp), 0.08 * math.cos(t * 0.3 * sp)
+                dx, dy = x - cx, y - cy
+                r = math.sqrt(dx * dx + dy * dy)
+                phi = math.atan2(dy, dx)
+                orbit_dots = max(0.0, math.cos(phi * 7.0 - t * 2.7 * sp)) ** 12
+                ring = math.exp(-0.5 * ((r - (0.45 + 0.05 * math.sin(t * sp))) / 0.08) ** 2)
+                brightness = 2 + 96 * max(orbit_dots * math.exp(-abs(r - 0.48) * 4.0), ring * 0.75)
+                if r < 0.18:
+                    brightness = 2
+                hue_pos = (phi / (2 * math.pi) + t * 0.04 * sp) % 1.0
+
+            elif effect == "ps_fire":
+                tongues = (
+                    0.42 * (0.5 + 0.5 * math.sin(x * 10.5 - t * 3.4 * sp))
+                    + 0.28 * (0.5 + 0.5 * math.sin(x * 19.0 + t * 4.6 * sp))
+                    + 0.17 * (0.5 + 0.5 * math.sin(x * 31.0 - t * 2.1 * sp))
+                )
+                heat = max(0.0, min(1.0, (1.0 - yn) ** 1.3 * (0.47 + tongues * 0.78)))
+                rng = self._wled_event_rng(effect, int(t * 5.0 * sp) * NUM_SEGMENTS + zone)
+                if rng.random() < 0.035 * density and yn < 0.86:
+                    heat = min(1.0, heat + rng.uniform(0.18, 0.45))
+                brightness = 2 + 98 * heat ** 1.55
+                hue_pos = heat
+
+            elif effect == "ps_waterfall":
+                phase = (yn * 2.45 + t * 0.62 * sp + 0.13 * math.sin(x * 8.0)) % 1.0
+                streak = math.exp(-0.5 * ((phase - 0.82) / (0.045 * width)) ** 2)
+                tail = math.exp(-max(0.0, 0.82 - phase) / (0.16 * width)) if phase < 0.82 else 0.0
+                lateral = 0.52 + 0.48 * math.sin(x * 15.0 + t * 1.5 * sp)
+                brightness = 2 + 96 * max(streak, tail * 0.58) * lateral
+                hue_pos = (0.52 + 0.35 * yn + t * 0.02 * sp) % 1.0
+
+            elif effect == "ps_vortex":
+                twist = angle + radius * 11.0 - t * 1.35 * sp
+                arms = max(0.0, math.cos(twist * 2.0)) ** 4
+                ring = max(0.0, math.cos(radius * 17.0 - t * 3.2 * sp)) ** 5
+                brightness = 2 + 95 * max(arms * (1.0 - radius * 0.55), ring * 0.58)
+                hue_pos = (twist / (2 * math.pi) + 0.5) % 1.0
+
+            elif effect == "ps_fireworks":
+                best = 0.0
+                best_hue = hue_pos
+                for event in range(max(0, active_event - 3), active_event + 1):
+                    rng = self._wled_event_rng(effect, event)
+                    born = event * event_period + rng.uniform(0.0, event_period * 0.35)
+                    age = t - born
+                    if age < 0 or age > 2.1 / max(0.5, sp):
+                        continue
+                    cx = rng.uniform(-0.72, 0.72)
+                    cy = rng.uniform(-0.72, 0.66)
+                    dx, dy = x - cx, y - cy
+                    r = math.sqrt(dx * dx + dy * dy)
+                    phi = math.atan2(dy, dx)
+                    ring_radius = age * 0.48 * sp
+                    ring = math.exp(-0.5 * ((r - ring_radius) / 0.055) ** 2)
+                    fragments = max(0.0, math.cos(phi * rng.randint(7, 13) + event)) ** 10
+                    decay = max(0.0, 1.0 - age * 0.52 * sp)
+                    glow = max(ring, fragments * math.exp(-abs(r - ring_radius) * 6.0) * 0.8) * decay
+                    if glow > best:
+                        best = glow
+                        best_hue = rng.random()
+                brightness = 2 + 98 * best
+                hue_pos = best_hue
+
+            elif effect == "ps_volcano":
+                source_x = 0.08 * math.sin(t * 0.55 * sp)
+                dx = x - source_x
+                plume = math.exp(-0.5 * (dx / (0.11 + yn * 0.22)) ** 2)
+                rising = 0.5 + 0.5 * math.sin(yn * 23.0 - t * 4.0 * sp + math.sin(x * 11))
+                heat = max(0.0, (1.0 - yn) * 0.72 + plume * rising * 0.63)
+                brightness = 2 + 98 * min(1.0, heat) ** 1.5
+                hue_pos = min(1.0, heat)
+
+            elif effect == "ps_ballpit":
+                best = 0.0
+                best_hue = hue_pos
+                count = max(3, min(12, int(round(5 * density))))
+                for ball in range(count):
+                    phase = t * (0.47 + 0.09 * ball) * sp + ball * 2.399963
+                    bx = 0.67 * math.sin(phase * (1.0 + (ball % 3) * 0.18))
+                    by = 0.66 * math.cos(phase * 0.77 + ball * 0.53)
+                    dist = math.sqrt((x - bx) ** 2 + (y - by) ** 2)
+                    glow = math.exp(-0.5 * (dist / (0.08 + 0.012 * (ball % 3))) ** 2)
+                    if glow > best:
+                        best = glow
+                        best_hue = (ball / count + t * 0.025 * sp) % 1.0
+                brightness = 2 + 98 * best
+                hue_pos = best_hue
+
+            elif effect == "ps_box":
+                edge = max(abs(x), abs(y))
+                boundary = math.exp(-0.5 * ((edge - 0.77) / (0.035 * width)) ** 2)
+                moving = 0.5 + 0.5 * math.sin(angle * 5.0 - t * 1.7 * sp + radius * 3.0)
+                corner = max(0.0, math.cos(angle * 4.0 - t * sp)) ** 8
+                brightness = 2 + 95 * max(boundary * (0.35 + 0.65 * moving), corner * boundary)
+                hue_pos = (angle / (2 * math.pi) + 0.5 + t * 0.025 * sp) % 1.0
+
+            elif effect == "ps_fuzzy_noise":
+                n1 = math.sin(5.4 * x + t * 0.61 * sp) * math.cos(4.2 * y - t * 0.44 * sp)
+                n2 = math.sin(10.2 * x - 1.5 * y + t * 0.37 * sp)
+                n3 = math.cos(3.1 * x + 8.3 * y + t * 0.29 * sp)
+                noise = max(0.0, min(1.0, 0.5 + 0.30 * n1 + 0.13 * n2 + 0.09 * n3))
+                brightness = 2 + 90 * noise ** 2.5
+                hue_pos = (noise * 0.75 + radius * 0.25) % 1.0
+
+            elif effect == "ps_impact":
+                best = 0.0
+                best_hue = hue_pos
+                for impact in range(3):
+                    born = impact * 1.25 / max(0.55, sp)
+                    age = (t - born) % (3.75 / max(0.55, sp))
+                    cx, cy = ((-0.48, -0.08), (0.38, 0.22), (0.04, 0.62))[impact]
+                    dist = math.sqrt((x - cx) ** 2 + (y - cy) ** 2)
+                    r = age * 0.37 * sp
+                    ring = math.exp(-0.5 * ((dist - r) / (0.04 * width)) ** 2)
+                    decay = max(0.0, 1.0 - age / (3.75 / max(0.55, sp)))
+                    glow = ring * decay
+                    if glow > best:
+                        best = glow
+                        best_hue = (impact / 3.0 + age * 0.03) % 1.0
+                brightness = 2 + 96 * best
+                hue_pos = best_hue
+
+            elif effect == "ps_attractor":
+                best = 0.0
+                best_hue = hue_pos
+                for k in range(max(3, min(8, int(round(4 * density))))):
+                    ax, ay = xy_attractor(k, t)
+                    dist = math.sqrt((x - ax) ** 2 + (y - ay) ** 2)
+                    orbit = abs(math.sin(angle * 2.0 - radius * 10.0 + t * sp * (0.8 + k * 0.06)))
+                    glow = math.exp(-0.5 * (dist / 0.09) ** 2) + 0.22 * orbit * math.exp(-radius * 1.3)
+                    if glow > best:
+                        best = glow
+                        best_hue = (k / 8.0 + t * 0.02 * sp) % 1.0
+                brightness = 2 + 96 * min(1.0, best)
+                hue_pos = best_hue
+
+            elif effect == "ps_spray":
+                best = 0.0
+                best_hue = hue_pos
+                for event in range(max(0, active_event - 8), active_event + 1):
+                    rng = self._wled_event_rng(effect, event)
+                    born = event * event_period
+                    age = t - born
+                    if age < 0 or age > 1.55 / max(0.55, sp):
+                        continue
+                    for particle in range(max(2, min(10, int(round(4 * density))))):
+                        start_x = rng.uniform(-0.2, 0.2)
+                        start_y = -0.85 + rng.uniform(-0.08, 0.08)
+                        vel_x = rng.uniform(-0.85, 0.85)
+                        vel_y = rng.uniform(0.55, 1.35)
+                        px = start_x + vel_x * age * sp
+                        py = start_y + vel_y * age * sp - 0.42 * (age * sp) ** 2
+                        dist = math.sqrt((x - px) ** 2 + (y - py) ** 2)
+                        glow = math.exp(-0.5 * (dist / 0.055) ** 2) * max(0.0, 1.0 - age / 1.55 * max(0.55, sp))
+                        if glow > best:
+                            best = glow
+                            best_hue = rng.random()
+                brightness = 2 + 98 * best
+                hue_pos = best_hue
+
+            elif effect == "ps_geq_nova":
+                spokes = 0.5 + 0.5 * math.sin(angle * 16.0 + t * 1.8 * sp + math.sin(t * 0.4))
+                rings = max(0.0, math.cos(radius * 14.0 - t * 3.3 * sp))
+                ring_gate = max(0.0, math.sin(radius * 14.0 - t * 3.3 * sp))
+                glow = max(0.0, spokes - 0.48) ** 2 * (0.25 + 0.75 * rings)
+                glow = max(glow, ring_gate ** 5 * 0.45)
+                brightness = 2 + 94 * glow
+                hue_pos = (angle / (2 * math.pi) + 0.5 + radius * 0.2) % 1.0
+
+            elif effect == "ps_ghost_rider":
+                phase = t * 0.45 * sp
+                hx = 0.66 * math.sin(phase)
+                hy = 0.57 * math.sin(phase * 1.37 + 0.7)
+                dist = math.sqrt((x - hx) ** 2 + (y - hy) ** 2)
+                head = math.exp(-0.5 * (dist / 0.065) ** 2)
+                trail = 0.0
+                for tail_step in range(1, max(2, min(14, int(round(8 * self._tail_length))))):
+                    past_t = max(0.0, t - tail_step * 0.055 / max(0.2, sp))
+                    tx = 0.66 * math.sin(past_t * 0.45 * sp)
+                    ty = 0.57 * math.sin(past_t * 0.45 * sp * 1.37 + 0.7)
+                    td = math.sqrt((x - tx) ** 2 + (y - ty) ** 2)
+                    trail = max(trail, math.exp(-0.5 * (td / 0.055) ** 2) * math.exp(-tail_step / 5.0))
+                brightness = 2 + 98 * max(head, trail * 0.75)
+                hue_pos = (phase * 0.11 + radius * 0.15) % 1.0
+
+            elif effect == "ps_blobs":
+                field = 0.0
+                weighted_hue = 0.0
+                count = max(2, min(9, int(round(4 * density))))
+                for blob in range(count):
+                    phase = t * (0.28 + blob * 0.035) * sp + blob * 2.399963
+                    bx = 0.68 * math.sin(phase + blob * 0.3)
+                    by = 0.61 * math.sin(phase * (1.0 + (blob % 3) * 0.17) + blob)
+                    influence = math.exp(-0.5 * ((x - bx) ** 2 + (y - by) ** 2) / (0.15 ** 2))
+                    field += influence
+                    weighted_hue += influence * ((blob / count + t * 0.018 * sp) % 1.0)
+                brightness = 2 + 96 * min(1.0, field * 0.72) ** 1.25
+                if field > 0.02:
+                    hue_pos = (weighted_hue / max(1e-6, field)) % 1.0
+
+            hue, sat, _ = sample_palette_oklab(pal, hue_pos, cyclic=True)
+            out.append([int(hue) % 361, int(sat), int(max(2, min(100, brightness)))])
+        return out
 
     def _render_sinelon_sweep(self, t: float) -> List[List[int]]:
         """
@@ -3678,6 +3831,8 @@ class L930EffectsEngine:
     def _compute_raw(self, name: str, t: float = 0.0) -> List[List[int]]:
         eff = resolve_effect_alias(name)
 
+        if eff in WLED_2D_EFFECTS:
+            return self._render_wled_2d(eff, t)
         if eff == "lava_lamp":
             return self._render_lava_lamp(t)
         elif eff == "dusk":
