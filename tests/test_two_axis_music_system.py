@@ -211,7 +211,14 @@ def test_random_chain_reaction_triggers_scattered_ics_and_smoothly_fades():
     lit = [i for i, (_, _, v) in enumerate(frame) if v > 10]
     assert 2 <= len(lit) < 50, "The effect should create localized bursts, not a full-strip wash"
 
-    # Quiet follow-up frames must decay continuously instead of abruptly snapping off.
-    quiet = MusicState(energy=0.0, section=Section.SILENT)
-    fading = style.render(quiet, dt=0.03, num_zones=50)
-    assert all(v == 0 for _, _, v in fading)
+    # A non-silent frame with no new note should retain a smooth afterglow,
+    # while reducing total energy rather than snapping every IC off.
+    between_notes = MusicState(
+        bands=np.full(50, 0.15, dtype=np.float32),
+        energy=0.2,
+        section=Section.VERSE,
+        palette=state.palette,
+    )
+    fading = style.render(between_notes, dt=0.03, num_zones=50)
+    assert any(v > 0 for _, _, v in fading)
+    assert sum(v for _, _, v in fading) < sum(v for _, _, v in frame)
