@@ -545,12 +545,12 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
     'ps_waterfall': {
         'kind': 'streamed_slow', 'group': 'Motion', 'category': 'creative',
         'desc': 'WLED PS Waterfall-inspired falling streams and short bright water trails',
-        'default_palette': 'tide', 'supported_controls': ['speed', 'brightness', 'particle_density'],
+        'default_palette': 'tide', 'supported_controls': ['speed', 'brightness', 'wave_width'],
     },
     'ps_vortex': {
         'kind': 'streamed_slow', 'group': 'Motion', 'category': 'creative',
         'desc': 'WLED PS Vortex-inspired swirling particles, rotating rings, and radial drift',
-        'default_palette': 'tide', 'supported_controls': ['speed', 'brightness', 'particle_density'],
+        'default_palette': 'tide', 'supported_controls': ['speed', 'brightness', 'wave_width'],
     },
     'ps_fireworks': {
         'kind': 'streamed_slow', 'group': 'Motion', 'category': 'creative',
@@ -595,7 +595,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
     'ps_geq_nova': {
         'kind': 'streamed_slow', 'group': 'Motion', 'category': 'creative',
         'desc': 'WLED PS GEQ Nova-inspired radial equalizer columns mapped across the 2D layout',
-        'default_palette': 'neon', 'supported_controls': ['speed', 'brightness', 'wave_width'],
+        'default_palette': 'tide', 'supported_controls': ['speed', 'brightness', 'wave_width'],
     },
     'ps_ghost_rider': {
         'kind': 'streamed_slow', 'group': 'Motion', 'category': 'creative',
@@ -772,6 +772,30 @@ for _effect_name in ACTIVE_EFFECTS:
     _effect_meta["group"] = "Motion"
     _effect_meta["category"] = "creative"
     _effect_meta["dimension"] = EFFECT_DIMENSIONS[_effect_name]
+
+WLED_DISPLAY_NAMES: Dict[str, str] = {
+    "juggle": "Juggle", "colortwinkles": "Color Twinkles", "meteor_shower": "Meteor",
+    "radial_ripple": "Ripple", "fireworks_1d": "Fireworks 1D", "dancing_shadows": "Dancing Shadows",
+    "dissolve_random": "Dissolve Rnd", "bouncing_balls": "Bouncing Balls", "fire_2012": "Fire 2012",
+    "comet": "Comet", "sinelon": "Sinelon", "cyber_chase": "Chase", "raindrop": "Drip",
+    "lightning": "Lightning", "rainbow": "Rainbow", "fireflies": "Fireflies",
+    "starfield": "Twinklefox-style Starfield", "embers": "Fire Flicker", "breathe": "Breathe",
+    "candy_cane": "Candy Cane", "police": "Police", "neon_heartbeat": "Heartbeat",
+    "tide": "Pacifica", "lantern_sweep": "Scan / Spotlight", "prism_sparks": "Fireworks Starburst",
+    "spiral_vortex": "Spiral Vortex (2D)", "gravity_slosh": "Gravity Slosh (2D)",
+    "lissajous_orbit": "Lissajous Orbit (2D)", "planar_wind": "Planar Wind (2D)",
+    "radar_sweep": "Radar Sweep (2D)", "silk_ribbons": "Silk Ribbons (2D)",
+    "nebula_bloom": "Nebula Bloom (2D)", "holographic_moire": "Distortion Waves (2D-inspired)",
+    "bioluminescent_tide": "Pacifica / Ocean (2D projection)", "chromatic_undertow": "Wavesins-inspired (2D)",
+    "black_hole": "Black Hole (2D)", "ps_fire": "PS Fire (2D)", "ps_waterfall": "PS Waterfall (2D)",
+    "ps_vortex": "PS Vortex (2D)", "ps_fireworks": "PS Fireworks (2D)", "ps_volcano": "PS Volcano (2D)",
+    "ps_ballpit": "PS Ballpit (2D)", "ps_box": "PS Box (2D)", "ps_fuzzy_noise": "PS Fuzzy Noise (2D)",
+    "ps_impact": "PS Impact (2D)", "ps_attractor": "PS Attractor (2D)", "ps_spray": "PS Spray (2D)",
+    "ps_geq_nova": "PS GEQ Nova (2D)", "ps_ghost_rider": "PS Ghost Rider (2D)", "ps_blobs": "PS Blobs (2D)",
+}
+for _effect_name, _display_name in WLED_DISPLAY_NAMES.items():
+    if _effect_name in EFFECT_CATALOG:
+        EFFECT_CATALOG[_effect_name]["display_name"] = _display_name
 
 class L930EffectsEngine:
     """
@@ -2675,18 +2699,20 @@ class L930EffectsEngine:
                 hue_pos = (0.52 + 0.35 * yn + t * 0.02 * sp) % 1.0
 
             elif effect == "ps_vortex":
-                twist = angle + radius * 11.0 - t * 1.35 * sp
+                twist = angle + radius * 11.0 / width - t * 1.35 * sp
                 arms = max(0.0, math.cos(twist * 2.0)) ** 4
-                ring = max(0.0, math.cos(radius * 17.0 - t * 3.2 * sp)) ** 5
+                ring = max(0.0, math.cos(radius * 17.0 / width - t * 3.2 * sp)) ** 5
                 brightness = 2 + 95 * max(arms * (1.0 - radius * 0.55), ring * 0.58)
                 hue_pos = (twist / (2 * math.pi) + 0.5) % 1.0
 
             elif effect == "ps_fireworks":
                 best = 0.0
                 best_hue = hue_pos
-                for event in range(max(0, active_event - 3), active_event + 1):
+                firework_period = event_period / max(0.25, density)
+                firework_event = max(0, int(t / firework_period))
+                for event in range(max(0, firework_event - 3), firework_event + 1):
                     rng = self._wled_event_rng(effect, event)
-                    born = event * event_period + rng.uniform(0.0, event_period * 0.35)
+                    born = event * firework_period + rng.uniform(0.0, firework_period * 0.35)
                     age = t - born
                     if age < 0 or age > 2.1 / max(0.5, sp):
                         continue
@@ -2740,9 +2766,9 @@ class L930EffectsEngine:
                 hue_pos = (angle / (2 * math.pi) + 0.5 + t * 0.025 * sp) % 1.0
 
             elif effect == "ps_fuzzy_noise":
-                n1 = math.sin(5.4 * x + t * 0.61 * sp) * math.cos(4.2 * y - t * 0.44 * sp)
-                n2 = math.sin(10.2 * x - 1.5 * y + t * 0.37 * sp)
-                n3 = math.cos(3.1 * x + 8.3 * y + t * 0.29 * sp)
+                n1 = math.sin(5.4 * x / width + t * 0.61 * sp) * math.cos(4.2 * y / width - t * 0.44 * sp)
+                n2 = math.sin(10.2 * x / width - 1.5 * y / width + t * 0.37 * sp)
+                n3 = math.cos(3.1 * x / width + 8.3 * y / width + t * 0.29 * sp)
                 noise = max(0.0, min(1.0, 0.5 + 0.30 * n1 + 0.13 * n2 + 0.09 * n3))
                 brightness = 2 + 90 * noise ** 2.5
                 hue_pos = (noise * 0.75 + radius * 0.25) % 1.0
@@ -2758,7 +2784,7 @@ class L930EffectsEngine:
                     r = age * 0.37 * sp
                     ring = math.exp(-0.5 * ((dist - r) / (0.04 * width)) ** 2)
                     decay = max(0.0, 1.0 - age / (3.75 / max(0.55, sp)))
-                    glow = ring * decay
+                    glow = ring * decay * min(1.0, 0.35 + density * 0.28)
                     if glow > best:
                         best = glow
                         best_hue = (impact / 3.0 + age * 0.03) % 1.0
@@ -2805,8 +2831,8 @@ class L930EffectsEngine:
 
             elif effect == "ps_geq_nova":
                 spokes = 0.5 + 0.5 * math.sin(angle * 16.0 + t * 1.8 * sp + math.sin(t * 0.4))
-                rings = max(0.0, math.cos(radius * 14.0 - t * 3.3 * sp))
-                ring_gate = max(0.0, math.sin(radius * 14.0 - t * 3.3 * sp))
+                rings = max(0.0, math.cos(radius * 14.0 / width - t * 3.3 * sp))
+                ring_gate = max(0.0, math.sin(radius * 14.0 / width - t * 3.3 * sp))
                 glow = max(0.0, spokes - 0.48) ** 2 * (0.25 + 0.75 * rings)
                 glow = max(glow, ring_gate ** 5 * 0.45)
                 brightness = 2 + 94 * glow
