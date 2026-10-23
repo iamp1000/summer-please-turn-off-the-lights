@@ -2442,9 +2442,10 @@ class L930EffectsEngine:
             r = r_dists[i]
             # Expanding circular wave crests scaled by wave_width
             wave = math.sin((r - phase) * freq_factor * math.pi)
-            norm_wave = (wave + 1.0) * 0.5
+            # Keep troughs dark; bright crests should read as moving wavefronts.
+            crest = max(0.0, (wave - 0.18) / 0.82) ** 1.8
             h, s, _ = sample_palette_oklab(pal, (r + phase * 0.5) % 1.0, cyclic=True)
-            v = int(max(10, min(100, (15 + norm_wave * 85))))
+            v = int(max(2, min(100, 3 + crest * 97)))
             segs.append([h, s, v])
         return segs
 
@@ -2468,8 +2469,9 @@ class L930EffectsEngine:
             wave = 0.5 + 0.5 * math.cos(spiral_phase * 2.0 * math.pi)
 
             h, s, _ = sample_palette_oklab(pal, (norm_r * 0.6 + rot_phase * 0.4) % 1.0, cyclic=True)
-            core_intensity = 0.35 + 0.65 * (wave ** 1.4)
-            v = int(max(15, min(100, 15 + core_intensity * 75 * (1.0 - 0.25 * norm_r))))
+            # Narrower bright bands separated by near-black troughs.
+            core_intensity = wave ** 2.4
+            v = int(max(2, min(100, 2 + core_intensity * 98 * (1.0 - 0.30 * norm_r))))
             segs.append([h, s, v])
         return segs
 
@@ -2625,7 +2627,8 @@ class L930EffectsEngine:
             norm_pos = (i / float(NUM_SEGMENTS - 1) - scan) % 1.0
             wave = 0.5 + 0.5 * math.sin(norm_pos * 3.0 * 2.0 * math.pi)
             h, s, _ = sample_palette_oklab(neon_pal, norm_pos, cyclic=True)
-            v = int(max(10, min(100, 12 + (wave ** 1.6) * 88)))
+            # Punchy neon rails with dark negative space between them.
+            v = int(max(2, min(100, 2 + (wave ** 2.8) * 98)))
             segs.append([h, s, v])
         return segs
 
@@ -2646,11 +2649,12 @@ class L930EffectsEngine:
             dist = abs(i - pos)
             core = math.exp(-0.5 * (dist / 3.5) ** 2)
             halo = math.exp(-0.5 * (dist / (10.0 * tl)) ** 2) * 0.60
-            intensity = min(1.0, core * 0.85 + halo * 0.45)
+            intensity = min(1.0, core * 0.95 + halo * 0.32)
 
-            h = int(30 + (1.0 - core) * 12)
+            h = int(28 + (1.0 - core) * 14)
             s = int(82 + core * 18)
-            v = int(max(10, min(100, 12 + intensity * 88)))
+            # Keep the warm moving lantern distinct from a full-strip wash.
+            v = int(max(2, min(100, 2 + intensity * 98)))
             segs.append([h, s, v])
         return segs
 
