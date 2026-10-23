@@ -460,7 +460,7 @@ def test_l930_explicit_zero_transition_is_not_replaced_by_music_fade():
 def test_original_effects_use_procedural_playback_not_firmware_colour_sequences():
     from src.effects_l930 import EFFECT_CATALOG, CREATIVE_EFFECTS, CUSTOM_EFFECTS
 
-    expected = {"juggle", "colortwinkles", "meteor_shower", "radial_ripple", "fireworks_1d", "dancing_shadows", "bioluminescent_tide", "dissolve_random", "bouncing_balls", "aurora_motion"}
+    expected = {"juggle", "colortwinkles", "meteor_shower", "radial_ripple", "fireworks_1d", "dancing_shadows", "bioluminescent_tide", "dissolve_random", "bouncing_balls", "fire_2012"}
     spatial = {"spiral_vortex", "gravity_slosh", "lissajous_orbit", "planar_wind", "vaporwave_neon"}
     assert set(CREATIVE_EFFECTS) == expected
     assert expected | spatial <= set(CUSTOM_EFFECTS)
@@ -562,7 +562,7 @@ def test_effect_catalog_curation_structure():
 
     expected_creative = {
         "juggle", "colortwinkles", "meteor_shower", "radial_ripple", "fireworks_1d",
-        "dancing_shadows", "bioluminescent_tide", "dissolve_random", "bouncing_balls", "aurora_motion"
+        "dancing_shadows", "bioluminescent_tide", "dissolve_random", "bouncing_balls", "fire_2012"
     }
     assert set(CREATIVE_EFFECTS) == expected_creative
 
