@@ -522,13 +522,13 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'default_palette': 'sunset',
         'supported_controls': ['speed', 'brightness', 'particle_density'],
     },
-    'aurora_motion': {
+    'fire_2012': {
         'kind': 'streamed_slow',
         'group': 'Motion',
         'category': 'creative',
-        'desc': 'WLED-style aurora curtains with layered motion and clear dark gaps',
-        'default_palette': 'forest',
-        'supported_controls': ['speed', 'brightness', 'wave_width'],
+        'desc': 'Classic heat-driven fire with rising tongues, cooling edges, and occasional bright sparks',
+        'default_palette': 'fire',
+        'supported_controls': ['speed', 'brightness', 'particle_density'],
     },
 
     # ── 4. Merged Entries / Aliases (10) ─────────────────────────────────────
@@ -661,7 +661,7 @@ CORE_EFFECTS: List[str] = []
 CREATIVE_EFFECTS: List[str] = [
     "juggle", "colortwinkles", "meteor_shower", "radial_ripple",
     "fireworks_1d", "dancing_shadows", "bioluminescent_tide",
-    "dissolve_random", "bouncing_balls", "aurora_motion",
+    "dissolve_random", "bouncing_balls", "fire_2012",
 ]
 SPATIAL_EXPERIMENTS: List[str] = [
     "spiral_vortex", "gravity_slosh", "lissajous_orbit",
@@ -1779,8 +1779,8 @@ class L930EffectsEngine:
                     segs = self._render_wled_dissolve_random(t)
                 elif eff == "bouncing_balls":
                     segs = self._render_wled_bouncing_balls(t)
-                elif eff == "aurora_motion":
-                    segs = self._render_aurora(t)
+                elif eff == "fire_2012":
+                    segs = self._render_wled_fire_2012(t)
                 elif eff == "spiral_vortex":
                     segs = self._render_spiral_vortex(t)
                 elif eff == "gravity_slosh":
@@ -2382,7 +2382,7 @@ class L930EffectsEngine:
         from src.visual_styles import sample_palette_oklab
         sp = max(0.2, self._speed)
         pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "dusk")
-        spawn_period = 0.17 / max(0.55, sp)
+        spawn_period = 0.17 / (max(0.55, sp) * max(0.2, self._particle_density))
         lifetime_max = 1.55 / max(0.65, sp)
         start = max(0, int((t - lifetime_max - spawn_period) / spawn_period))
         end = max(0, int(t / spawn_period) + 1)
@@ -2450,8 +2450,9 @@ class L930EffectsEngine:
             if burst_age > 0.95 / max(0.65, sp):
                 continue
             decay = max(0.0, 1.0 - burst_age / (0.95 / max(0.65, sp))) ** 1.55
-            for spark in range(10):
-                spark_dir = -1.0 if spark < 5 else 1.0
+            spark_count = max(4, min(16, int(round(10 * max(0.2, self._particle_density)))))
+            for spark in range(spark_count):
+                spark_dir = -1.0 if spark < spark_count // 2 else 1.0
                 speed = rng.uniform(10.0, 27.0) * sp
                 travel = max(0.0, speed * burst_age - 13.0 * sp * burst_age * burst_age)
                 spark_pos = apex + spark_dir * travel
@@ -2561,6 +2562,36 @@ class L930EffectsEngine:
                 if value > values[i]:
                     values[i] = value
                     frame[i] = [int(hue), int(sat), int(min(100, value))]
+        return frame
+
+    def _render_wled_fire_2012(self, t: float) -> List[List[int]]:
+        """FastLED/WLED Fire 2012-inspired heat field: rising hot pockets, cooling edges, rare sparks."""
+        from src.visual_styles import sample_palette_oklab
+        sp = max(0.2, self._speed)
+        density = max(0.2, min(3.0, self._particle_density))
+        palette = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "fire")
+        spark_tick = int(max(0.0, t) * 4.0 * sp)
+        frame: List[List[int]] = []
+        for i in range(NUM_SEGMENTS):
+            x = i / float(NUM_SEGMENTS - 1)
+            # Heat pools near the source; convection pulls smaller tongues upward.
+            source_heat = max(0.0, 1.0 - x) ** 1.15
+            tongues = (
+                0.27 * (0.5 + 0.5 * math.sin(t * 3.4 * sp - x * 18.0))
+                + 0.18 * (0.5 + 0.5 * math.sin(t * 5.8 * sp + x * 27.0 + math.sin(t * 1.3)))
+                + 0.12 * (0.5 + 0.5 * math.sin(t * 2.1 * sp - x * 9.5))
+            )
+            rng = self._wled_event_rng("fire_2012", spark_tick * NUM_SEGMENTS + i)
+            spark = 0.0
+            if rng.random() < min(0.26, 0.035 * density):
+                spark = rng.uniform(0.25, 0.62) * max(0.2, 1.0 - x * 0.45)
+            heat = max(0.0, min(1.0, source_heat * 0.56 + tongues * (0.40 + 0.35 * density) + spark))
+            heat = heat ** 1.2
+            hue, sat, _ = sample_palette_oklab(palette, heat, cyclic=False)
+            brightness = int(max(2, min(100, 100 * heat ** 1.55)))
+            # The hottest flame cores desaturate toward yellow-white.
+            sat = int(max(48, min(100, sat - max(0.0, heat - 0.72) * 95)))
+            frame.append([int(hue), sat, brightness])
         return frame
 
     def _render_sinelon_sweep(self, t: float) -> List[List[int]]:
@@ -3569,8 +3600,8 @@ class L930EffectsEngine:
             return self._render_wled_dissolve_random(t)
         elif eff == "bouncing_balls":
             return self._render_wled_bouncing_balls(t)
-        elif eff == "aurora_motion":
-            return self._render_aurora(t)
+        elif eff == "fire_2012":
+            return self._render_wled_fire_2012(t)
         elif eff == "sinelon":
             return self._render_sinelon_sweep(t)
         elif eff == "confetti":
