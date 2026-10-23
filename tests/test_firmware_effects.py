@@ -460,7 +460,7 @@ def test_l930_explicit_zero_transition_is_not_replaced_by_music_fade():
 def test_original_effects_use_procedural_playback_not_firmware_colour_sequences():
     from src.effects_l930 import EFFECT_CATALOG, CREATIVE_EFFECTS, CUSTOM_EFFECTS
 
-    expected = {"oil_slick", "silk_ribbons", "nebula_bloom", "holographic_moire", "bioluminescent_tide", "ember_drift", "cyberpunk", "prism_tunnel", "chromatic_undertow", "velvet_aurora"}
+    expected = {"juggle", "radial_ripple", "meteor_shower", "bioluminescent_tide", "spiral_vortex", "gravity_slosh", "radar_sweep", "vaporwave_neon", "neon_heartbeat", "lantern_sweep"}
     spatial = {"spiral_vortex", "gravity_slosh", "lissajous_orbit", "planar_wind", "vaporwave_neon"}
     assert set(CREATIVE_EFFECTS) == expected
     assert expected | spatial <= set(CUSTOM_EFFECTS)
@@ -558,10 +558,11 @@ def test_effect_catalog_curation_structure():
     assert NOVELTY_EFFECTS == []
     assert len(CREATIVE_EFFECTS) == 10
     assert OCCASIONAL_EFFECTS == []
-    assert len(ACTIVE_EFFECTS) == 15
+    assert len(ACTIVE_EFFECTS) == 10
 
     expected_creative = {
-        "oil_slick", "silk_ribbons", "nebula_bloom", "holographic_moire", "bioluminescent_tide", "ember_drift", "cyberpunk", "prism_tunnel", "chromatic_undertow", "velvet_aurora"
+        "juggle", "radial_ripple", "meteor_shower", "bioluminescent_tide", "spiral_vortex",
+        "gravity_slosh", "radar_sweep", "vaporwave_neon", "neon_heartbeat", "lantern_sweep"
     }
     assert set(CREATIVE_EFFECTS) == expected_creative
 
