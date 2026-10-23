@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from src.effects_l930 import L930EffectsEngine, CREATIVE_EFFECTS, SPATIAL_EXPERIMENTS, ACTIVE_EFFECTS, EFFECT_CATALOG
+from src.effects_l930 import L930EffectsEngine, CREATIVE_EFFECTS, SPATIAL_EXPERIMENTS, ACTIVE_EFFECTS, EFFECT_CATALOG, WLED_1D_EFFECTS, WLED_2D_EFFECTS
 
 
 @pytest.fixture
@@ -11,9 +11,15 @@ def engine():
 
 def test_creative_effects_registered_and_configured(engine):
     """The visible shelf is curated around distinct WLED-inspired motion models."""
-    assert len(CREATIVE_EFFECTS) == 10
-    expected = {"juggle", "colortwinkles", "meteor_shower", "radial_ripple", "fireworks_1d", "dancing_shadows", "bioluminescent_tide", "dissolve_random", "bouncing_balls", "fire_2012"}
-    assert set(CREATIVE_EFFECTS) == expected
+    assert len(CREATIVE_EFFECTS) == 50
+    assert len(WLED_1D_EFFECTS) == 25
+    assert len(WLED_2D_EFFECTS) == 25
+    assert len(set(WLED_1D_EFFECTS) & set(WLED_2D_EFFECTS)) == 0
+    assert set(CREATIVE_EFFECTS) == set(WLED_1D_EFFECTS) | set(WLED_2D_EFFECTS)
+    for name in WLED_1D_EFFECTS:
+        assert EFFECT_CATALOG[name]["dimension"] == "1D"
+    for name in WLED_2D_EFFECTS:
+        assert EFFECT_CATALOG[name]["dimension"] == "2D"
 
     for eff in CREATIVE_EFFECTS:
         meta = EFFECT_CATALOG[eff]
@@ -26,13 +32,15 @@ def test_creative_effects_registered_and_configured(engine):
 def test_visible_effect_shelf_uses_procedural_renderers(engine):
     """Visible designs use their 50-zone renderer rather than a firmware colour sequence."""
     assert set(ACTIVE_EFFECTS) == set(CREATIVE_EFFECTS)
-    assert len(ACTIVE_EFFECTS) == 10
+    assert len(ACTIVE_EFFECTS) == 50
     for name in ACTIVE_EFFECTS:
         assert EFFECT_CATALOG[name]["kind"] == "streamed_slow", name
         frame = engine._compute(name, t=1.37)
         assert len(frame) == 50, name
-        assert frame != engine._render_rainbow(t=1.37), f"{name} is falling back to Rainbow"
-        assert len({tuple(zone) for zone in frame}) > 1, f"{name} is spatially uniform"
+        if name != "rainbow":
+            assert frame != engine._render_rainbow(t=1.37), f"{name} is falling back to Rainbow"
+        if name != "breathe":
+            assert len({tuple(zone) for zone in frame}) > 1, f"{name} is spatially uniform"
 
 
 def test_creative_effects_generate_valid_smooth_zones(engine):
