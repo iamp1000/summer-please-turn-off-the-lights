@@ -1834,10 +1834,7 @@ function renderUI() {
     let keys = Object.keys(catalog).filter(k =>
       curatedIds.has(k) &&
       catalog[k]?.category !== "alias" &&
-      catalog[k]?.category !== "reactive" &&
-      catalog[k]?.category !== "core" &&
-      catalog[k]?.category !== "seasonal" &&
-      catalog[k]?.category !== "novelty"
+      catalog[k]?.category !== "reactive"
     );
 
     if (currentExperienceTab === "ambient") {
@@ -1854,15 +1851,15 @@ function renderUI() {
         return (m.group === "Motion" || m.group === "Seasonal & Novelty" || m.group === "Creative" || meta.tab === "motion");
       });
       if (currentEffectCategory === "core") {
-        keys = keys.filter(k => catalog[k]?.category === "core");
+        keys = keys.filter(k => (EXPERIENCE_METADATA[k]?.cat || catalog[k]?.category) === "core");
       } else if (currentEffectCategory === "advanced") {
-        keys = keys.filter(k => catalog[k]?.category === "advanced");
+        keys = keys.filter(k => (EXPERIENCE_METADATA[k]?.cat || catalog[k]?.category) === "advanced");
       } else if (currentEffectCategory === "creative") {
-        keys = keys.filter(k => catalog[k]?.category === "creative");
+        keys = keys.filter(k => (EXPERIENCE_METADATA[k]?.cat || catalog[k]?.category) === "creative");
       } else if (currentEffectCategory === "seasonal") {
-        keys = keys.filter(k => catalog[k]?.category === "seasonal");
+        keys = keys.filter(k => (EXPERIENCE_METADATA[k]?.cat || catalog[k]?.category) === "seasonal");
       } else if (currentEffectCategory === "novelty") {
-        keys = keys.filter(k => catalog[k]?.category === "novelty");
+        keys = keys.filter(k => (EXPERIENCE_METADATA[k]?.cat || catalog[k]?.category) === "novelty");
       }
     }
 
