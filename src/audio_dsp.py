@@ -405,10 +405,13 @@ class DynamicSongCalibrator:
         self.slow_history: deque[Tuple[float, float, float]] = deque(maxlen=2250)
         self.frame_counter: int = 0
 
-        self.p5: float = 0.005
-        self.p50: float = 0.03
-        self.p95: float = 0.15
-        self.p99: float = 0.25
+        # Conservative startup percentiles let quiet-but-real loopback audio
+        # respond immediately instead of spending the first seconds below the
+        # active-energy gate while the long-window calibrator warms up.
+        self.p5: float = 0.003
+        self.p50: float = 0.012
+        self.p95: float = 0.050
+        self.p99: float = 0.080
 
         self.smoothed_energy: float = 0.0
         self.energy_trend: float = 0.0
@@ -457,8 +460,10 @@ class DynamicSongCalibrator:
             drop_strength = 0.0
             self.norm_kick = 0.0
         else:
-            floor = min(0.010, self.p5)
-            dyn_range = max(0.030, self.p95 - floor)
+            # Do not treat quiet loopback output as silence simply because
+            # the default percentile seed assumes much louder audio.
+            floor = min(0.0025, self.p5)
+            dyn_range = max(0.020, self.p95 - floor)
             norm_energy = max(0.0, min(1.0, (rms - floor) / dyn_range))
             norm_energy = min(1.0, norm_energy * self.sensitivity)
 
