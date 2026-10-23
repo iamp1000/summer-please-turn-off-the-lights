@@ -131,3 +131,34 @@ def test_cyberpunk_synthwave_composition(engine):
     has_magenta_violet = any(270 <= h <= 345 for h in hues)
     assert has_cyan, "Cyberpunk missing electric cyan"
     assert has_magenta_violet, "Cyberpunk missing neon magenta / ultraviolet"
+
+
+def test_new_original_effects_are_dispatched_by_live_stream_worker(engine):
+    """New catalog effects must render real frames, never the old flat-color fallback."""
+    import threading
+    from types import SimpleNamespace
+
+    for name in ("prism_tunnel", "chromatic_undertow", "velvet_aurora"):
+        stop = threading.Event()
+        submitted = []
+
+        def submit(frame):
+            submitted.append(frame)
+            stop.set()
+
+        engine._ctrl = SimpleNamespace(submit_frame=submit)
+        engine._frame_bus = None
+        engine._active_effect_name = name
+        engine._active_kind = "streamed_slow"
+        engine._effect_generation += 1
+        generation = engine._effect_generation
+        engine._start_time = __import__("time").monotonic()
+        engine._stream_run(stop, generation)
+
+        assert submitted, f"{name} did not submit a live frame"
+        frame = submitted[0]
+        assert len(frame["segments"]) == 50
+        assert len({tuple(zone) for zone in frame["segments"]}) > 5, (
+            f"{name} fell back to a uniform frame"
+        )
+        assert frame["transition"] <= 500, "smooth frames should not be forced to half-second transitions"
