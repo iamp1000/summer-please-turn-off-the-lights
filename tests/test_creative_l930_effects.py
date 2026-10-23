@@ -12,7 +12,7 @@ def engine():
 def test_creative_effects_registered_and_configured(engine):
     """The visible shelf is curated around distinct WLED-inspired motion models."""
     assert len(CREATIVE_EFFECTS) == 10
-    expected = {"juggle", "radial_ripple", "meteor_shower", "bioluminescent_tide", "spiral_vortex", "gravity_slosh", "radar_sweep", "vaporwave_neon", "neon_heartbeat", "lantern_sweep"}
+    expected = {"juggle", "colortwinkles", "meteor_shower", "radial_ripple", "fireworks_1d", "dancing_shadows", "bioluminescent_tide", "dissolve_random", "bouncing_balls", "aurora_motion"}
     assert set(CREATIVE_EFFECTS) == expected
 
     for eff in CREATIVE_EFFECTS:
