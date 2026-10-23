@@ -481,6 +481,56 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness'],
     },
 
+
+    'colortwinkles': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'creative',
+        'desc': 'Independent colored LED twinkles with a quick glint and smooth asynchronous fade',
+        'default_palette': 'dusk',
+        'supported_controls': ['speed', 'brightness', 'particle_density'],
+    },
+    'fireworks_1d': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'creative',
+        'desc': 'Short rocket trails break into independently moving sparks that decay into darkness',
+        'default_palette': 'sunset',
+        'supported_controls': ['speed', 'brightness', 'particle_density'],
+    },
+    'dancing_shadows': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'creative',
+        'desc': 'Several moving spotlights travel independently over a dark strip',
+        'default_palette': 'dusk',
+        'supported_controls': ['speed', 'brightness', 'wave_width'],
+    },
+    'dissolve_random': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'creative',
+        'desc': 'Random-order ICs fade on, hold briefly, then dissolve back to darkness',
+        'default_palette': 'sunset',
+        'supported_controls': ['speed', 'brightness'],
+    },
+    'bouncing_balls': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'creative',
+        'desc': 'Independently colored balls bounce along the strip with small fading trails',
+        'default_palette': 'sunset',
+        'supported_controls': ['speed', 'brightness', 'particle_density'],
+    },
+    'aurora_motion': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'creative',
+        'desc': 'WLED-style aurora curtains with layered motion and clear dark gaps',
+        'default_palette': 'forest',
+        'supported_controls': ['speed', 'brightness', 'wave_width'],
+    },
+
     # ── 4. Merged Entries / Aliases (10) ─────────────────────────────────────
     'dusk': {
         'kind': 'streamed_slow',
@@ -605,13 +655,13 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
     },
 }
 
-# Curated WLED-inspired shelf: distinct motion models, not palette variations.
-# The previous optical-gradient experiments remain internal for compatibility.
+# Curated shelf uses recognizable WLED effect families on the 50-zone 1D strip.
+# Matrix-only effects are not presented as if this strip were a 2D matrix.
 CORE_EFFECTS: List[str] = []
 CREATIVE_EFFECTS: List[str] = [
-    "juggle", "radial_ripple", "meteor_shower", "bioluminescent_tide",
-    "spiral_vortex", "gravity_slosh", "radar_sweep", "vaporwave_neon",
-    "neon_heartbeat", "lantern_sweep",
+    "juggle", "colortwinkles", "meteor_shower", "radial_ripple",
+    "fireworks_1d", "dancing_shadows", "bioluminescent_tide",
+    "dissolve_random", "bouncing_balls", "aurora_motion",
 ]
 SPATIAL_EXPERIMENTS: List[str] = [
     "spiral_vortex", "gravity_slosh", "lissajous_orbit",
