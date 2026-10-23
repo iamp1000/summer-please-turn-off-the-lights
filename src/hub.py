@@ -212,6 +212,7 @@ class LightHub:
                 {"id": "bass_bounce", "name": "🏀 Bounce"},
                 {"id": "center_burst", "name": "💫 Burst"},
                 {"id": "twinkle", "name": "✨ Twinkle"},
+                {"id": "chain_reaction", "name": "⚡ Random Chain Reaction"},
                 {"id": "bpm_resonator", "name": "🎛️ BPM Resonator"},
             ],
             "visualizer_modes": [
