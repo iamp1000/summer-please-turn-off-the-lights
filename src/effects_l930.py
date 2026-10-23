@@ -2415,7 +2415,8 @@ class L930EffectsEngine:
         from src.visual_styles import sample_palette_oklab
         sp = max(0.2, self._speed)
         pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "sunset")
-        period = 2.45 / max(0.55, sp)
+        density = max(0.2, min(3.0, self._particle_density))
+        period = 2.45 / (max(0.55, sp) * max(0.35, density))
         start = max(0, int((t - 1.8 / max(0.6, sp)) / period))
         end = max(0, int(t / period) + 1)
         values = [2.0] * NUM_SEGMENTS
