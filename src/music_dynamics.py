@@ -19,7 +19,7 @@ def music_is_genuinely_active(state: Any) -> bool:
         energy = float(getattr(state, "energy", 0.0))
     except (TypeError, ValueError):
         return False
-    return energy >= 0.035
+    return energy >= 0.015
 
 
 def effective_send_rate(controller: Any, fallback_rate: float = 5.0) -> float:
