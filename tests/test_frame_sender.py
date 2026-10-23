@@ -376,3 +376,24 @@ async def test_frame_popped_before_handoff_is_dropped_by_live_arbiter_check():
     assert not handoff_thread.is_alive()
     assert sent == []
     assert diag.frames_dropped >= 1
+
+
+def test_master_brightness_only_change_is_significant_for_l930_frames():
+    """A dimmer move must transmit even when all per-zone HSV values are unchanged."""
+    diag = DeviceDiagnostics(dev_id="brightness_strip")
+
+    async def mock_transmit(_frame):
+        return True
+
+    sender = LatestFrameSender(
+        dev_id="brightness_strip",
+        transmit_fn=mock_transmit,
+        diagnostics=diag,
+        loop=asyncio.new_event_loop(),
+        max_updates_per_s=8.0,
+    )
+    zones = [[210, 80, 60] for _ in range(50)]
+    sender._last_sent_segments = [list(zone) for zone in zones]
+    sender._last_sent_master_brightness = 80
+    assert sender._is_change_significant({"segments": zones, "brightness": 35})
+    assert not sender._is_change_significant({"segments": zones, "brightness": 80})
