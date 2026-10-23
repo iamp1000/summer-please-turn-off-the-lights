@@ -456,6 +456,31 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness'],
     },
 
+    'prism_tunnel': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'creative',
+        'desc': 'A moving tunnel of fractured spectral facets with bright glass edges and dark refractive gaps',
+        'default_palette': 'dusk',
+        'supported_controls': ['speed', 'brightness', 'palette'],
+    },
+    'chromatic_undertow': {
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'creative',
+        'desc': 'Two opposing liquid color fronts collide, fold, and recede through deep teal, cobalt, and hot coral',
+        'default_palette': 'tide',
+        'supported_controls': ['speed', 'brightness', 'palette'],
+    },
+    'velvet_aurora': {
+        'kind': 'streamed_slow',
+        'group': 'Ambient',
+        'category': 'creative',
+        'desc': 'Soft overlapping velvet-light curtains in ultraviolet, glacier cyan, and rose with slow breathing glow',
+        'default_palette': 'dusk',
+        'supported_controls': ['speed', 'brightness', 'palette'],
+    },
+
     # ── 4. Merged Entries / Aliases (10) ─────────────────────────────────────
     'dusk': {
         'kind': 'streamed_slow',
@@ -586,6 +611,7 @@ CORE_EFFECTS: List[str] = []
 CREATIVE_EFFECTS: List[str] = [
     "oil_slick", "silk_ribbons", "nebula_bloom",
     "holographic_moire", "bioluminescent_tide", "ember_drift", "cyberpunk",
+    "prism_tunnel", "chromatic_undertow", "velvet_aurora",
 ]
 SPATIAL_EXPERIMENTS: List[str] = [
     "spiral_vortex", "gravity_slosh", "lissajous_orbit",
@@ -3213,6 +3239,68 @@ class L930EffectsEngine:
             segs.append([h, s, val])
         return segs
 
+    def _render_prism_tunnel(self, t: float) -> List[List[int]]:
+        """Fractured spectral glass facets moving through a dark refractive tunnel."""
+        from src.visual_styles import sample_palette_oklab
+        sp = max(0.2, self._speed)
+        pal = [
+            (188, 96, 95), (222, 92, 92), (275, 94, 100),
+            (326, 92, 96), (42, 98, 94), (168, 92, 88),
+        ]
+        segs = []
+        for i in range(NUM_SEGMENTS):
+            x = i / float(NUM_SEGMENTS - 1)
+            carrier = x * 6.4 - t * 0.24 * sp
+            facet = abs(math.sin(carrier * math.pi + 0.38 * math.sin(x * 9.0 + t * 0.17 * sp)))
+            edge = max(0.0, math.cos(carrier * 2.0 * math.pi + t * 0.11 * sp)) ** 8
+            depth = 0.5 + 0.5 * math.sin(x * 2.0 * math.pi - t * 0.19 * sp)
+            phase = (0.62 * facet + 0.25 * depth + 0.13 * (0.5 + 0.5 * math.sin(carrier * 1.7))) % 1.0
+            h, sat, _ = sample_palette_oklab(pal, phase, cyclic=True)
+            value = int(max(4, min(100, 7 + 50 * facet ** 2.2 + 35 * edge + 8 * depth)))
+            segs.append([h, sat, value])
+        return segs
+
+    def _render_chromatic_undertow(self, t: float) -> List[List[int]]:
+        """Counter-flowing liquid fronts fold into one another with luminous collision seams."""
+        from src.visual_styles import sample_palette_oklab
+        sp = max(0.2, self._speed)
+        pal = [(184, 96, 78), (205, 98, 92), (238, 95, 88), (322, 94, 96), (14, 96, 92)]
+        segs = []
+        for i in range(NUM_SEGMENTS):
+            x = i / float(NUM_SEGMENTS - 1)
+            a = 0.5 + 0.42 * math.sin(t * 0.19 * sp + x * 3.4 * math.pi)
+            b = 0.5 + 0.38 * math.sin(-t * 0.16 * sp + x * 4.1 * math.pi + 2.1)
+            front_a = math.exp(-((x - a) / 0.19) ** 2)
+            front_b = math.exp(-((x - b) / 0.15) ** 2)
+            collision = math.exp(-abs(a - b) * 7.0) * (0.5 + 0.5 * math.sin(t * 0.8 * sp + x * 18.0))
+            phase = (0.58 * x + 0.26 * front_a + 0.16 * front_b + 0.12 * math.sin(x * 5.0 + t * 0.12 * sp)) % 1.0
+            h, sat, _ = sample_palette_oklab(pal, phase, cyclic=True)
+            glow = max(front_a * 0.86, front_b * 0.92, collision * 0.75)
+            value = int(max(3, min(100, 5 + glow * 84 + 8 * (0.5 + 0.5 * math.sin(x * 8.0 * math.pi - t * 0.22 * sp)))))
+            segs.append([h, sat, value])
+        return segs
+
+    def _render_velvet_aurora(self, t: float) -> List[List[int]]:
+        """Soft, overlapping curtains that breathe slowly without a flat full-strip wash."""
+        from src.visual_styles import sample_palette_oklab
+        sp = max(0.2, self._speed)
+        pal = [(268, 80, 92), (224, 88, 92), (184, 82, 88), (320, 72, 95), (246, 84, 90)]
+        segs = []
+        for i in range(NUM_SEGMENTS):
+            x = i / float(NUM_SEGMENTS - 1)
+            p1 = 0.5 + 0.44 * math.sin(x * 2.7 * math.pi - t * 0.12 * sp)
+            p2 = 0.5 + 0.38 * math.sin(x * 4.2 * math.pi + t * 0.09 * sp + 1.7)
+            p3 = 0.5 + 0.32 * math.cos(x * 1.6 * math.pi + t * 0.07 * sp + 2.3)
+            curtain = max(0.0, 1.0 - abs(p1 - 0.5) * 1.6) * 0.58
+            curtain += max(0.0, 1.0 - abs(p2 - 0.5) * 1.9) * 0.30
+            curtain += max(0.0, 1.0 - abs(p3 - 0.5) * 2.1) * 0.12
+            phase = (0.45 * p1 + 0.35 * p2 + 0.20 * p3 + 0.05 * math.sin(t * 0.08 * sp)) % 1.0
+            h, sat, _ = sample_palette_oklab(pal, phase, cyclic=True)
+            breath = 0.82 + 0.18 * math.sin(t * 0.28 * sp + x * 2.0)
+            value = int(max(5, min(92, (10 + curtain * 78) * breath)))
+            segs.append([h, sat, value])
+        return segs
+
     def _compute(self, name: str, t: float = 0.0, apply_brightness: bool = False) -> List[List[int]]:
         """Realistic preview generator and backward compatibility computation for all catalog effects and aliases."""
         segs = self._compute_raw(name, t)
@@ -3314,6 +3402,12 @@ class L930EffectsEngine:
             return self._render_ember_drift(t)
         elif eff == "cyberpunk":
             return self._render_cyberpunk(t)
+        elif eff == "prism_tunnel":
+            return self._render_prism_tunnel(t)
+        elif eff == "chromatic_undertow":
+            return self._render_chromatic_undertow(t)
+        elif eff == "velvet_aurora":
+            return self._render_velvet_aurora(t)
         elif eff == "flicker":
             # Candle flicker: localized warm candle micro-surges with speed, brightness, and palette
             sp = max(0.2, self._speed)
