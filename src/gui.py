@@ -1242,9 +1242,12 @@ class TapoGUI:
         self.active_page = page_name
         try:
             self.page_views[page_name].update_idletasks()
-            self.content_area._parent_canvas.yview_moveto(
-                max(0.0, self.page_views[page_name].winfo_y() / max(1, self.content_area.winfo_height()))
-            )
+            self.content_area.update_idletasks()
+            canvas = self.content_area._parent_canvas
+            scroll_box = canvas.bbox("all")
+            total_height = max(1, (scroll_box[3] - scroll_box[1]) if scroll_box else self.content_area.winfo_height())
+            target_y = max(0, self.page_views[page_name].winfo_y())
+            canvas.yview_moveto(min(1.0, max(0.0, target_y / total_height)))
         except Exception:
             pass
 
@@ -1437,19 +1440,14 @@ class TapoGUI:
             full_st = self.hub.get_full_state()
             catalog = full_st.get("effects_catalog", {})
 
-            # Curated shelf: original atmospheric fields plus a few spatial experiments.
-            # Stock Tapo modes, aliases, repetitive chases and flashing novelties stay hidden.
-            creative_names = (
-                "oil_slick", "silk_ribbons", "nebula_bloom",
-                "holographic_moire", "ember_drift",
-            )
-            spatial_names = (
-                "spiral_vortex", "gravity_slosh", "lissajous_orbit",
-                "planar_wind", "vaporwave_neon",
-            )
+            # Show the full WLED-inspired audition shelf, separated by dimensional behavior.
+            # "2D" is spatially projected onto the configured 50-zone strip topology.
+            active_names = full_st.get("effects_l930", [])
+            strip_names = [name for name in active_names if catalog.get(name, {}).get("dimension") == "1D"]
+            spatial_names = [name for name in active_names if catalog.get(name, {}).get("dimension") == "2D"]
             groups = {
-                "Creative Original Designs": [name for name in creative_names if name in catalog],
-                "Spatial Experiments": [name for name in spatial_names if name in catalog],
+                "WLED 1D · Strip Effects": strip_names,
+                "WLED 2D · Spatial Projection": spatial_names,
             }
 
             for grp_name, eff_names in groups.items():
@@ -1491,7 +1489,7 @@ class TapoGUI:
                 for idx, name in enumerate(eff_names):
                     r, c = divmod(idx, 2)
                     dot_col = EFFECT_COLORS.get(name, self.theme["accent"])
-                    display = name.replace("_", " ").title()
+                    display = catalog.get(name, {}).get("display_name") or name.replace("_", " ").title()
                     btn = self._make_item_button(grid, display, dot_col, lambda n=name: self._apply_effect(n))
                     btn.grid(row=r, column=c, padx=3, pady=3, sticky="nsew")
                     self.buttons[f"eff_{name}"] = btn
@@ -1528,11 +1526,10 @@ class TapoGUI:
                 name = key[4:]
                 meta = catalog.get(name, {})
                 haystack = f"{name} {meta.get('desc', '')} {meta.get('group', '')}".lower()
+                dimension = str(meta.get("dimension", "")).upper()
                 grp_target = (
-                    "Creative Original Designs"
-                    if name in {"oil_slick", "silk_ribbons", "nebula_bloom", "holographic_moire", "ember_drift"}
-                    else "Spatial Experiments"
-                    if name in {"spiral_vortex", "gravity_slosh", "lissajous_orbit", "planar_wind", "vaporwave_neon"}
+                    "WLED 1D · Strip Effects" if dimension == "1D"
+                    else "WLED 2D · Spatial Projection" if dimension == "2D"
                     else ""
                 )
                 if query in haystack:
