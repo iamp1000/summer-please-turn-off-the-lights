@@ -1608,8 +1608,9 @@ class L930EffectsEngine:
 
     def _stream_run(self, stop_event: threading.Event, generation: int):
         """
-        Reveal the selected effect from IC 1 to IC 50, then run its normal renderer.
-        The reveal uses at most two frame updates per second to respect the L930 transport cap.
+        Reveal the selected effect, then render its procedural animation.
+        Frame cadence follows the controller's current transport/AIMD limits;
+        do not impose an additional 2 Hz cap when the device can accept more.
         Firmware effects are uploaded only after the reveal finishes.
         """
         eff = self._active_effect_name
@@ -1684,8 +1685,8 @@ class L930EffectsEngine:
                 now = time.monotonic()
                 t = now - self._start_time
 
-                # Base interval 0.5s strictly satisfies <= 2 updates per second limit
-                interval = 0.50
+                # Start at 5 Hz; controller RTT/AIMD protection may slow this down.
+                interval = 0.20
 
                 # ── Core Streamed Effects ────────────────────────────────────
                 if eff == "lava_lamp":
@@ -1754,11 +1755,26 @@ class L930EffectsEngine:
                     segs = self._render_ember_drift(t)
                 elif eff == "cyberpunk":
                     segs = self._render_cyberpunk(t)
+                elif eff == "prism_tunnel":
+                    segs = self._render_prism_tunnel(t)
+                elif eff == "chromatic_undertow":
+                    segs = self._render_chromatic_undertow(t)
+                elif eff == "velvet_aurora":
+                    segs = self._render_velvet_aurora(t)
                 else:
-                    segs = [[30, 60, 50]] * NUM_SEGMENTS
+                    # Every catalogued streamed effect must have a real renderer;
+                    # surface an error rather than silently showing a flat color.
+                    logger.error("[L930EffectsEngine] Missing streamed renderer for %s", eff)
+                    self._last_error = f"Missing streamed renderer for {eff}"
+                    self._running = False
+                    if isinstance(self._app_state, dict):
+                        self._app_state["effect_status"] = "failed"
+                        self._app_state["last_error"] = self._last_error
+                    return
 
-                # Enforce <= 2 updates/s limit (interval >= 0.50s)
-                interval = max(0.50, interval)
+                # Respect a conservative minimum cadence, then let live hardware
+                # latency/AIMD protection extend the interval when necessary.
+                interval = max(0.20, interval)
 
                 # Dynamic hardware adaptation: if controller throttled under AIMD or RTT latency, lengthen interval
                 if hasattr(self._ctrl, "current_interval"):
@@ -1769,7 +1785,7 @@ class L930EffectsEngine:
                     aimd_cap = getattr(self._ctrl.frame_sender, "_aimd_rate_cap", 2.0)
                     interval = max(interval, 1.0 / max(0.5, aimd_cap))
 
-                trans_ms = max(500, int(round(interval * 1000)))
+                trans_ms = max(80, int(round(interval * 1000)))
 
                 # Early stale frame guard before CPU color correction
                 if generation != self._effect_generation or stop_event.is_set():
@@ -1975,7 +1991,7 @@ class L930EffectsEngine:
 
     def _effective_render_interval(self) -> float:
         """Best current estimate of physical send cadence, including AIMD protection."""
-        interval = 0.50
+        interval = 0.20
         ctrl = self._ctrl
         if ctrl is not None:
             for attr in ("current_interval", "_current_interval"):
@@ -1988,13 +2004,13 @@ class L930EffectsEngine:
             sender = getattr(ctrl, "frame_sender", None)
             if sender is not None:
                 try:
-                    configured = float(getattr(sender, "max_updates_per_s", 2.0))
+                    configured = float(getattr(sender, "max_updates_per_s", 5.0))
                     aimd = float(getattr(sender, "_aimd_rate_cap", configured))
                     effective_rate = max(0.5, min(configured, aimd))
                     interval = max(interval, 1.0 / effective_rate)
                 except (TypeError, ValueError, ZeroDivisionError):
                     pass
-        return max(0.50, interval)
+        return max(0.20, interval)
 
     def _render_collider_chase(self, t: float) -> List[List[int]]:
         """
