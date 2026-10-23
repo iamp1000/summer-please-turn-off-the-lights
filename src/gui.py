@@ -1983,7 +1983,7 @@ class TapoGUI:
             pass
         finally:
             try:
-                self.app.after(80, self._periodic_strip_preview_tick)
+                self.app.after(120, self._periodic_strip_preview_tick)
             except Exception:
                 pass
 
