@@ -204,6 +204,7 @@ class LightHub:
                 {"id": "lofi_vinyl", "name": "📻 Lofi Vinyl"},
                 {"id": "melodic_contour", "name": "🎼 Melodic Ribbon"},
                 {"id": "bpm_resonator", "name": "🎛️ BPM Resonator"},
+                {"id": "chain_reaction", "name": "⚡ Random Chain Reaction"},
                 {"id": "movie", "name": "🎬 Movie"},
                 {"id": "pulse", "name": "⚡ Pulse"},
                 {"id": "spectrum", "name": "📊 Spectrum"},
