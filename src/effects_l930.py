@@ -772,6 +772,7 @@ for _effect_name in ACTIVE_EFFECTS:
     _effect_meta["group"] = "Motion"
     _effect_meta["category"] = "creative"
     _effect_meta["dimension"] = EFFECT_DIMENSIONS[_effect_name]
+    _effect_meta["tags"] = f"WLED-inspired · {EFFECT_DIMENSIONS[_effect_name]} · software renderer"
 
 WLED_DISPLAY_NAMES: Dict[str, str] = {
     "juggle": "Juggle", "colortwinkles": "Color Twinkles", "meteor_shower": "Meteor",
