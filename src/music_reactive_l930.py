@@ -504,7 +504,9 @@ class MusicReactiveL930:
             sd = self._screen_sync.latest_screen_data
 
         segs = style.render(st, dt=dt, num_zones=NUM_SEGMENTS, screen_data=sd)
-        if style_key not in ("auto", "hybrid", "director", "movie") and hasattr(self, "_compositor"):
+        if style_key not in ("auto", "hybrid", "director", "movie", "bpm_resonator", "spectrum") and hasattr(self, "_compositor"):
+            # Keep the phase-locked/spectrum renderers clean: randomly triggered
+            # accent layers can obscure whether the underlying output follows beats.
             segs = self._compositor.composite(st, dt=dt, num_zones=NUM_SEGMENTS, base_frame=segs)
 
         t_rendered = time.perf_counter()
