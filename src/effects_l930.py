@@ -462,7 +462,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'category': 'creative',
         'desc': 'A moving tunnel of fractured spectral facets with bright glass edges and dark refractive gaps',
         'default_palette': 'dusk',
-        'supported_controls': ['speed', 'brightness', 'palette'],
+        'supported_controls': ['speed', 'brightness'],
     },
     'chromatic_undertow': {
         'kind': 'streamed_slow',
@@ -470,7 +470,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'category': 'creative',
         'desc': 'Two opposing liquid color fronts collide, fold, and recede through deep teal, cobalt, and hot coral',
         'default_palette': 'tide',
-        'supported_controls': ['speed', 'brightness', 'palette'],
+        'supported_controls': ['speed', 'brightness'],
     },
     'velvet_aurora': {
         'kind': 'streamed_slow',
@@ -478,7 +478,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'category': 'creative',
         'desc': 'Soft overlapping velvet-light curtains in ultraviolet, glacier cyan, and rose with slow breathing glow',
         'default_palette': 'dusk',
-        'supported_controls': ['speed', 'brightness', 'palette'],
+        'supported_controls': ['speed', 'brightness'],
     },
 
     # ── 4. Merged Entries / Aliases (10) ─────────────────────────────────────
