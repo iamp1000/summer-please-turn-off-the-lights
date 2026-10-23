@@ -601,6 +601,237 @@ function drawCardBanner(canvas, effId) {
       ctx.shadowBlur = 0;
       break;
     }
+    case "juggle": {
+      // Eight moving heads with independent short trails on near-black.
+      ctx.fillStyle = "#03050a";
+      ctx.fillRect(0, 0, w, h);
+      const colors = ["#ff3b70", "#ffac33", "#d8ff3e", "#3dffd2", "#31a8ff", "#7564ff", "#e85cff", "#ffffff"];
+      const xs = [0.09, 0.26, 0.41, 0.56, 0.67, 0.79, 0.88, 0.96];
+      xs.forEach((x, i) => {
+        const y = h * (0.25 + 0.5 * ((i % 3) / 2));
+        const x0 = x * w;
+        const tail = ctx.createLinearGradient(x0 - 52, y, x0, y);
+        tail.addColorStop(0, "rgba(0,0,0,0)");
+        tail.addColorStop(1, colors[i]);
+        ctx.strokeStyle = tail;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(x0 - 52, y);
+        ctx.lineTo(x0, y);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(x0, y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = colors[i];
+        ctx.shadowColor = colors[i];
+        ctx.shadowBlur = 14;
+        ctx.fill();
+      });
+      ctx.shadowBlur = 0;
+      break;
+    }
+    case "colortwinkles": {
+      ctx.fillStyle = "#020308";
+      ctx.fillRect(0, 0, w, h);
+      const points = [
+        [0.07, 0.26, "#36e8ff", 2], [0.16, 0.71, "#d85cff", 3],
+        [0.25, 0.44, "#ff4d91", 2], [0.35, 0.82, "#f9d84a", 2],
+        [0.43, 0.21, "#75ffba", 3], [0.51, 0.59, "#56a3ff", 2],
+        [0.63, 0.36, "#ff8b45", 3], [0.72, 0.73, "#d85cff", 2],
+        [0.81, 0.2, "#39f6d1", 2], [0.93, 0.51, "#ffffff", 3]
+      ];
+      points.forEach(([x, y, color, r], i) => {
+        ctx.globalAlpha = 0.38 + (i % 3) * 0.2;
+        ctx.beginPath();
+        ctx.arc(x * w, y * h, r * 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 13;
+        ctx.fill();
+      });
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
+      break;
+    }
+    case "meteor_shower": {
+      ctx.fillStyle = "#020309";
+      ctx.fillRect(0, 0, w, h);
+      const tails = [
+        { y: 0.28, x: 0.58, color: "#3aa9ff", length: 0.42 },
+        { y: 0.69, x: 0.84, color: "#9a7bff", length: 0.30 }
+      ];
+      tails.forEach(m => {
+        const g = ctx.createLinearGradient((m.x - m.length) * w, m.y * h, m.x * w, m.y * h);
+        g.addColorStop(0, "rgba(0,0,0,0)");
+        g.addColorStop(0.7, m.color + "55");
+        g.addColorStop(1, "#eafaff");
+        ctx.strokeStyle = g;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo((m.x - m.length) * w, m.y * h);
+        ctx.lineTo(m.x * w, m.y * h);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(m.x * w, m.y * h, 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.shadowColor = m.color;
+        ctx.shadowBlur = 12;
+        ctx.fill();
+      });
+      ctx.shadowBlur = 0;
+      break;
+    }
+    case "radial_ripple": {
+      ctx.fillStyle = "#01060c";
+      ctx.fillRect(0, 0, w, h);
+      [[0.28, 0.5, 0.18], [0.68, 0.5, 0.29]].forEach(([cx, cy, r], i) => {
+        for (let ring = 0; ring < 4; ring++) {
+          const radius = h * (r + ring * 0.075);
+          ctx.beginPath();
+          ctx.arc(cx * w, cy * h, radius, 0, Math.PI * 2);
+          ctx.strokeStyle = i === 0 ? `rgba(62, 222, 255, ${0.78 - ring * 0.16})` : `rgba(93, 140, 255, ${0.7 - ring * 0.14})`;
+          ctx.lineWidth = ring === 0 ? 3 : 1.5;
+          ctx.shadowColor = i === 0 ? "#3edfff" : "#5d8cff";
+          ctx.shadowBlur = 9 - ring;
+          ctx.stroke();
+        }
+      });
+      ctx.shadowBlur = 0;
+      break;
+    }
+    case "fireworks_1d": {
+      ctx.fillStyle = "#020307";
+      ctx.fillRect(0, 0, w, h);
+      const originX = w * 0.54, originY = h * 0.52;
+      for (let i = 0; i < 18; i++) {
+        const a = (i / 18) * Math.PI * 2;
+        const length = 15 + (i % 5) * 7;
+        const x = originX + Math.cos(a) * length;
+        const y = originY + Math.sin(a) * length;
+        const colors = ["#ffcb50", "#43eaff", "#fd62bb", "#9582ff"];
+        ctx.beginPath();
+        ctx.moveTo(originX + Math.cos(a) * 4, originY + Math.sin(a) * 4);
+        ctx.lineTo(x, y);
+        ctx.strokeStyle = colors[i % colors.length];
+        ctx.lineWidth = i % 3 === 0 ? 2.5 : 1.4;
+        ctx.shadowColor = colors[i % colors.length];
+        ctx.shadowBlur = 8;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(x, y, i % 3 === 0 ? 2 : 1.2, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+      }
+      ctx.beginPath();
+      ctx.arc(originX, originY, 4, 0, Math.PI * 2);
+      ctx.fillStyle = "#ffffff";
+      ctx.shadowColor = "#ffb14d";
+      ctx.shadowBlur = 18;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      break;
+    }
+    case "dancing_shadows": {
+      ctx.fillStyle = "#02040a";
+      ctx.fillRect(0, 0, w, h);
+      const spots = [
+        { x: 0.22, color: "#4feaff", width: 0.2 },
+        { x: 0.52, color: "#9868ff", width: 0.24 },
+        { x: 0.81, color: "#ff68c8", width: 0.17 }
+      ];
+      spots.forEach((spot, i) => {
+        const beam = ctx.createLinearGradient(spot.x * w - spot.width * w / 2, 0, spot.x * w + spot.width * w / 2, 0);
+        beam.addColorStop(0, "rgba(0,0,0,0)");
+        beam.addColorStop(0.5, spot.color + "bb");
+        beam.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = beam;
+        ctx.fillRect(0, h * (0.18 + i * 0.06), w, h * (0.65 - i * 0.05));
+        ctx.beginPath();
+        ctx.ellipse(spot.x * w, h * 0.55, 8, h * 0.38, 0, 0, Math.PI * 2);
+        ctx.fillStyle = spot.color + "70";
+        ctx.shadowColor = spot.color;
+        ctx.shadowBlur = 20;
+        ctx.fill();
+      });
+      ctx.shadowBlur = 0;
+      break;
+    }
+    case "dissolve_random": {
+      ctx.fillStyle = "#020307";
+      ctx.fillRect(0, 0, w, h);
+      const colors = ["#3eeaff", "#ed5aff", "#ffc04f", "#68ffbb", "#6588ff"];
+      for (let i = 0; i < 50; i++) {
+        if ((i * 17 + 11) % 50 < 29) {
+          const x = 5 + i * (w - 10) / 50;
+          const color = colors[(i * 7) % colors.length];
+          ctx.fillStyle = color;
+          ctx.globalAlpha = 0.52 + ((i * 13) % 5) * 0.09;
+          ctx.fillRect(x, h * 0.42, Math.max(2, w / 64), h * 0.16);
+        }
+      }
+      ctx.globalAlpha = 1;
+      break;
+    }
+    case "bouncing_balls": {
+      ctx.fillStyle = "#020309";
+      ctx.fillRect(0, 0, w, h);
+      const balls = [
+        { x: 0.15, y: 0.7, color: "#ff4c8b" },
+        { x: 0.37, y: 0.28, color: "#42e9ff" },
+        { x: 0.61, y: 0.5, color: "#ffcd4e" },
+        { x: 0.83, y: 0.76, color: "#a17aff" }
+      ];
+      balls.forEach(ball => {
+        const trail = ctx.createLinearGradient(ball.x * w - 28, ball.y * h, ball.x * w, ball.y * h);
+        trail.addColorStop(0, "rgba(0,0,0,0)");
+        trail.addColorStop(1, ball.color + "99");
+        ctx.strokeStyle = trail;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(ball.x * w - 28, ball.y * h);
+        ctx.lineTo(ball.x * w, ball.y * h);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(ball.x * w, ball.y * h, 4, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.shadowColor = ball.color;
+        ctx.shadowBlur = 15;
+        ctx.fill();
+      });
+      ctx.shadowBlur = 0;
+      break;
+    }
+    case "aurora_motion": {
+      ctx.fillStyle = "#03051b";
+      ctx.fillRect(0, 0, w, h);
+      const bands = [
+        { x: 0.18, color: "#55ffae", amp: 0.14 },
+        { x: 0.39, color: "#26dce8", amp: 0.19 },
+        { x: 0.62, color: "#9872ff", amp: 0.16 },
+        { x: 0.83, color: "#ff70c9", amp: 0.12 }
+      ];
+      bands.forEach((band, idx) => {
+        const x = band.x * w;
+        const g = ctx.createLinearGradient(0, 0, 0, h);
+        g.addColorStop(0, "rgba(0,0,0,0)");
+        g.addColorStop(0.28, band.color + "bb");
+        g.addColorStop(0.64, band.color + "44");
+        g.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.moveTo(x - band.amp * w * 0.2, 0);
+        for (let y = 0; y <= h; y += 8) {
+          const wx = x + Math.sin(y * 0.027 + idx) * band.amp * w * 0.25;
+          ctx.lineTo(wx, y);
+        }
+        ctx.lineTo(x + band.amp * w * 0.2, h);
+        ctx.closePath();
+        ctx.shadowColor = band.color;
+        ctx.shadowBlur = 11;
+        ctx.fill();
+      });
+      ctx.shadowBlur = 0;
+      break;
+    }
     default: {
       const c = EFFECT_COLORS[effId] || "#7c6ef5";
       const g = ctx.createLinearGradient(0, 0, w, h);
