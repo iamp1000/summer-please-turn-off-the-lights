@@ -63,7 +63,7 @@ const EXPERIENCE_METADATA = {
   dancing_shadows: { title: "Dancing Shadows", tags: "WLED · Moving spotlights", desc: "Three spotlights sweep at different speeds; overlapping beams brighten while the spaces between remain dark.", tab: "motion", cat: "creative" },
   dissolve_random: { title: "Dissolve Rnd", tags: "WLED · Random-order wipe", desc: "ICs fade on in a randomized order, hold, then fade back off in a different order.", tab: "motion", cat: "creative" },
   bouncing_balls: { title: "Bouncing Balls", tags: "WLED · Ballistic motion", desc: "Separate colored balls arc along the strip with bouncing timing and short directional afterglow.", tab: "motion", cat: "creative" },
-  aurora_motion: { title: "Aurora", tags: "WLED · Moving curtains", desc: "Layered emerald, teal, and violet curtains drift independently across a dark base.", tab: "motion", cat: "creative" },
+  fire_2012: { title: "Fire 2012", tags: "WLED · Heat + rising flame", desc: "Heat-driven flame tongues rise from a hot base, cool toward the tips, and occasionally flare into sparks.", tab: "motion", cat: "creative" },
 
   // Creative (L930 WRGBIC Spatial & Optical)
   oil_slick: { tags: "Iridescent · Thin film", desc: "Petrol-like interference waves drifting across cyan, indigo, violet, rose, and amber.", tab: "motion", cat: "creative" },
@@ -800,35 +800,54 @@ function drawCardBanner(canvas, effId) {
       ctx.shadowBlur = 0;
       break;
     }
-    case "aurora_motion": {
-      ctx.fillStyle = "#03051b";
+    case "fire_2012": {
+      ctx.fillStyle = "#080302";
       ctx.fillRect(0, 0, w, h);
-      const bands = [
-        { x: 0.18, color: "#55ffae", amp: 0.14 },
-        { x: 0.39, color: "#26dce8", amp: 0.19 },
-        { x: 0.62, color: "#9872ff", amp: 0.16 },
-        { x: 0.83, color: "#ff70c9", amp: 0.12 }
+      const base = ctx.createLinearGradient(0, h, 0, h * 0.18);
+      base.addColorStop(0, "#ffb02e");
+      base.addColorStop(0.22, "#ff4d15");
+      base.addColorStop(0.55, "#7b140c");
+      base.addColorStop(1, "rgba(20, 2, 6, 0)");
+      ctx.fillStyle = base;
+      ctx.fillRect(0, 0, w, h);
+      const flames = [
+        { x: 0.08, height: 0.46, color: "#ff4b12", phase: 0.4 },
+        { x: 0.22, height: 0.76, color: "#ffad24", phase: 1.7 },
+        { x: 0.36, height: 0.56, color: "#ff3217", phase: 2.1 },
+        { x: 0.49, height: 0.85, color: "#ffd34d", phase: 0.8 },
+        { x: 0.63, height: 0.62, color: "#ff5c17", phase: 2.7 },
+        { x: 0.77, height: 0.75, color: "#ff9b23", phase: 1.2 },
+        { x: 0.91, height: 0.48, color: "#ff3e16", phase: 0.2 }
       ];
-      bands.forEach((band, idx) => {
-        const x = band.x * w;
-        const g = ctx.createLinearGradient(0, 0, 0, h);
-        g.addColorStop(0, "rgba(0,0,0,0)");
-        g.addColorStop(0.28, band.color + "bb");
-        g.addColorStop(0.64, band.color + "44");
-        g.addColorStop(1, "rgba(0,0,0,0)");
+      flames.forEach((flame, idx) => {
+        const x = flame.x * w;
+        const top = h * (1 - flame.height);
+        const width = w * (0.09 + (idx % 3) * 0.012);
+        const g = ctx.createLinearGradient(0, h, 0, top);
+        g.addColorStop(0, "#fff0a1");
+        g.addColorStop(0.24, flame.color);
+        g.addColorStop(0.72, flame.color + "88");
+        g.addColorStop(1, "rgba(255,40,10,0)");
         ctx.fillStyle = g;
+        ctx.shadowColor = flame.color;
+        ctx.shadowBlur = 12;
         ctx.beginPath();
-        ctx.moveTo(x - band.amp * w * 0.2, 0);
-        for (let y = 0; y <= h; y += 8) {
-          const wx = x + Math.sin(y * 0.027 + idx) * band.amp * w * 0.25;
-          ctx.lineTo(wx, y);
-        }
-        ctx.lineTo(x + band.amp * w * 0.2, h);
+        ctx.moveTo(x - width * 0.5, h);
+        ctx.quadraticCurveTo(x - width * 0.18, h * 0.63, x + Math.sin(flame.phase) * width * 0.22, top);
+        ctx.quadraticCurveTo(x + width * 0.52, top + h * 0.2, x + width * 0.5, h);
         ctx.closePath();
-        ctx.shadowColor = band.color;
-        ctx.shadowBlur = 11;
         ctx.fill();
       });
+      for (let i = 0; i < 13; i++) {
+        const x = ((i * 37) % 97) / 100 * w;
+        const y = h * (0.2 + ((i * 19) % 58) / 100);
+        ctx.beginPath();
+        ctx.arc(x, y, i % 4 === 0 ? 2 : 1, 0, Math.PI * 2);
+        ctx.fillStyle = i % 2 ? "#ffb52f" : "#fff2a1";
+        ctx.shadowColor = "#ff6b1a";
+        ctx.shadowBlur = 8;
+        ctx.fill();
+      }
       ctx.shadowBlur = 0;
       break;
     }
@@ -900,6 +919,7 @@ const EFFECT_COLORS = {
   fireflies: "#a3e635",
   prism_sparks: "#e879f9",
   meteor_shower: "#38bdf8",
+  fire_2012: "#ff7a1a",
   glitch_wave: "#00ffff",
   neon_heartbeat: "#f43f5e",
   twinkle_stars: "#70a1ff",
