@@ -531,6 +531,83 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness', 'particle_density'],
     },
 
+
+    'black_hole': {
+        'kind': 'streamed_slow', 'group': 'Motion', 'category': 'creative',
+        'desc': 'WLED Black Hole-inspired orbiting color points around a dark central well',
+        'default_palette': 'tide', 'supported_controls': ['speed', 'brightness', 'particle_density'],
+    },
+    'ps_fire': {
+        'kind': 'streamed_slow', 'group': 'Motion', 'category': 'creative',
+        'desc': 'WLED PS Fire-inspired two-dimensional heat field with rising flame tongues and cooling tips',
+        'default_palette': 'fire', 'supported_controls': ['speed', 'brightness', 'particle_density'],
+    },
+    'ps_waterfall': {
+        'kind': 'streamed_slow', 'group': 'Motion', 'category': 'creative',
+        'desc': 'WLED PS Waterfall-inspired falling streams and short bright water trails',
+        'default_palette': 'tide', 'supported_controls': ['speed', 'brightness', 'particle_density'],
+    },
+    'ps_vortex': {
+        'kind': 'streamed_slow', 'group': 'Motion', 'category': 'creative',
+        'desc': 'WLED PS Vortex-inspired swirling particles, rotating rings, and radial drift',
+        'default_palette': 'tide', 'supported_controls': ['speed', 'brightness', 'particle_density'],
+    },
+    'ps_fireworks': {
+        'kind': 'streamed_slow', 'group': 'Motion', 'category': 'creative',
+        'desc': 'WLED PS Fireworks-inspired bursts that expand from different points and fade',
+        'default_palette': 'sunset', 'supported_controls': ['speed', 'brightness', 'particle_density'],
+    },
+    'ps_volcano': {
+        'kind': 'streamed_slow', 'group': 'Motion', 'category': 'creative',
+        'desc': 'WLED PS Volcano-inspired eruptions with rising hot debris and a glowing base',
+        'default_palette': 'fire', 'supported_controls': ['speed', 'brightness', 'particle_density'],
+    },
+    'ps_ballpit': {
+        'kind': 'streamed_slow', 'group': 'Motion', 'category': 'creative',
+        'desc': 'WLED PS Ballpit-inspired colored balls moving independently through a mapped 2D field',
+        'default_palette': 'pastel', 'supported_controls': ['speed', 'brightness', 'particle_density'],
+    },
+    'ps_box': {
+        'kind': 'streamed_slow', 'group': 'Motion', 'category': 'creative',
+        'desc': 'WLED PS Box-inspired moving light along the spatial boundary with dark negative space',
+        'default_palette': 'dusk', 'supported_controls': ['speed', 'brightness', 'wave_width'],
+    },
+    'ps_fuzzy_noise': {
+        'kind': 'streamed_slow', 'group': 'Motion', 'category': 'creative',
+        'desc': 'WLED PS Fuzzy Noise-inspired soft evolving 2D noise field',
+        'default_palette': 'forest', 'supported_controls': ['speed', 'brightness', 'wave_width'],
+    },
+    'ps_impact': {
+        'kind': 'streamed_slow', 'group': 'Motion', 'category': 'creative',
+        'desc': 'WLED PS Impact-inspired bright impact points that launch expanding rings',
+        'default_palette': 'tide', 'supported_controls': ['speed', 'brightness', 'particle_density'],
+    },
+    'ps_attractor': {
+        'kind': 'streamed_slow', 'group': 'Motion', 'category': 'creative',
+        'desc': 'WLED PS Attractor-inspired orbital particles pulled toward moving attractor points',
+        'default_palette': 'dusk', 'supported_controls': ['speed', 'brightness', 'particle_density'],
+    },
+    'ps_spray': {
+        'kind': 'streamed_slow', 'group': 'Motion', 'category': 'creative',
+        'desc': 'WLED PS Spray-inspired directional particle bursts with short fading trails',
+        'default_palette': 'sunset', 'supported_controls': ['speed', 'brightness', 'particle_density'],
+    },
+    'ps_geq_nova': {
+        'kind': 'streamed_slow', 'group': 'Motion', 'category': 'creative',
+        'desc': 'WLED PS GEQ Nova-inspired radial equalizer columns mapped across the 2D layout',
+        'default_palette': 'neon', 'supported_controls': ['speed', 'brightness', 'wave_width'],
+    },
+    'ps_ghost_rider': {
+        'kind': 'streamed_slow', 'group': 'Motion', 'category': 'creative',
+        'desc': 'WLED PS Ghost Rider-inspired glowing rider head with a long curved ghost trail',
+        'default_palette': 'tide', 'supported_controls': ['speed', 'brightness', 'tail_length'],
+    },
+    'ps_blobs': {
+        'kind': 'streamed_slow', 'group': 'Motion', 'category': 'creative',
+        'desc': 'WLED PS Blobs-inspired soft colored blobs that merge and separate across the mapped field',
+        'default_palette': 'pastel', 'supported_controls': ['speed', 'brightness', 'particle_density'],
+    },
+
     # ── 4. Merged Entries / Aliases (10) ─────────────────────────────────────
     'dusk': {
         'kind': 'streamed_slow',
@@ -655,25 +732,46 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
     },
 }
 
-# Curated shelf uses recognizable WLED effect families on the 50-zone 1D strip.
-# Matrix-only effects are not presented as if this strip were a 2D matrix.
+# A 50-effect audition shelf based on recognizable WLED 1D and 2D effect families.
+# The physical L930 is still a 1D strip; 2D styles are projected through the
+# spatial topology (default: U-shaped 50-zone bed layout).
+WLED_1D_EFFECTS: List[str] = [
+    "juggle", "colortwinkles", "meteor_shower", "radial_ripple", "fireworks_1d",
+    "dancing_shadows", "dissolve_random", "bouncing_balls", "fire_2012", "comet",
+    "sinelon", "cyber_chase", "raindrop", "lightning", "rainbow", "fireflies",
+    "starfield", "embers", "breathe", "candy_cane", "police", "neon_heartbeat",
+    "tide", "lantern_sweep", "prism_sparks",
+]
+WLED_2D_EFFECTS: List[str] = [
+    "spiral_vortex", "gravity_slosh", "lissajous_orbit", "planar_wind", "radar_sweep",
+    "silk_ribbons", "nebula_bloom", "holographic_moire", "bioluminescent_tide",
+    "chromatic_undertow", "black_hole", "ps_fire", "ps_waterfall", "ps_vortex",
+    "ps_fireworks", "ps_volcano", "ps_ballpit", "ps_box", "ps_fuzzy_noise",
+    "ps_impact", "ps_attractor", "ps_spray", "ps_geq_nova", "ps_ghost_rider", "ps_blobs",
+]
+EFFECT_DIMENSIONS: Dict[str, str] = {
+    **{name: "1D" for name in WLED_1D_EFFECTS},
+    **{name: "2D" for name in WLED_2D_EFFECTS},
+}
+ACTIVE_EFFECTS: List[str] = list(WLED_1D_EFFECTS) + list(WLED_2D_EFFECTS)
+# Compatibility exports now point to the complete audition shelf.
 CORE_EFFECTS: List[str] = []
-CREATIVE_EFFECTS: List[str] = [
-    "juggle", "colortwinkles", "meteor_shower", "radial_ripple",
-    "fireworks_1d", "dancing_shadows", "bioluminescent_tide",
-    "dissolve_random", "bouncing_balls", "fire_2012",
-]
-SPATIAL_EXPERIMENTS: List[str] = [
-    "spiral_vortex", "gravity_slosh", "lissajous_orbit",
-    "planar_wind", "vaporwave_neon",
-]
-ADVANCED_EFFECTS: List[str] = list(SPATIAL_EXPERIMENTS)
+CREATIVE_EFFECTS: List[str] = list(ACTIVE_EFFECTS)
+SPATIAL_EXPERIMENTS: List[str] = list(WLED_2D_EFFECTS)
+ADVANCED_EFFECTS: List[str] = list(WLED_2D_EFFECTS)
 SEASONAL_EFFECTS: List[str] = []
 NOVELTY_EFFECTS: List[str] = []
 OCCASIONAL_EFFECTS: List[str] = []
-ACTIVE_EFFECTS: List[str] = list(CREATIVE_EFFECTS)
-CUSTOM_EFFECTS = list(CREATIVE_EFFECTS) + list(SPATIAL_EXPERIMENTS)
+CUSTOM_EFFECTS = list(ACTIVE_EFFECTS)
 
+for _effect_name in ACTIVE_EFFECTS:
+    _effect_meta = EFFECT_CATALOG[_effect_name]
+    # These effects render locally as 50-zone HSV frames; they are not native
+    # WLED firmware effects running inside the Tapo controller.
+    _effect_meta["kind"] = "streamed_slow"
+    _effect_meta["group"] = "Motion"
+    _effect_meta["category"] = "creative"
+    _effect_meta["dimension"] = EFFECT_DIMENSIONS[_effect_name]
 
 class L930EffectsEngine:
     """
