@@ -9,7 +9,7 @@ let state = {
 };
 
 let currentDevId = "strip1";
-let currentEffectCategory = "core";
+let currentEffectCategory = "creative";
 let currentExperienceTab = "ambient";
 let ws = null;
 let reconnectTimer = null;
@@ -1818,7 +1818,20 @@ function renderUI() {
     }));
   } else if (isL930 && state.effects_catalog) {
     const catalog = state.effects_catalog;
-    let keys = Object.keys(catalog).filter(k => catalog[k]?.category !== "alias" && catalog[k]?.category !== "reactive");
+    // The visible shelf is intentionally allow-listed by the backend's curated
+    // active_effects list. Legacy/core Tapo-like presets remain internal only.
+    const curatedSource = Array.isArray(state.active_effects) && state.active_effects.length
+      ? state.active_effects
+      : (Array.isArray(state.effects_l930) ? state.effects_l930 : []);
+    const curatedIds = new Set(curatedSource);
+    let keys = Object.keys(catalog).filter(k =>
+      curatedIds.has(k) &&
+      catalog[k]?.category !== "alias" &&
+      catalog[k]?.category !== "reactive" &&
+      catalog[k]?.category !== "core" &&
+      catalog[k]?.category !== "seasonal" &&
+      catalog[k]?.category !== "novelty"
+    );
 
     if (currentExperienceTab === "ambient") {
       keys = keys.filter(k => {
