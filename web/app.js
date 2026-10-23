@@ -41,8 +41,8 @@ const EXPERIENCE_METADATA = {
   raindrop: { tags: "Wave physics · Rain", desc: "Uneven drop impacts and spreading rings with independent decay.", tab: "motion", cat: "creative" },
   lightning: { tags: "Transient · Lightning", desc: "Rare sharp electrical flashes against long dark pauses; not a constant strobe.", tab: "motion", cat: "creative" },
   rainbow: { tags: "Vibrant · Spectrum flow", desc: "Smooth continuous prismatic spectrum looping continuously.", tab: "motion", cat: "core" },
-  meteor_shower: { tags: "Particle motion · Meteor shower", desc: "Independent fast streaks with bright heads, cooling tails, and irregular launches.", tab: "motion", cat: "creative" },
-  juggle: { tags: "Particle motion · Juggle", desc: "Several independent colored comets cross paths with smooth, persistent trails.", tab: "motion", cat: "creative" },
+  meteor_shower: { title: "Meteor", tags: "WLED · Moving head + trail", desc: "A moving head leaves a chromatic tail whose individual LEDs decay at different rates.", tab: "motion", cat: "creative" },
+  juggle: { title: "Juggle", tags: "WLED · Eight moving dots", desc: "Eight colored dots run along the strip with fading trails, crossing and layering rather than filling every zone.", tab: "motion", cat: "creative" },
   spiral_vortex: { tags: "Rotational · Spiral vortex", desc: "A rotating spectral structure with layered bands and a focused moving core.", tab: "motion", cat: "creative" },
   gravity_slosh: { tags: "Inertia · Gravity slosh", desc: "A heavy fluid-like wave accelerates, rebounds, and settles with momentum.", tab: "motion", cat: "creative" },
   lissajous_orbit: { tags: "Advanced · Geometric", desc: "Harmonic 3D Lissajous figure-8 spatial curve.", tab: "motion", cat: "advanced" },
@@ -55,15 +55,22 @@ const EXPERIENCE_METADATA = {
   haunted_mansion: { tags: "Seasonal · Spooky mist", desc: "Eerie spectral green and deep phantom violet shadows.", tab: "motion", cat: "seasonal" },
   police: { tags: "Novelty · Emergency beacon", desc: "Smooth alternating red and blue emergency siren pulses.", tab: "motion", cat: "novelty", warning: "Emergency vehicle siren warning." },
 
-  radial_ripple: { tags: "Wave physics · Ripple", desc: "Impacts launch expanding rings with bright crests and fading phosphor tails.", tab: "motion", cat: "creative" },
+  radial_ripple: { title: "Ripple", tags: "WLED · Random water ripples", desc: "Independent impacts launch paired crests in opposite directions; the rings fade into a near-black strip.", tab: "motion", cat: "creative" },
   prism_sparks: { tags: "Transient · Spark storm", desc: "Sparse saturated sparks ignite at random ICs, flare briefly, then decay into darkness.", tab: "motion", cat: "creative" },
+
+  colortwinkles: { title: "Color Twinkles", tags: "WLED · Random color glints", desc: "Individual ICs flash in palette colors on independent schedules, then fade out smoothly into darkness.", tab: "motion", cat: "creative" },
+  fireworks_1d: { title: "Fireworks 1D", tags: "WLED · Rockets + bursts", desc: "Brief launch trails break into separate sparks that travel, slow down, and die away independently.", tab: "motion", cat: "creative" },
+  dancing_shadows: { title: "Dancing Shadows", tags: "WLED · Moving spotlights", desc: "Three spotlights sweep at different speeds; overlapping beams brighten while the spaces between remain dark.", tab: "motion", cat: "creative" },
+  dissolve_random: { title: "Dissolve Rnd", tags: "WLED · Random-order wipe", desc: "ICs fade on in a randomized order, hold, then fade back off in a different order.", tab: "motion", cat: "creative" },
+  bouncing_balls: { title: "Bouncing Balls", tags: "WLED · Ballistic motion", desc: "Separate colored balls arc along the strip with bouncing timing and short directional afterglow.", tab: "motion", cat: "creative" },
+  aurora_motion: { title: "Aurora", tags: "WLED · Moving curtains", desc: "Layered emerald, teal, and violet curtains drift independently across a dark base.", tab: "motion", cat: "creative" },
 
   // Creative (L930 WRGBIC Spatial & Optical)
   oil_slick: { tags: "Iridescent · Thin film", desc: "Petrol-like interference waves drifting across cyan, indigo, violet, rose, and amber.", tab: "motion", cat: "creative" },
   silk_ribbons: { tags: "Flowing · Opposing currents", desc: "Broad soft-edged Gaussian ribbons flowing in counter-currents with OKLab blending.", tab: "motion", cat: "creative" },
   nebula_bloom: { tags: "Cosmic · Deep space", desc: "Expansive celestial gas clouds with subtle cosmic shifts and dark negative space.", tab: "motion", cat: "creative" },
   holographic_moire: { tags: "Optical · Interference", desc: "Detuned spatial carrier wave interference creating macroscopic holographic light fringes.", tab: "motion", cat: "creative" },
-  bioluminescent_tide: { tags: "Ocean motion · Pacifica-inspired", desc: "Layered counter-moving swells, deep troughs, and thin luminous crests.", tab: "motion", cat: "creative" },
+  bioluminescent_tide: { title: "Pacifica", tags: "WLED · Layered ocean waves", desc: "Overlapping blue-green waves drift in different directions, with deep troughs and thin crests.", tab: "motion", cat: "creative" },
   ember_drift: { tags: "Thermal · Heat bed", desc: "Convective heat bed with drifting copper and amber coals and localized flare-ups.", tab: "motion", cat: "creative" },
   cyberpunk: { tags: "Synthwave · High contrast", desc: "High-contrast synthwave waves in electric cyan, neon magenta, and deep ultraviolet with dark gaps.", tab: "motion", cat: "creative" },
   prism_tunnel: { tags: "Optical · Fractured glass", desc: "Moving spectral facets and razor-bright refractive edges cut through deep, dark gaps.", tab: "motion", cat: "creative" },
@@ -1879,7 +1886,7 @@ function renderUI() {
   // Filter by search query if any
   if (effectSearchQuery) {
     availableItems = availableItems.filter(item => {
-      const fullText = `${item.id} ${formatName(item.id)} ${item.meta.tags || ''} ${item.meta.desc || ''}`.toLowerCase();
+      const fullText = `${item.id} ${item.meta.title || formatName(item.id)} ${formatName(item.id)} ${item.meta.tags || ''} ${item.meta.desc || ''}`.toLowerCase();
       return fullText.includes(effectSearchQuery);
     });
   }
@@ -1916,7 +1923,7 @@ function renderUI() {
           ${badgeOverlay}
         </div>
         <div class="card-meta">
-          <h3 class="card-title">${formatName(id)}</h3>
+          <h3 class="card-title">${meta.title || formatName(id)}</h3>
           <p class="card-subtitle">${tags}</p>
         </div>
       </div>
