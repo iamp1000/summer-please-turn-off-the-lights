@@ -1719,6 +1719,18 @@ class L930EffectsEngine:
                     segs = self._render_meteor_shower(t)
                 elif eff == "juggle":
                     segs = self._render_harmonic_juggle(t)
+                elif eff == "colortwinkles":
+                    segs = self._render_wled_color_twinkles(t)
+                elif eff == "fireworks_1d":
+                    segs = self._render_wled_fireworks_1d(t)
+                elif eff == "dancing_shadows":
+                    segs = self._render_wled_dancing_shadows(t)
+                elif eff == "dissolve_random":
+                    segs = self._render_wled_dissolve_random(t)
+                elif eff == "bouncing_balls":
+                    segs = self._render_wled_bouncing_balls(t)
+                elif eff == "aurora_motion":
+                    segs = self._render_aurora(t)
                 elif eff == "spiral_vortex":
                     segs = self._render_spiral_vortex(t)
                 elif eff == "gravity_slosh":
@@ -2324,6 +2336,201 @@ class L930EffectsEngine:
             segs.append([h, s, v])
         return segs
 
+    @staticmethod
+    def _wled_event_rng(effect: str, event_index: int) -> random.Random:
+        """Stable per-event randomness: new-looking particles without frame-to-frame flicker."""
+        seed = 2166136261
+        for byte in effect.encode("utf-8"):
+            seed = ((seed ^ byte) * 16777619) & 0xFFFFFFFF
+        seed = (seed ^ ((event_index + 0x9E3779B9) * 0x85EBCA6B)) & 0xFFFFFFFF
+        return random.Random(seed)
+
+    def _render_wled_color_twinkles(self, t: float) -> List[List[int]]:
+        """WLED Color Twinkles: independent random IC glints with a quick attack and smooth decay."""
+        from src.visual_styles import sample_palette_oklab
+        sp = max(0.2, self._speed)
+        pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "dusk")
+        spawn_period = 0.17 / max(0.55, sp)
+        lifetime_max = 1.55 / max(0.65, sp)
+        start = max(0, int((t - lifetime_max - spawn_period) / spawn_period))
+        end = max(0, int(t / spawn_period) + 1)
+        values = [2.0] * NUM_SEGMENTS
+        colors = [[215, 90, 2] for _ in range(NUM_SEGMENTS)]
+        for event in range(start, end + 1):
+            rng = self._wled_event_rng("colortwinkles", event)
+            born = event * spawn_period + rng.uniform(0.0, spawn_period * 0.42)
+            age = t - born
+            if age < 0:
+                continue
+            life = rng.uniform(0.58, lifetime_max)
+            if age >= life:
+                continue
+            pos = rng.randrange(NUM_SEGMENTS)
+            radius = rng.uniform(0.55, 1.45)
+            hue, sat, _ = sample_palette_oklab(pal, rng.random(), cyclic=True)
+            attack = min(1.0, age / 0.055)
+            envelope = attack * max(0.0, 1.0 - age / life) ** 2.0
+            for i in range(max(0, int(pos - 4)), min(NUM_SEGMENTS, int(pos + 5))):
+                dist = abs(i - pos)
+                value = 2.0 + 98.0 * envelope * math.exp(-0.5 * (dist / radius) ** 2)
+                if value > values[i]:
+                    values[i] = value
+                    colors[i] = [int(hue), int(sat), int(max(2, min(100, value)))]
+        return colors
+
+    def _render_wled_fireworks_1d(self, t: float) -> List[List[int]]:
+        """1D fireworks: edge-launched rockets split into separate decelerating spark trails."""
+        from src.visual_styles import sample_palette_oklab
+        sp = max(0.2, self._speed)
+        pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "sunset")
+        period = 2.45 / max(0.55, sp)
+        start = max(0, int((t - 1.8 / max(0.6, sp)) / period))
+        end = max(0, int(t / period) + 1)
+        values = [2.0] * NUM_SEGMENTS
+        frame = [[215, 90, 2] for _ in range(NUM_SEGMENTS)]
+        for event in range(start, end + 1):
+            rng = self._wled_event_rng("fireworks_1d", event)
+            born = event * period + rng.uniform(0.0, period * 0.30)
+            age = t - born
+            if age < 0 or age > 1.55 / max(0.65, sp):
+                continue
+            direction = 1.0 if rng.random() < 0.5 else -1.0
+            origin = 0.0 if direction > 0 else float(NUM_SEGMENTS - 1)
+            height = rng.uniform(11.0, 23.0)
+            ascent = rng.uniform(0.34, 0.62) / max(0.65, sp)
+            apex = max(0.0, min(NUM_SEGMENTS - 1.0, origin + direction * height))
+            hue, sat, _ = sample_palette_oklab(pal, rng.random(), cyclic=True)
+
+            if age < ascent:
+                rocket_pos = origin + direction * height * (age / ascent)
+                rocket_gain = 0.85 + 0.15 * math.sin(math.pi * age / ascent)
+                for i in range(NUM_SEGMENTS):
+                    behind = (rocket_pos - i) * direction
+                    core = math.exp(-0.5 * ((i - rocket_pos) / 0.72) ** 2)
+                    tail = math.exp(-max(0.0, behind) / 2.0) if 0 <= behind <= 7 else 0.0
+                    val = 2.0 + 96.0 * rocket_gain * max(core, tail * 0.72)
+                    if val > values[i]:
+                        values[i] = val
+                        frame[i] = [int(hue), int(sat), int(min(100, val))]
+                continue
+
+            burst_age = age - ascent
+            if burst_age > 0.95 / max(0.65, sp):
+                continue
+            decay = max(0.0, 1.0 - burst_age / (0.95 / max(0.65, sp))) ** 1.55
+            for spark in range(10):
+                spark_dir = -1.0 if spark < 5 else 1.0
+                speed = rng.uniform(10.0, 27.0) * sp
+                travel = max(0.0, speed * burst_age - 13.0 * sp * burst_age * burst_age)
+                spark_pos = apex + spark_dir * travel
+                spark_h, spark_s, _ = sample_palette_oklab(
+                    pal, (rng.random() * 0.72 + burst_age * 0.18) % 1.0, cyclic=True
+                )
+                for i in range(max(0, int(spark_pos - 5)), min(NUM_SEGMENTS, int(spark_pos + 6))):
+                    dist = abs(i - spark_pos)
+                    core = math.exp(-0.5 * (dist / 0.78) ** 2)
+                    behind = (spark_pos - i) * spark_dir
+                    tail = math.exp(-max(0.0, behind) / 2.4) if 0 <= behind <= 5 else 0.0
+                    val = 2.0 + 98.0 * decay * max(core, tail * 0.76)
+                    if val > values[i]:
+                        values[i] = val
+                        frame[i] = [int(spark_h), int(spark_s), int(max(2, min(100, val)))]
+        return frame
+
+    def _render_wled_dancing_shadows(self, t: float) -> List[List[int]]:
+        """Dancing Shadows: several separately phased spotlights with real dark gaps."""
+        from src.visual_styles import sample_palette_oklab
+        sp = max(0.2, self._speed)
+        pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "dusk")
+        values = [2.0] * NUM_SEGMENTS
+        frame = [[215, 80, 2] for _ in range(NUM_SEGMENTS)]
+        for spot in range(3):
+            phase = (t * (0.16 + spot * 0.047) * sp + spot * 0.371) % 1.0
+            # Smooth but non-identical paths, so the beams cross and separate.
+            position = (NUM_SEGMENTS - 1) * (
+                0.5 + 0.43 * math.sin(phase * 2.0 * math.pi + spot * 0.8)
+            )
+            hue, sat, _ = sample_palette_oklab(
+                pal, (spot / 3.0 + t * 0.025 * sp) % 1.0, cyclic=True
+            )
+            for i in range(NUM_SEGMENTS):
+                dist = abs(i - position)
+                core = math.exp(-0.5 * (dist / (1.7 + spot * 0.2)) ** 2)
+                spill = 0.18 * math.exp(-0.5 * (dist / 5.3) ** 2)
+                intensity = min(1.0, core ** 1.4 + spill)
+                value = 2.0 + 96.0 * intensity
+                if value > values[i]:
+                    values[i] = value
+                    frame[i] = [int(hue), int(sat), int(min(100, value))]
+        return frame
+
+    def _render_wled_dissolve_random(self, t: float) -> List[List[int]]:
+        """Dissolve Rnd: random-order pixels illuminate, hold, then fade out in another order."""
+        from src.visual_styles import sample_palette_oklab
+        sp = max(0.2, self._speed)
+        pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "sunset")
+        duration = max(3.0, 5.4 / sp)
+        cycle = max(0, int(t / duration))
+        phase = (t % duration) / duration
+        rng = self._wled_event_rng("dissolve_random", cycle)
+        on_order = list(range(NUM_SEGMENTS))
+        off_order = list(range(NUM_SEGMENTS))
+        rng.shuffle(on_order)
+        rng.shuffle(off_order)
+        on_rank = [0] * NUM_SEGMENTS
+        off_rank = [0] * NUM_SEGMENTS
+        for rank, pos in enumerate(on_order):
+            on_rank[pos] = rank
+        for rank, pos in enumerate(off_order):
+            off_rank[pos] = rank
+        hues = []
+        sats = []
+        for _ in range(NUM_SEGMENTS):
+            hue, sat, _ = sample_palette_oklab(pal, rng.random(), cyclic=True)
+            hues.append(int(hue))
+            sats.append(int(sat))
+        frame = []
+        for i in range(NUM_SEGMENTS):
+            if phase < 0.44:
+                progress = phase / 0.44 * NUM_SEGMENTS
+                amount = _smoothstep(on_rank[i] - 0.3, on_rank[i] + 0.85, progress)
+            elif phase < 0.53:
+                amount = 1.0
+            else:
+                progress = (phase - 0.53) / 0.47 * NUM_SEGMENTS
+                amount = 1.0 - _smoothstep(off_rank[i] - 0.3, off_rank[i] + 0.85, progress)
+            value = int(max(2, min(100, 2 + 92 * amount)))
+            frame.append([hues[i], sats[i], value])
+        return frame
+
+    def _render_wled_bouncing_balls(self, t: float) -> List[List[int]]:
+        """Bouncing Balls: independent ballistic hops, heads, and short direction-aware afterglow."""
+        from src.visual_styles import sample_palette_oklab
+        sp = max(0.2, self._speed)
+        pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "sunset")
+        values = [2.0] * NUM_SEGMENTS
+        frame = [[215, 80, 2] for _ in range(NUM_SEGMENTS)]
+        ball_count = max(3, min(5, int(round(self._particle_density * 3.5))))
+        for ball in range(ball_count):
+            flight = max(1.0, (1.7 + ball * 0.28) / sp)
+            phase = (t / flight + ball / ball_count * 0.77) % 1.0
+            height = (NUM_SEGMENTS - 1) * 4.0 * phase * (1.0 - phase)
+            position = max(0.0, min(NUM_SEGMENTS - 1.0, height))
+            direction = 1.0 if phase < 0.5 else -1.0
+            hue, sat, _ = sample_palette_oklab(
+                pal, (ball / ball_count + t * 0.035 * sp) % 1.0, cyclic=True
+            )
+            for i in range(NUM_SEGMENTS):
+                dist = abs(i - position)
+                core = math.exp(-0.5 * (dist / 0.88) ** 2)
+                behind = (position - i) * direction
+                tail = math.exp(-max(0.0, behind) / 2.0) if 0 <= behind <= 4 else 0.0
+                value = 2.0 + 98.0 * max(core, tail * 0.38)
+                if value > values[i]:
+                    values[i] = value
+                    frame[i] = [int(hue), int(sat), int(min(100, value))]
+        return frame
+
     def _render_sinelon_sweep(self, t: float) -> List[List[int]]:
         """
         FastLED Sinelon (adapted for L930 50 ICs):
@@ -2423,31 +2630,35 @@ class L930EffectsEngine:
         return segs
 
     def _render_radial_ripple(self, t: float) -> List[List[int]]:
-        """
-        2D Geometric Radial Ripple:
-        Uses StripTopology radial distance projection r from top-center (0.0, 0.8)
-        to expand circular waves symmetrically down both bed legs.
-        """
-        pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "tide")
+        """WLED Ripple-inspired 1D water rings: randomized impact points, moving crests, dark interiors."""
         from src.visual_styles import sample_palette_oklab
-        sp = self._speed
-        wave_mult = max(0.3, getattr(self, "_wave_width", 1.0))
-        freq_factor = 4.0 / wave_mult
-        topo = get_l930_topology()
-        r_dists = topo.radial_projection(center_x=0.0, center_y=0.8)
-
-        segs = []
-        phase = (t * 0.8 * sp) % 1.0
-        for i in range(NUM_SEGMENTS):
-            r = r_dists[i]
-            # Expanding circular wave crests scaled by wave_width
-            wave = math.sin((r - phase) * freq_factor * math.pi)
-            # Keep troughs dark; bright crests should read as moving wavefronts.
-            crest = max(0.0, (wave - 0.18) / 0.82) ** 1.8
-            h, s, _ = sample_palette_oklab(pal, (r + phase * 0.5) % 1.0, cyclic=True)
-            v = int(max(2, min(100, 3 + crest * 97)))
-            segs.append([h, s, v])
-        return segs
+        sp = max(0.2, self._speed)
+        wave_width = max(0.4, min(2.5, getattr(self, "_wave_width", 1.0)))
+        pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "tide")
+        spawn_period = 0.56 / max(0.55, sp)
+        values = [2.0] * NUM_SEGMENTS
+        frame = [[200, 90, 2] for _ in range(NUM_SEGMENTS)]
+        start = max(0, int((t - 2.4 / max(0.65, sp)) / spawn_period))
+        end = max(0, int(t / spawn_period) + 1)
+        for event in range(start, end + 1):
+            rng = self._wled_event_rng("ripple", event)
+            born = event * spawn_period + rng.uniform(0.0, spawn_period * 0.25)
+            age = t - born
+            if age < 0 or age > 2.4 / max(0.65, sp):
+                continue
+            center = rng.randrange(NUM_SEGMENTS)
+            radius = age * (15.0 + rng.random() * 7.0) * sp
+            width = (0.8 + rng.random() * 0.5) * wave_width
+            envelope = max(0.0, 1.0 - age / (2.4 / max(0.65, sp))) ** 1.25
+            hue, sat, _ = sample_palette_oklab(pal, rng.random(), cyclic=True)
+            for i in range(NUM_SEGMENTS):
+                ring_dist = abs(abs(i - center) - radius)
+                crest = math.exp(-0.5 * (ring_dist / width) ** 2)
+                val = 2.0 + 98.0 * envelope * crest
+                if val > values[i]:
+                    values[i] = val
+                    frame[i] = [int(hue), int(sat), int(min(100, val))]
+        return frame
 
     def _render_spiral_vortex(self, t: float) -> List[List[int]]:
         """
@@ -3334,6 +3545,18 @@ class L930EffectsEngine:
             return self._render_collider_chase(t)
         elif eff == "juggle":
             return self._render_harmonic_juggle(t)
+        elif eff == "colortwinkles":
+            return self._render_wled_color_twinkles(t)
+        elif eff == "fireworks_1d":
+            return self._render_wled_fireworks_1d(t)
+        elif eff == "dancing_shadows":
+            return self._render_wled_dancing_shadows(t)
+        elif eff == "dissolve_random":
+            return self._render_wled_dissolve_random(t)
+        elif eff == "bouncing_balls":
+            return self._render_wled_bouncing_balls(t)
+        elif eff == "aurora_motion":
+            return self._render_aurora(t)
         elif eff == "sinelon":
             return self._render_sinelon_sweep(t)
         elif eff == "confetti":
