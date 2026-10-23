@@ -46,6 +46,17 @@ from src.geometry import get_l930_topology
 NUM_SEGMENTS = 50
 
 
+def _build_wipe_segments(target_segments: List[List[int]], visible_count: int) -> List[List[int]]:
+    """Build one left-to-right IC reveal frame for an effect transition."""
+    if len(target_segments) != NUM_SEGMENTS:
+        raise ValueError(f"Expected {NUM_SEGMENTS} target zones, got {len(target_segments)}")
+    visible = max(0, min(NUM_SEGMENTS, int(visible_count)))
+    return (
+        [list(zone) for zone in target_segments[:visible]]
+        + [[0, 0, 0] for _ in range(NUM_SEGMENTS - visible)]
+    )
+
+
 def _smoothstep(edge0: float, edge1: float, x: float) -> float:
     """Cubic interpolation with zero slope at both edges."""
     if edge1 <= edge0:
@@ -759,20 +770,13 @@ class L930EffectsEngine:
         if kind == "firmware":
             if isinstance(self._app_state, dict):
                 self._app_state["effect_status"] = "sent"
-            # An explicit effect change should be immediate. Only report success
-            # after the controller confirms that the device accepted the effect.
-            if not self._deploy_firmware_effect(key, force=True):
-                if isinstance(self._app_state, dict):
-                    self._app_state["effect_status"] = "failed"
-                    self._app_state["last_error"] = self._last_error
-                return False
-            if isinstance(self._app_state, dict):
-                self._app_state["effect_status"] = "accepted"
-                self._app_state["last_error"] = None
+            # Run the per-IC reveal first, then deploy the autonomous firmware effect.
+            # The worker marks the effect accepted only after the device acknowledges it.
+            self._start_stream_worker()
         elif kind == "streamed_slow":
             if isinstance(self._app_state, dict):
                 self._app_state["effect_status"] = "sent"
-            # Start slow streaming worker (<= 2 updates/s)
+            # The same per-IC reveal precedes the normal slow-streamed animation.
             self._start_stream_worker()
         else:
             self._last_error = f"Unsupported L930 effect kind {kind!r} for {key!r}"
@@ -1567,10 +1571,71 @@ class L930EffectsEngine:
 
     def _stream_run(self, stop_event: threading.Event, generation: int):
         """
-        Slow streamed loop (<= 2 updates/s).
-        Transition_ms matches update interval so the device hardware does the smooth crossfading.
-        Firmware-run effects are strictly kept on firmware path; only procedural streamed effects run here.
+        Reveal the selected effect from IC 1 to IC 50, then run its normal renderer.
+        The reveal uses at most two frame updates per second to respect the L930 transport cap.
+        Firmware effects are uploaded only after the reveal finishes.
         """
+        eff = self._active_effect_name
+        if self._frame_bus and eff:
+            try:
+                target = self._pipeline.correct_hsv_sequence(
+                    self._compute_raw(eff, 0.0),
+                    master_ceiling=self._brightness / 100.0,
+                )
+                zones_per_step = 5
+                step_interval = 0.50
+                for visible in range(zones_per_step, NUM_SEGMENTS + zones_per_step, zones_per_step):
+                    if stop_event.is_set() or generation != self._effect_generation:
+                        return
+                    frame_data = {
+                        "segments": _build_wipe_segments(target, visible),
+                        "brightness": self._brightness,
+                        "transition": 200,
+                        "_pre_corrected": True,
+                    }
+                    if self._output_token is None:
+                        self._last_error = "Output ownership unavailable during effect transition"
+                        if isinstance(self._app_state, dict):
+                            self._app_state["effect_status"] = "failed"
+                            self._app_state["last_error"] = self._last_error
+                        self._running = False
+                        return
+                    token_generation, token_id = self._output_token
+                    published = self._frame_bus.publish_frame(
+                        self._dev_id, OutputProducer.EFFECT, frame_data,
+                        generation=token_generation, producer_id=token_id,
+                    )
+                    if not published:
+                        # A new owner took over; never try to reacquire ownership here.
+                        self._running = False
+                        return
+                    if stop_event.wait(step_interval):
+                        return
+                if stop_event.is_set() or generation != self._effect_generation:
+                    return
+                # The animation's clock begins after the reveal, not while it is loading.
+                self._start_time = time.monotonic()
+            except Exception as exc:
+                logger.exception("[L930EffectsEngine] Effect transition failed: %s", exc)
+                self._last_error = f"Effect transition failed: {exc}"
+                if isinstance(self._app_state, dict):
+                    self._app_state["effect_status"] = "failed"
+                    self._app_state["last_error"] = self._last_error
+                self._running = False
+                return
+
+        if generation != self._effect_generation or stop_event.is_set():
+            return
+        if self._active_kind == "firmware":
+            if not self._deploy_firmware_effect(eff, force=True):
+                self._running = False
+                return
+            if isinstance(self._app_state, dict):
+                self._app_state["effect_status"] = "accepted"
+                self._app_state["last_error"] = None
+            self._running = False
+            return
+
         while not stop_event.is_set() and generation == self._effect_generation:
             try:
                 eff = self._active_effect_name
