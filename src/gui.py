@@ -475,7 +475,8 @@ class TapoGUI:
             self.workspace, width=194, fg_color=t["surface"],
             corner_radius=10, border_width=1, border_color=t["border"]
         )
-        self.nav_rail.pack(side="left", fill="y", padx=(0, 12))
+        # Hidden for the single-page mixer layout; legacy callbacks remain compatible.
+        self.nav_rail.pack_forget()
         self.nav_rail.pack_propagate(False)
         self.nav_eyebrow = ctk.CTkLabel(
             self.nav_rail, text="WORKSPACE", anchor="w",
@@ -519,7 +520,7 @@ class TapoGUI:
         self.nav_device_note.pack(fill="x", padx=16, pady=(0, 18))
 
         self.main_column = ctk.CTkFrame(self.workspace, fg_color="transparent")
-        self.main_column.pack(side="left", fill="both", expand=True)
+        self.main_column.pack(fill="both", expand=True)
 
         # The device selector stays visible while navigating between pages.
         self.tabs_bar = ctk.CTkFrame(
@@ -572,18 +573,21 @@ class TapoGUI:
             btn.pack(side="left", fill="x", expand=True, padx=3)
             self.tab_buttons[dev_id] = btn
 
-        self.content_area = ctk.CTkFrame(self.main_column, fg_color="transparent")
-        self.content_area.pack(fill="both", expand=True)
         scroll_kwargs = {
             "fg_color": "transparent",
             "scrollbar_button_color": t["surface_high"],
             "scrollbar_button_hover_color": t["accent"],
             "corner_radius": 0,
         }
+        # One shared viewport; all controls remain on the same page.
+        self.content_area = ctk.CTkScrollableFrame(self.main_column, **scroll_kwargs)
+        self.content_area.pack(fill="both", expand=True)
         self.page_views = {
-            key: ctk.CTkScrollableFrame(self.content_area, **scroll_kwargs)
+            key: ctk.CTkFrame(self.content_area, fg_color="transparent")
             for key in ("overview", "music", "effects", "diagnostics")
         }
+        for page in self.page_views.values():
+            page.pack(fill="x", expand=False, padx=0, pady=0)
 
         def page_heading(page, eyebrow, title, description):
             heading = ctk.CTkFrame(page, fg_color="transparent")
@@ -594,11 +598,11 @@ class TapoGUI:
             ).pack(fill="x", pady=(0, 5))
             ctk.CTkLabel(
                 heading, text=title, anchor="w",
-                font=ctk.CTkFont(size=25, weight="bold"), text_color=t["text_primary"]
+                font=ctk.CTkFont(size=18, weight="bold"), text_color=t["text_primary"]
             ).pack(fill="x")
             ctk.CTkLabel(
                 heading, text=description, anchor="w", wraplength=1000,
-                font=ctk.CTkFont(size=13), text_color=t["text_secondary"]
+                font=ctk.CTkFont(size=11), text_color=t["text_secondary"]
             ).pack(fill="x", pady=(4, 0))
 
         def make_card(parent, background=None, hero=False):
@@ -1232,30 +1236,15 @@ class TapoGUI:
         self.app.after(120, self._periodic_strip_preview_tick)
 
     def _switch_page(self, page_name: str):
-        """Switch the visible workspace page without rebuilding its controls."""
+        """Compatibility shim: the mixer keeps all sections visible."""
         if page_name not in getattr(self, "page_views", {}):
             return
-        for page in self.page_views.values():
-            try:
-                page.pack_forget()
-            except Exception:
-                pass
-        self.scroll_body = self.page_views[page_name]
-        self.scroll_body.pack(fill="both", expand=True)
         self.active_page = page_name
-        for key, button in getattr(self, "nav_buttons", {}).items():
-            selected = key == page_name
-            try:
-                button.configure(
-                    fg_color=self.theme["accent_soft"] if selected else "transparent",
-                    text_color=self.theme["text_primary"] if selected else self.theme["text_secondary"],
-                    border_width=1 if selected else 0,
-                    border_color=self.theme["accent"] if selected else self.theme["border"]
-                )
-            except Exception:
-                pass
         try:
-            self.app.after(100, self._reflow_responsive_grids)
+            self.page_views[page_name].update_idletasks()
+            self.content_area._parent_canvas.yview_moveto(
+                max(0.0, self.page_views[page_name].winfo_y() / max(1, self.content_area.winfo_height()))
+            )
         except Exception:
             pass
 
