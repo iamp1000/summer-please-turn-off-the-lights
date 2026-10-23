@@ -87,8 +87,10 @@ class MusicReactiveL930:
         self._analyzer = MusicAnalyzer(samplerate=self._sr, blocksize=self._bs, sensitivity=1.0)
         self._styles = create_style_instances()
         self._compositor = AccentCompositor()
-        self.style_name = "chain_reaction"
-        self._visual_mode = "chain_reaction"
+        # Default to the tempo/phase-locked visualizer. Chain Reaction is intentionally
+        # stochastic, so making it the default looks like random flashing rather than beat sync.
+        self.style_name = "bpm_resonator"
+        self._visual_mode = "bpm_resonator"
         self.latest_music_state: MusicState | None = None
         self._coordinator: Any = None
 
@@ -130,8 +132,8 @@ class MusicReactiveL930:
         self._eq_weights = np.linspace(1.2, 4.2, NUM_SEGMENTS)
         self._eq_weights[:10] *= 0.90  # prevent sub-bass clip
 
-        # 7 Profiles & 8 Visual Styles
-        self._visual_mode = "chain_reaction"
+        # Keep profile and visual-style state consistent at startup.
+        self._visual_mode = "bpm_resonator"
         self._single_hue = 185  # Clean electric cyan default for single-color mode
 
         # Dynamic state trackers
