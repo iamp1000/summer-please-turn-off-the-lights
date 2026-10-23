@@ -63,6 +63,9 @@ const EXPERIENCE_METADATA = {
   bioluminescent_tide: { tags: "Marine · Ocean swell", desc: "Multi-layer ocean swell simulation with glowing cyan crest highlights on dark navy.", tab: "motion", cat: "creative" },
   ember_drift: { tags: "Thermal · Heat bed", desc: "Convective heat bed with drifting copper and amber coals and localized flare-ups.", tab: "motion", cat: "creative" },
   cyberpunk: { tags: "Synthwave · High contrast", desc: "High-contrast synthwave waves in electric cyan, neon magenta, and deep ultraviolet with dark gaps.", tab: "motion", cat: "creative" },
+  prism_tunnel: { tags: "Optical · Fractured glass", desc: "Moving spectral facets and razor-bright refractive edges cut through deep, dark gaps.", tab: "motion", cat: "creative" },
+  chromatic_undertow: { tags: "Liquid · Counter-flow", desc: "Opposing teal, cobalt and coral fronts collide, fold together and recede.", tab: "motion", cat: "creative" },
+  velvet_aurora: { tags: "Atmospheric · Velvet light", desc: "Soft ultraviolet, glacier-cyan and rose curtains breathe across a dark backdrop.", tab: "ambient", cat: "creative" },
 
   // Music
   pulse: { tags: "Rhythmic · Beat sync", desc: "High-energy transient bursts locked to bass kicks.", tab: "music", cat: "core" },
