@@ -2475,6 +2475,7 @@ class L930EffectsEngine:
         from src.visual_styles import sample_palette_oklab
         sp = max(0.2, self._speed)
         pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "dusk")
+        wave_width = max(0.35, min(2.5, getattr(self, "_wave_width", 1.0)))
         values = [2.0] * NUM_SEGMENTS
         frame = [[215, 80, 2] for _ in range(NUM_SEGMENTS)]
         for spot in range(3):
@@ -2488,8 +2489,8 @@ class L930EffectsEngine:
             )
             for i in range(NUM_SEGMENTS):
                 dist = abs(i - position)
-                core = math.exp(-0.5 * (dist / (1.7 + spot * 0.2)) ** 2)
-                spill = 0.18 * math.exp(-0.5 * (dist / 5.3) ** 2)
+                core = math.exp(-0.5 * (dist / ((1.7 + spot * 0.2) * wave_width)) ** 2)
+                spill = 0.18 * math.exp(-0.5 * (dist / (5.3 * wave_width)) ** 2)
                 intensity = min(1.0, core ** 1.4 + spill)
                 value = 2.0 + 96.0 * intensity
                 if value > values[i]:
