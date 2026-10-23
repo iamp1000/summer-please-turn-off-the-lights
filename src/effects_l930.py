@@ -3126,7 +3126,7 @@ class L930EffectsEngine:
             x = i / float(NUM_SEGMENTS - 1)
             cloud = 0.0
             rim = 0.0
-            for j, (center, width) in enumerate(zip(centers, (0.17, 0.23, 0.14))):
+            for j, (center, width) in enumerate(zip(centers, (0.10, 0.13, 0.09))):
                 d = abs(x - center[0])
                 core = math.exp(-0.5 * (d / width) ** 2)
                 shell = math.exp(-0.5 * ((d - width * 0.72) / (width * 0.22)) ** 2)
@@ -3134,7 +3134,7 @@ class L930EffectsEngine:
                 rim = max(rim, shell * (0.5 + 0.5 * math.sin(t * 0.31 + j * 1.8)))
             density = min(1.0, cloud * 0.92 + rim * 0.24)
             h, sat, _ = sample_palette_oklab(pal, min(1.0, cloud * 0.74 + rim * 0.26), cyclic=False)
-            value = int(max(2, min(94, 2 + 63 * density ** 1.7 + 27 * rim)))
+            value = int(max(2, min(82, 2 + 42 * density ** 1.9 + 24 * rim)))
             segs.append([h, sat, value])
         return segs
 
