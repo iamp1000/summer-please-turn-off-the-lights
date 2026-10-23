@@ -18,7 +18,7 @@ def test_creative_effects_registered_and_configured(engine):
     for eff in CREATIVE_EFFECTS:
         meta = EFFECT_CATALOG[eff]
         assert meta["kind"] == "streamed_slow"
-        assert meta["category"] == "creative"
+        assert meta["group"] == "Motion"
         assert "speed" in meta["supported_controls"]
         assert "brightness" in meta["supported_controls"]
 
