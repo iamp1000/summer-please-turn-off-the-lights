@@ -87,8 +87,8 @@ class MusicReactiveL930:
         self._analyzer = MusicAnalyzer(samplerate=self._sr, blocksize=self._bs, sensitivity=1.0)
         self._styles = create_style_instances()
         self._compositor = AccentCompositor()
-        self.style_name = "auto"
-        self._visual_mode = "auto"
+        self.style_name = "chain_reaction"
+        self._visual_mode = "chain_reaction"
         self.latest_music_state: MusicState | None = None
         self._coordinator: Any = None
 
@@ -131,7 +131,7 @@ class MusicReactiveL930:
         self._eq_weights[:10] *= 0.90  # prevent sub-bass clip
 
         # 7 Profiles & 8 Visual Styles
-        self._visual_mode = "edm_drop"
+        self._visual_mode = "chain_reaction"
         self._single_hue = 185  # Clean electric cyan default for single-color mode
 
         # Dynamic state trackers
