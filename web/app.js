@@ -80,6 +80,7 @@ const EXPERIENCE_METADATA = {
   acoustic_string: { tags: "Harmonic · Timber", desc: "Warm resonance modeling plucked acoustic strings and guitar.", tab: "music", cat: "advanced" },
   hydro_acoustic: { tags: "Fluid · Underwater bass", desc: "Deep sub-aquatic acoustic pressure waves propagating smoothly.", tab: "music", cat: "advanced" },
   bpm_resonator: { tags: "Tempo · Phase-locked", desc: "Harmonic resonance metronome locked strictly to detected tempo.", tab: "music", cat: "advanced" },
+  chain_reaction: { tags: "Beat-locked · Chaotic sparks", desc: "Random IC bursts ignite on beats and notes, then jump through nearby LEDs with smooth independent afterglow.", tab: "music", cat: "advanced" },
   party: { tags: "Celebration · Dynamic color", desc: "Vibrant fast-paced party celebration color rotation.", tab: "music", cat: "core" },
   movie: { tags: "Cinematic · Subdued ambiance", desc: "Low-glare cinema bias lighting adapting to dynamic sound tracks.", tab: "music", cat: "core" },
   reactive_aurora: { tags: "Atmospheric · Reactive curtain", desc: "Bass gently drives curtain movement, mids shape body & color, transients create sparkling crest highlights.", tab: "music", cat: "core" }
