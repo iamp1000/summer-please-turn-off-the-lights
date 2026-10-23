@@ -2097,6 +2097,129 @@ class BpmResonatorStyle(VisualStyle):
         return frame
 
 
+class RandomChainReactionStyle(VisualStyle):
+    """
+    Beat-locked stochastic IC bursts with a living electrical chain reaction.
+    Transients ignite scattered ICs; neighboring zones can catch the spark, but
+    no effect is forced to travel from one end of the strip to the other.
+    Each zone has its own smooth attack/decay envelope and retained hue.
+    """
+    name = "Random Chain Reaction"
+
+    def __init__(self):
+        super().__init__()
+        self._levels = [0.0] * NUM_SEGMENTS
+        self._hues = [(185, 95)] * NUM_SEGMENTS
+        self._prev_onset = 0.0
+        self._prev_hat = 0.0
+        self._prev_phase = 0.0
+        self._beat_flash = 0.0
+        self._chain_budget = 0.0
+        self._rng = random.Random()
+
+    def render(self, state: MusicState, dt: float, num_zones: int, **kwargs) -> List[Tuple[int, int, int]]:
+        if num_zones <= 0:
+            return []
+        if self.is_silent_state(state):
+            self._levels = [0.0] * num_zones
+            self._prev_onset = 0.0
+            self._prev_hat = 0.0
+            return [(0, 0, 0)] * num_zones
+
+        if len(self._levels) != num_zones:
+            self._levels = [0.0] * num_zones
+            self._hues = [(185, 95)] * num_zones
+
+        pal = self.get_palette(state)
+        kick = float(np.clip(getattr(state, "kick", 0.0), 0.0, 1.0))
+        snare = float(np.clip(getattr(state, "snare", 0.0), 0.0, 1.0))
+        hat = float(np.clip(getattr(state, "hat", 0.0), 0.0, 1.0))
+        onset = float(np.clip(getattr(state, "onset", 0.0), 0.0, 1.0))
+        transient = float(np.clip(getattr(state, "transient", 0.0), 0.0, 1.0))
+        energy = float(np.clip(getattr(state, "energy", 0.0), 0.0, 1.0))
+        phase = float(np.clip(getattr(state, "beat_phase", 0.0), 0.0, 1.0))
+        bpm_conf = float(getattr(state, "bpm_confidence", 0.0))
+
+        # A wrapped phase is a beat edge. Onsets remain useful for syncopated notes.
+        beat_edge = (
+            bpm_conf >= 0.25
+            and self._prev_phase > 0.68
+            and phase < 0.32
+        )
+        fresh_onset = onset > 0.30 and onset - self._prev_onset > 0.045
+        fresh_hat = hat > 0.30 and hat - self._prev_hat > 0.10
+        self._prev_phase = phase
+        self._prev_onset = onset
+        self._prev_hat = hat
+
+        # Beat makes a broad energetic ignition; individual transients create
+        # smaller, scattered note sparks between beats.
+        if beat_edge or kick > 0.52:
+            count = 4 + int(kick * 5) + int(energy * 2)
+            strength = max(0.58, kick, energy * 0.75)
+            self._beat_flash = max(self._beat_flash, strength)
+        elif fresh_onset or transient > 0.52:
+            count = 2 + int(transient * 3)
+            strength = max(0.35, transient, onset * 0.75)
+        elif fresh_hat:
+            count = 1 + int(hat * 2)
+            strength = max(0.22, hat * 0.75)
+        else:
+            count = 0
+            strength = 0.0
+
+        if count:
+            # Random scatter is intentionally non-contiguous. Stronger events
+            # ignite more ICs, and bass hits leave a longer afterglow.
+            for _ in range(min(count, max(1, num_zones // 2))):
+                idx = self._rng.randrange(num_zones)
+                hue_pos = (
+                    float(getattr(state, "beat_phase", 0.0)) * 0.20
+                    + float(getattr(state, "centroid_norm", 0.5)) * 0.35
+                    + self._rng.random() * 0.65
+                ) % 1.0
+                h, s, _ = sample_palette_oklab(pal, hue_pos, cyclic=True)
+                self._levels[idx] = max(self._levels[idx], min(1.0, strength * self._rng.uniform(0.78, 1.0)))
+                self._hues[idx] = (h, max(45, s))
+
+        # Chain reactions are local and stochastic: a live spark may jump one
+        # or two neighboring ICs, with probability driven by current audio.
+        live = [i for i, level in enumerate(self._levels) if level > 0.30]
+        chain_probability = min(0.42, 0.08 + energy * 0.18 + transient * 0.22)
+        if live and self._rng.random() < chain_probability:
+            seed = self._rng.choice(live)
+            neighbors = [j for j in (seed - 1, seed + 1) if 0 <= j < num_zones]
+            self._rng.shuffle(neighbors)
+            for idx in neighbors[:self._rng.randint(1, min(2, len(neighbors)))] if neighbors else []:
+                if self._rng.random() < 0.72:
+                    h, s = self._hues[seed]
+                    self._levels[idx] = max(self._levels[idx], self._levels[seed] * self._rng.uniform(0.55, 0.82))
+                    self._hues[idx] = (int((h + self._rng.choice([-18, -8, 8, 18])) % 360), s)
+
+        # Smooth, rate-independent envelope: crisp note attack, fluid afterglow.
+        # Beat pulse follows tempo but never turns the whole strip into a wash.
+        self._beat_flash *= math.exp(-max(0.0, dt) / (0.16 / max(0.5, self.speed)))
+        decay_tau = (0.24 + kick * 0.16) * self.smoothing / max(0.5, self.speed)
+        attack_tau = 0.025 / max(0.5, self.speed)
+        frame: List[Tuple[int, int, int]] = []
+        for i in range(num_zones):
+            target = self._levels[i]
+            tau = attack_tau if target > 0.0 else decay_tau
+            self._levels[i] = exp_smooth_fast(self._levels[i], target, dt, tau)
+            # Every IC decays independently, so the result has motion and
+            # afterglow without a hard left-to-right wipe.
+            self._levels[i] *= math.exp(-max(0.0, dt) / max(0.08, decay_tau))
+            if self._levels[i] < 0.012:
+                self._levels[i] = 0.0
+            h, s = self._hues[i]
+            local = self._levels[i]
+            v = int(np.clip((local * (72.0 + kick * 24.0) + self._beat_flash * 9.0) * self.intensity, 0, 100))
+            if local > 0.68:
+                s = max(15, int(s * (1.0 - local * 0.20)))
+            frame.append((int(h) % 360, int(np.clip(s, 0, 100)), v))
+        return frame
+
+
 class ReactiveAuroraStyle(VisualStyle):
     """
     Reactive Aurora — an expressive music-reactive style.
@@ -2282,6 +2405,7 @@ def create_style_instances() -> Dict[str, VisualStyle]:
     melodic_contour = MelodicContourStyle()
     bpm_resonator = BpmResonatorStyle()
     reactive_aurora = ReactiveAuroraStyle()
+    chain_reaction = RandomChainReactionStyle()
 
     registry: Dict[str, VisualStyle] = {
         # Custom Vibe & Genre Engines
@@ -2321,6 +2445,9 @@ def create_style_instances() -> Dict[str, VisualStyle]:
         "flow": flow,
         "aurora": reactive_aurora,
         "reactive_aurora": reactive_aurora,
+        "chain_reaction": chain_reaction,
+        "random_chain": chain_reaction,
+        "chaos": chain_reaction,
 
         # Segmented VU Mode & Aliases
         "segmented": segmented,
