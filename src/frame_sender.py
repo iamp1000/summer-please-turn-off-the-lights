@@ -48,6 +48,8 @@ class LatestFrameSender:
         # Frame delta tracking
         self._last_sent_segments: Optional[List[List[int]]] = None
         self._last_sent_hsb: Optional[Tuple[int, int, int]] = None
+        # L930 frames have per-zone HSV plus an independent master-brightness field.
+        self._last_sent_master_brightness: Optional[int] = None
         self._last_transmit_start: float = 0.0
         self._frame_authorizer: Optional[Callable[[Any], bool]] = None
 
@@ -121,6 +123,7 @@ class LatestFrameSender:
             self._pending_frame = None
             self._last_sent_segments = None
             self._last_sent_hsb = None
+            self._last_sent_master_brightness = None
 
         try:
             cur_loop = asyncio.get_running_loop()
@@ -146,6 +149,12 @@ class LatestFrameSender:
 
         if segs is not None:
             if self._last_sent_segments is None or len(self._last_sent_segments) != len(segs):
+                return True
+            # A dimmer movement can leave each zone HSV unchanged because the
+            # controller also applies this independent master brightness value.
+            if (isinstance(frame, dict) and "segments" in frame
+                    and frame.get("brightness") is not None
+                    and frame.get("brightness") != self._last_sent_master_brightness):
                 return True
             max_delta = 0
             for i in range(min(len(segs), len(self._last_sent_segments))):
@@ -242,6 +251,8 @@ class LatestFrameSender:
             if success:
                 if isinstance(frame, dict) and "segments" in frame:
                     self._last_sent_segments = [list(x) for x in frame["segments"]]
+                    if frame.get("brightness") is not None:
+                        self._last_sent_master_brightness = int(frame["brightness"])
                 elif isinstance(frame, list):
                     self._last_sent_segments = [list(x) for x in frame]
                 elif isinstance(frame, dict) and "h" in frame:
