@@ -9,7 +9,7 @@ let state = {
 };
 
 let currentDevId = "strip1";
-let currentEffectCategory = "creative";
+let currentEffectCategory = "1d";
 let currentExperienceTab = "motion";
 let ws = null;
 let reconnectTimer = null;
@@ -2108,7 +2108,11 @@ function renderUI() {
         const meta = EXPERIENCE_METADATA[k] || {};
         return (m.group === "Motion" || m.group === "Seasonal & Novelty" || m.group === "Creative" || meta.tab === "motion");
       });
-      if (currentEffectCategory === "core") {
+      if (currentEffectCategory === "1d" || currentEffectCategory === "2d") {
+        keys = keys.filter(k =>
+          String(catalog[k]?.dimension || EXPERIENCE_METADATA[k]?.dimension || "").toLowerCase() === currentEffectCategory
+        );
+      } else if (currentEffectCategory === "core") {
         keys = keys.filter(k => (EXPERIENCE_METADATA[k]?.cat || catalog[k]?.category) === "core");
       } else if (currentEffectCategory === "advanced") {
         keys = keys.filter(k => (EXPERIENCE_METADATA[k]?.cat || catalog[k]?.category) === "advanced");
@@ -2137,7 +2141,7 @@ function renderUI() {
   // Filter by search query if any
   if (effectSearchQuery) {
     availableItems = availableItems.filter(item => {
-      const fullText = `${item.id} ${item.meta.title || formatName(item.id)} ${formatName(item.id)} ${item.meta.tags || ''} ${item.meta.desc || ''}`.toLowerCase();
+      const fullText = `${item.id} ${item.meta.title || item.meta.display_name || formatName(item.id)} ${formatName(item.id)} ${item.meta.tags || ''} ${item.meta.desc || ''}`.toLowerCase();
       return fullText.includes(effectSearchQuery);
     });
   }
@@ -2174,7 +2178,7 @@ function renderUI() {
           ${badgeOverlay}
         </div>
         <div class="card-meta">
-          <h3 class="card-title">${meta.title || formatName(id)}</h3>
+          <h3 class="card-title">${meta.title || meta.display_name || formatName(id)}</h3>
           <p class="card-subtitle">${tags}</p>
         </div>
       </div>
