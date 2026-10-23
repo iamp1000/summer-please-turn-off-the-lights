@@ -460,7 +460,7 @@ def test_l930_explicit_zero_transition_is_not_replaced_by_music_fade():
 def test_original_effects_use_procedural_playback_not_firmware_colour_sequences():
     from src.effects_l930 import EFFECT_CATALOG, CREATIVE_EFFECTS, CUSTOM_EFFECTS
 
-    expected = {"juggle", "radial_ripple", "meteor_shower", "bioluminescent_tide", "spiral_vortex", "gravity_slosh", "radar_sweep", "vaporwave_neon", "neon_heartbeat", "lantern_sweep"}
+    expected = {"juggle", "colortwinkles", "meteor_shower", "radial_ripple", "fireworks_1d", "dancing_shadows", "bioluminescent_tide", "dissolve_random", "bouncing_balls", "aurora_motion"}
     spatial = {"spiral_vortex", "gravity_slosh", "lissajous_orbit", "planar_wind", "vaporwave_neon"}
     assert set(CREATIVE_EFFECTS) == expected
     assert expected | spatial <= set(CUSTOM_EFFECTS)
@@ -551,7 +551,7 @@ def test_effect_catalog_curation_structure():
         OCCASIONAL_EFFECTS, CREATIVE_EFFECTS, ACTIVE_EFFECTS, EFFECT_CATALOG
     )
 
-    assert len(EFFECT_CATALOG) == 56, f"Expected 56 internal definitions, got {len(EFFECT_CATALOG)}"
+    assert len(EFFECT_CATALOG) == 62, f"Expected 62 internal definitions, got {len(EFFECT_CATALOG)}"
     assert CORE_EFFECTS == [], "Stock/core effects should not be exposed in the curated UI"
     assert len(ADVANCED_EFFECTS) == 5
     assert SEASONAL_EFFECTS == []
@@ -561,8 +561,8 @@ def test_effect_catalog_curation_structure():
     assert len(ACTIVE_EFFECTS) == 10
 
     expected_creative = {
-        "juggle", "radial_ripple", "meteor_shower", "bioluminescent_tide", "spiral_vortex",
-        "gravity_slosh", "radar_sweep", "vaporwave_neon", "neon_heartbeat", "lantern_sweep"
+        "juggle", "colortwinkles", "meteor_shower", "radial_ripple", "fireworks_1d",
+        "dancing_shadows", "bioluminescent_tide", "dissolve_random", "bouncing_balls", "aurora_motion"
     }
     assert set(CREATIVE_EFFECTS) == expected_creative
 
