@@ -462,6 +462,9 @@ class LightHub:
         val = max(1, min(100, int(val)))
         targets = self._resolve_targets(dev_id)
         for ctx in targets:
+            # Preserve the previous master level until any already-corrected static
+            # L930 frame has been re-scaled below.
+            previous_brightness = max(1, min(100, int(ctx.state.get("brightness", 50))))
             ctx.state["brightness"] = val
 
             if hasattr(ctx, "fx_engine") and hasattr(ctx.fx_engine, "set_parameters"):
@@ -485,13 +488,24 @@ class LightHub:
                     segments = current.segments if current and current.segments else getattr(ctx.controller, "last_segments", None)
                     if not segments:
                         continue
+                    pre_corrected = current.pre_corrected if current else False
+                    copied_segments = [list(zone) for zone in segments]
+                    if pre_corrected:
+                        # The L930 payload serializer deliberately skips its master
+                        # multiplier for pre-corrected frames. Scale the zone values
+                        # here, relative to the *previous* master level, so dimmer
+                        # changes actually change the pixels without a second gamma pass.
+                        scale = val / float(previous_brightness)
+                        for zone in copied_segments:
+                            if len(zone) >= 3:
+                                zone[2] = max(0, min(100, int(round(int(zone[2]) * scale))))
                     packet = FramePacket(
                         dev_id=ctx.dev_id,
                         producer=OutputProducer.STATIC,
-                        segments=[list(zone) for zone in segments],
+                        segments=copied_segments,
                         brightness=val,
                         transition=current.transition if current else 600,
-                        pre_corrected=current.pre_corrected if current else False,
+                        pre_corrected=pre_corrected,
                         generation=generation,
                         producer_id=producer_id,
                     )
