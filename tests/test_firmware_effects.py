@@ -458,10 +458,10 @@ def test_l930_explicit_zero_transition_is_not_replaced_by_music_fade():
 
 
 def test_original_effects_use_procedural_playback_not_firmware_colour_sequences():
-    from src.effects_l930 import EFFECT_CATALOG, CREATIVE_EFFECTS, CUSTOM_EFFECTS
+    from src.effects_l930 import EFFECT_CATALOG, CREATIVE_EFFECTS, CUSTOM_EFFECTS, ACTIVE_EFFECTS, WLED_2D_EFFECTS
 
     expected = set(ACTIVE_EFFECTS)
-    spatial = {"spiral_vortex", "gravity_slosh", "lissajous_orbit", "planar_wind", "vaporwave_neon"}
+    spatial = set(WLED_2D_EFFECTS)
     assert set(CREATIVE_EFFECTS) == expected
     assert expected | spatial <= set(CUSTOM_EFFECTS)
     for name in expected | spatial:
@@ -661,11 +661,11 @@ def test_hub_full_state_includes_curated_categories(monkeypatch):
         assert "creative_effects" in st
         assert "active_effects" in st
         assert len(st["core_effects"]) == 0
-        assert len(st["advanced_effects"]) == 5
+        assert len(st["advanced_effects"]) == 25
         assert len(st["seasonal_effects"]) == 0
         assert len(st["novelty_effects"]) == 0
         assert len(st["occasional_effects"]) == 0
-        assert len(st["creative_effects"]) == 10
+        assert len(st["creative_effects"]) == 50
         assert len(st["active_effects"]) == 50
         # Ensure bpm_resonator is exposed in visualizer styles
         assert any(s["id"] == "bpm_resonator" for s in st.get("visualizer_styles", []))
