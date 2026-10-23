@@ -185,3 +185,54 @@ def test_hub_static_brightness_update_republishes_through_frame_bus():
     assert latest.producer_id is not None
     assert controller.frames[-1]["b"] == 75
     assert controller.frames[-1]["_producer"] == OutputProducer.STATIC
+
+
+def test_hub_static_l930_brightness_scales_precorrected_zones():
+    """The GUI dimmer must scale pre-corrected 50-zone frames before Tapo serialization."""
+    from types import SimpleNamespace
+    from src.hub import LightHub
+
+    class RejectDirectWrites:
+        def run(self, awaitable):
+            close = getattr(awaitable, "close", None)
+            if close:
+                close()
+            raise AssertionError("brightness bypassed the authoritative FrameBus path")
+
+    arbiter = OutputArbiter()
+    bus = FrameBus(arbiter)
+    controller = FakeController()
+    bus.bind_device("strip", controller)
+    arbiter.claim_output("strip", OutputProducer.STATIC)
+    initial_zones = [[210, 80, 40] for _ in range(50)]
+    assert bus.publish(FramePacket(
+        dev_id="strip",
+        producer=OutputProducer.STATIC,
+        segments=initial_zones,
+        brightness=50,
+        pre_corrected=True,
+    ))
+
+    ctx = SimpleNamespace(
+        dev_id="strip",
+        model="L930",
+        state={"brightness": 50, "active_label": "Custom Wheel"},
+        controller=controller,
+        fx_engine=None,
+    )
+    hub = LightHub.__new__(LightHub)
+    hub.devices = {"strip": ctx}
+    hub.arbiter = arbiter
+    hub.frame_bus = bus
+    hub.loop_runner = RejectDirectWrites()
+    hub.notify_change = lambda: None
+
+    hub.set_brightness("strip", 75)
+
+    latest = bus.get_latest_frame("strip")
+    assert latest is not None
+    assert latest.producer == OutputProducer.STATIC
+    assert latest.pre_corrected is True
+    assert latest.brightness == 75
+    assert latest.segments[0][2] == 60
+    assert controller.frames[-1]["segments"][0][2] == 60
