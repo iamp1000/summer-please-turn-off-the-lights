@@ -152,9 +152,9 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness', 'particle_density'],
     },
     'fireflies': {
-        'kind': 'firmware',
-        'group': 'Ambient',
-        'category': 'core',
+        'kind': 'streamed_slow',
+        'group': 'Motion',
+        'category': 'creative',
         'desc': 'Loose clusters of green-gold lights with asynchronous bloom, short peak, and long fade',
         'default_palette': 'forest',
         'supported_controls': ['speed', 'brightness', 'particle_density'],
@@ -232,15 +232,15 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
     'radial_ripple': {
         'kind': 'streamed_slow',
         'group': 'Motion',
-        'category': 'core',
+        'category': 'creative',
         'desc': '2D expanding concentric rings with bright crest and fading trail from arch apex',
         'default_palette': 'tide',
         'supported_controls': ['speed', 'brightness', 'palette', 'wave_width'],
     },
     'aurora': {
-        'kind': 'firmware',
+        'kind': 'streamed_slow',
         'group': 'Motion',
-        'category': 'core',
+        'category': 'creative',
         'desc': 'Broad, slow-moving green, teal, and violet curtains with continuously blended hues',
         'default_palette': 'forest',
         'supported_controls': ['speed', 'brightness', 'wave_width'],
@@ -254,17 +254,17 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness'],
     },
     'raindrop': {
-        'kind': 'firmware',
+        'kind': 'streamed_slow',
         'group': 'Motion',
-        'category': 'core',
+        'category': 'creative',
         'desc': 'Dark background with slow multi-direction drops, soft heads, and long fading tails',
         'default_palette': 'tide',
         'supported_controls': ['speed', 'brightness', 'particle_density'],
     },
     'lightning': {
-        'kind': 'firmware',
+        'kind': 'streamed_slow',
         'group': 'Motion',
-        'category': 'core',
+        'category': 'creative',
         'desc': 'Mostly dark with sharp white-blue flashes, irregular pauses, and uneven decays',
         'default_palette': 'tide',
         'supported_controls': ['speed', 'brightness', 'flash_strength'],
@@ -278,9 +278,9 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
         'supported_controls': ['speed', 'brightness'],
     },
     'prism_sparks': {
-        'kind': 'firmware',
+        'kind': 'streamed_slow',
         'group': 'Motion',
-        'category': 'core',
+        'category': 'creative',
         'desc': 'Black background with sparse, high-saturation RGB sparks with varied lifetimes',
         'default_palette': 'dusk',
         'supported_controls': ['speed', 'brightness', 'particle_density'],
@@ -290,7 +290,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
     'meteor_shower': {
         'kind': 'streamed_slow',
         'group': 'Motion',
-        'category': 'advanced',
+        'category': 'creative',
         'desc': 'Narrow one-way streaks with cold-white cores and long blue tails at irregular intervals',
         'default_palette': 'tide',
         'supported_controls': ['speed', 'brightness', 'tail_length'],
@@ -298,7 +298,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
     'juggle': {
         'kind': 'streamed_slow',
         'group': 'Motion',
-        'category': 'advanced',
+        'category': 'creative',
         'desc': '3 to 5 distinct glowing orbs with different speeds, spacing, and trajectories',
         'default_palette': 'sunset',
         'supported_controls': ['speed', 'brightness', 'palette'],
@@ -338,7 +338,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
     'radar_sweep': {
         'kind': 'streamed_slow',
         'group': 'Motion',
-        'category': 'advanced',
+        'category': 'creative',
         'desc': 'Focused angular beam rotating around room center with exponential decay trail',
         'default_palette': 'forest',
         'supported_controls': ['speed', 'brightness', 'palette', 'tail_length'],
@@ -605,23 +605,19 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
     },
 }
 
-# Deliberately curated shelf: stock Tapo modes, aliases, strobe toys and
-# one-dimensional chase effects remain internal for compatibility but are not exposed.
+# Curated WLED-inspired shelf: distinct motion models, not palette variations.
+# The previous optical-gradient experiments remain internal for compatibility.
 CORE_EFFECTS: List[str] = []
 CREATIVE_EFFECTS: List[str] = [
-    "oil_slick", "silk_ribbons", "nebula_bloom",
-    "holographic_moire", "bioluminescent_tide", "ember_drift", "cyberpunk",
-    "prism_tunnel", "chromatic_undertow", "velvet_aurora",
+    "juggle", "radial_ripple", "meteor_shower", "bioluminescent_tide",
+    "fireflies", "prism_sparks", "aurora", "raindrop", "lightning", "radar_sweep",
 ]
-SPATIAL_EXPERIMENTS: List[str] = [
-    "spiral_vortex", "gravity_slosh", "lissajous_orbit",
-    "planar_wind", "vaporwave_neon",
-]
-ADVANCED_EFFECTS: List[str] = list(SPATIAL_EXPERIMENTS)
+SPATIAL_EXPERIMENTS: List[str] = []
+ADVANCED_EFFECTS: List[str] = []
 SEASONAL_EFFECTS: List[str] = []
 NOVELTY_EFFECTS: List[str] = []
 OCCASIONAL_EFFECTS: List[str] = []
-ACTIVE_EFFECTS: List[str] = CREATIVE_EFFECTS + SPATIAL_EXPERIMENTS
+ACTIVE_EFFECTS: List[str] = list(CREATIVE_EFFECTS)
 CUSTOM_EFFECTS = list(ACTIVE_EFFECTS)
 
 
@@ -1707,6 +1703,10 @@ class L930EffectsEngine:
                     segs = self._render_raindrop(t)
                 elif eff == "lightning":
                     segs = self._render_lightning(t)
+                elif eff == "fireflies":
+                    segs = self._render_fireflies(t)
+                elif eff == "prism_sparks":
+                    segs = self._render_prism_sparks(t)
                 elif eff == "rainbow":
                     segs = self._render_rainbow(t)
 
