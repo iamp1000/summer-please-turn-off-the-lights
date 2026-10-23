@@ -585,7 +585,7 @@ EFFECT_CATALOG: Dict[str, Dict[str, Any]] = {
 CORE_EFFECTS: List[str] = []
 CREATIVE_EFFECTS: List[str] = [
     "oil_slick", "silk_ribbons", "nebula_bloom",
-    "holographic_moire", "ember_drift",
+    "holographic_moire", "bioluminescent_tide", "ember_drift", "cyberpunk",
 ]
 SPATIAL_EXPERIMENTS: List[str] = [
     "spiral_vortex", "gravity_slosh", "lissajous_orbit",
