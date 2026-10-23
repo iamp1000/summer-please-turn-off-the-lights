@@ -460,7 +460,7 @@ def test_l930_explicit_zero_transition_is_not_replaced_by_music_fade():
 def test_original_effects_use_procedural_playback_not_firmware_colour_sequences():
     from src.effects_l930 import EFFECT_CATALOG, CREATIVE_EFFECTS, CUSTOM_EFFECTS
 
-    expected = {"juggle", "colortwinkles", "meteor_shower", "radial_ripple", "fireworks_1d", "dancing_shadows", "bioluminescent_tide", "dissolve_random", "bouncing_balls", "fire_2012"}
+    expected = set(ACTIVE_EFFECTS)
     spatial = {"spiral_vortex", "gravity_slosh", "lissajous_orbit", "planar_wind", "vaporwave_neon"}
     assert set(CREATIVE_EFFECTS) == expected
     assert expected | spatial <= set(CUSTOM_EFFECTS)
@@ -551,24 +551,21 @@ def test_effect_catalog_curation_structure():
         OCCASIONAL_EFFECTS, CREATIVE_EFFECTS, ACTIVE_EFFECTS, EFFECT_CATALOG
     )
 
-    assert len(EFFECT_CATALOG) == 62, f"Expected 62 internal definitions, got {len(EFFECT_CATALOG)}"
+    from src.effects_l930 import WLED_1D_EFFECTS, WLED_2D_EFFECTS
+    assert len(EFFECT_CATALOG) == 77, f"Expected 77 internal definitions, got {len(EFFECT_CATALOG)}"
     assert CORE_EFFECTS == [], "Stock/core effects should not be exposed in the curated UI"
-    assert len(ADVANCED_EFFECTS) == 5
+    assert len(ADVANCED_EFFECTS) == 25
     assert SEASONAL_EFFECTS == []
     assert NOVELTY_EFFECTS == []
-    assert len(CREATIVE_EFFECTS) == 10
+    assert len(CREATIVE_EFFECTS) == 50
     assert OCCASIONAL_EFFECTS == []
-    assert len(ACTIVE_EFFECTS) == 10
+    assert len(ACTIVE_EFFECTS) == 50
 
-    expected_creative = {
-        "juggle", "colortwinkles", "meteor_shower", "radial_ripple", "fireworks_1d",
-        "dancing_shadows", "bioluminescent_tide", "dissolve_random", "bouncing_balls", "fire_2012"
-    }
-    assert set(CREATIVE_EFFECTS) == expected_creative
+    assert set(CREATIVE_EFFECTS) == set(WLED_1D_EFFECTS) | set(WLED_2D_EFFECTS)
+    assert len(WLED_1D_EFFECTS) == 25
+    assert len(WLED_2D_EFFECTS) == 25
 
-    expected_advanced = {
-        "spiral_vortex", "gravity_slosh", "lissajous_orbit", "planar_wind", "vaporwave_neon"
-    }
+    expected_advanced = set(WLED_2D_EFFECTS)
     assert set(ADVANCED_EFFECTS) == expected_advanced
     assert "warning" in EFFECT_CATALOG["police"]
     assert "Rapid flashing" in EFFECT_CATALOG["police"]["warning"]
@@ -669,7 +666,7 @@ def test_hub_full_state_includes_curated_categories(monkeypatch):
         assert len(st["novelty_effects"]) == 0
         assert len(st["occasional_effects"]) == 0
         assert len(st["creative_effects"]) == 10
-        assert len(st["active_effects"]) == 10
+        assert len(st["active_effects"]) == 50
         # Ensure bpm_resonator is exposed in visualizer styles
         assert any(s["id"] == "bpm_resonator" for s in st.get("visualizer_styles", []))
     finally:
