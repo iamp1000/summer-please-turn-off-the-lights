@@ -213,6 +213,7 @@ def test_random_chain_reaction_triggers_scattered_ics_and_smoothly_fades():
 
     # A non-silent frame with no new note should retain a smooth afterglow,
     # while reducing total energy rather than snapping every IC off.
+    style._rng.seed(7)  # Keep this envelope-only assertion deterministic.
     between_notes = MusicState(
         bands=np.full(50, 0.15, dtype=np.float32),
         energy=0.2,
