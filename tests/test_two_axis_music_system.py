@@ -181,3 +181,37 @@ def test_latency_lookahead_configuration_and_prediction():
     analyzer.set_latency_lookahead(400.0)
     assert analyzer.latency_lookahead_ms == 250.0
 
+
+
+def test_random_chain_reaction_triggers_scattered_ics_and_smoothly_fades():
+    """A strong musical hit should ignite scattered ICs, not a linear strip wipe."""
+    from src.visual_styles import create_style_instances, RandomChainReactionStyle
+
+    styles = create_style_instances()
+    style = styles["chain_reaction"]
+    assert isinstance(style, RandomChainReactionStyle)
+    state = MusicState(
+        bands=np.full(50, 0.4, dtype=np.float32),
+        onset=0.9,
+        transient=0.95,
+        kick=0.95,
+        snare=0.5,
+        hat=0.4,
+        bpm=128.0,
+        bpm_confidence=0.9,
+        beat_phase=0.05,
+        energy=0.8,
+        intensity=0.9,
+        section=Section.DROP,
+        palette=[(185, 95, 90), (285, 90, 90), (30, 95, 95)],
+    )
+    frame = style.render(state, dt=0.03, num_zones=50)
+    assert len(frame) == 50
+    assert all(0 <= h <= 360 and 0 <= s <= 100 and 0 <= v <= 100 for h, s, v in frame)
+    lit = [i for i, (_, _, v) in enumerate(frame) if v > 10]
+    assert 2 <= len(lit) < 50, "The effect should create localized bursts, not a full-strip wash"
+
+    # Quiet follow-up frames must decay continuously instead of abruptly snapping off.
+    quiet = MusicState(energy=0.0, section=Section.SILENT)
+    fading = style.render(quiet, dt=0.03, num_zones=50)
+    assert all(v == 0 for _, _, v in fading)
