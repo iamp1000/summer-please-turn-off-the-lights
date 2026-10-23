@@ -2291,50 +2291,32 @@ class L930EffectsEngine:
             self._tail_length = old_t
 
     def _render_harmonic_juggle(self, t: float) -> List[List[int]]:
-        """
-        Harmonic Juggle: 4 broad glowing orbs weaving in and out of phase
-        with true OKLab additive chromatic blending and smooth spatial envelopes.
-        """
-        pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "sunset")
+        """WLED Juggle-inspired pattern: eight colored dot heads with direction-aware, decaying trails."""
         from src.visual_styles import sample_palette_oklab
+        pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "sunset")
         sp = max(0.2, self._speed)
-        interval = self._effective_render_interval()
-
-        # 4 harmonic orbs with slow prime periods
-        periods = [
-            max(8.0 / sp, 14.0 * interval),
-            max(11.0 / sp, 18.0 * interval),
-            max(14.0 / sp, 22.0 * interval),
-            max(17.0 / sp, 26.0 * interval),
-        ]
-        orb_data = []
-        for k in range(4):
-            phase = (t / periods[k] + k * 0.25) * 2.0 * math.pi
-            pos = 24.5 + 22.0 * math.sin(phase)
-            norm_k = (k / 4.0 + t * 0.03 * sp) % 1.0
-            h, s, _ = sample_palette_oklab(pal, norm_k, cyclic=True)
-            orb_data.append((pos, h, s, norm_k))
-
-        segs: List[List[int]] = []
-        for i in range(NUM_SEGMENTS):
-            total_weight = 0.0
-            weighted_norm = 0.0
-            for pos, _, _, norm_k in orb_data:
-                dist = abs(i - pos)
-                weight = math.exp(-0.5 * (dist / 4.5) ** 2)
-                if weight > 0.02:
-                    total_weight += weight
-                    weighted_norm += norm_k * weight
-
-            if total_weight > 0.02:
-                avg_norm = (weighted_norm / total_weight) % 1.0
-                h, s, _ = sample_palette_oklab(pal, avg_norm, cyclic=True)
-                v = int(max(10, min(100, 12 + total_weight * 72.0)))
-            else:
-                h, s = pal[0][0], pal[0][1]
-                v = 10
-            segs.append([h, s, v])
-        return segs
+        values = [2.0] * NUM_SEGMENTS
+        frame = [[pal[0][0], pal[0][1], 2] for _ in range(NUM_SEGMENTS)]
+        dot_count = 8
+        for dot in range(dot_count):
+            angular_speed = 0.48 + dot * 0.115
+            phase = t * angular_speed * sp * 2.0 * math.pi + dot * 0.79
+            position = (NUM_SEGMENTS - 1) * (0.5 + 0.48 * math.sin(phase))
+            direction = 1.0 if math.cos(phase) >= 0 else -1.0
+            hue, sat, _ = sample_palette_oklab(
+                pal, (dot / dot_count + t * 0.025 * sp) % 1.0, cyclic=True
+            )
+            for i in range(NUM_SEGMENTS):
+                distance = abs(i - position)
+                core = math.exp(-0.5 * (distance / 0.72) ** 2)
+                behind = (position - i) * direction
+                trail = math.exp(-max(0.0, behind) / 2.25) if 0 <= behind <= 8 else 0.0
+                intensity = max(core, trail * 0.78)
+                value = 2.0 + 98.0 * intensity
+                if value > values[i]:
+                    values[i] = value
+                    frame[i] = [int(hue), int(sat), int(min(100, value))]
+        return frame
 
     @staticmethod
     def _wled_event_rng(effect: str, event_index: int) -> random.Random:
@@ -2580,54 +2562,36 @@ class L930EffectsEngine:
             self._particle_density = old_d
 
     def _render_meteor_shower(self, t: float) -> List[List[int]]:
-        """Three staggered meteor heads cross the strip with smooth cadence-paced drift and long luminous tails."""
+        """WLED Meteor-inspired single moving head with per-IC random tail decay."""
         from src.visual_styles import sample_palette_oklab
         pal = get_palette_hsv(self._palette_name if self._palette_name in PALETTES else "tide")
         sp = max(0.2, self._speed)
-        interval = self._effective_render_interval()
-        tail_mult = max(0.2, getattr(self, "_tail_length", 1.0))
-
-        travel_span = NUM_SEGMENTS + 20.0
-        period_a = max(12.0 / sp, (travel_span * interval) / 2.2)
-        period_b = max(16.0 / sp, (travel_span * interval) / 1.8)
-        period_c = max(20.0 / sp, (travel_span * interval) / 1.5)
-
-        pos_a = ((t / period_a) % 1.0) * travel_span - 10.0
-        pos_b = (((t / period_b) + 0.38) % 1.0) * travel_span - 10.0
-        pos_c = (((t / period_c) + 0.72) % 1.0) * travel_span - 10.0
-
-        meteors = [
-            (pos_a, 1.0, 16.0 * tail_mult, 2.8),
-            (pos_b, 0.78, 20.0 * tail_mult, 3.2),
-            (pos_c, 0.60, 14.0 * tail_mult, 2.5),
-        ]
-        segs: List[List[int]] = []
+        tail_length = max(4.0, min(24.0, 13.0 * max(0.35, self._tail_length)))
+        travel_span = NUM_SEGMENTS + tail_length * 2.0
+        period = max(2.6 / sp, 18.0 * self._effective_render_interval())
+        cycle = max(0, int(t / period))
+        phase = (t / period) % 1.0
+        head = phase * travel_span - tail_length
+        rng = self._wled_event_rng("meteor", cycle)
+        decay = [rng.uniform(0.48, 1.0) for _ in range(NUM_SEGMENTS)]
+        frame = []
         for i in range(NUM_SEGMENTS):
-            peak, tail_pos = 0.0, 0.0
-            for head, gain, tail_len, core_r in meteors:
-                dist = abs(i - head)
-                core_glow = gain * math.exp(-0.5 * (dist / core_r) ** 2)
-                if core_glow > peak:
-                    peak = core_glow
-                    tail_pos = 0.0
-
-                behind = head - i
-                if 0.0 < behind <= tail_len:
-                    tail_glow = gain * math.exp(-behind / max(2.5, tail_len * 0.40)) * 0.85
-                    if tail_glow > peak:
-                        peak = tail_glow
-                        tail_pos = behind / tail_len
-
-            ambient_glow = 0.08 + 0.04 * math.sin(i * 0.3 + t * 0.2)
-            total_intensity = min(1.0, ambient_glow + peak)
-
-            hue, sat, _ = sample_palette_oklab(pal, min(1.0, 0.10 + tail_pos * 0.90), cyclic=False)
-            white_mix = max(0.0, 1.0 - tail_pos * 2.5) * (peak ** 1.5)
+            behind = head - i
+            if -1.5 <= behind <= 2.0:
+                glow = math.exp(-0.5 * (behind / 0.85) ** 2)
+                tail_pos = 0.0
+            elif 2.0 < behind <= tail_length:
+                glow = math.exp(-behind / max(2.0, tail_length * 0.42)) * decay[i]
+                tail_pos = behind / tail_length
+            else:
+                glow = 0.0
+                tail_pos = 1.0
+            hue, sat, _ = sample_palette_oklab(pal, min(1.0, 0.08 + tail_pos * 0.92), cyclic=False)
+            white_mix = max(0.0, 1.0 - tail_pos * 3.0) * glow
             hue = int((hue * (1.0 - white_mix) + 195 * white_mix) % 360)
-            sat = int(sat * (1.0 - white_mix) + 20 * white_mix)
-            value = int(max(8, min(100, 8 + 92 * total_intensity)))
-            segs.append([hue, max(0, min(100, sat)), value])
-        return segs
+            value = int(max(2, min(100, 2 + 98 * glow)))
+            frame.append([hue, int(sat), value])
+        return frame
 
     def _render_radial_ripple(self, t: float) -> List[List[int]]:
         """WLED Ripple-inspired 1D water rings: randomized impact points, moving crests, dark interiors."""
